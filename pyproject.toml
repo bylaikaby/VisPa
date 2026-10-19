@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "visual-toolkit"
+version = "1.11.0.dev0"
+description = "Standalone macaque microscopy visualization and review tools"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["numpy", "matplotlib", "Pillow", "PyYAML"]
+
+[project.optional-dependencies]
+tiff = ["tifffile"]
+nifti = ["nibabel"]
+montage = ["nibabel", "scipy"]
+yaml = ["PyYAML"]
+ssh = ["paramiko"]
+gui = []
+legacy-gl = ["PyOpenGL==3.1.10", "PyGLM==2.8.3", "glfw==2.11.0", "trimesh==5.1.1", "vispy==0.17.0"]
+
+[project.scripts]
+visual-toolkit = "Visual_toolkit.cli:main"
+
+[project.gui-scripts]
+visual-toolkit-gui = "Visual_toolkit.gui:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+Visual_toolkit = ["default_config.yaml"]
+

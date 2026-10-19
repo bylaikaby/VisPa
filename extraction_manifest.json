@@ -1,0 +1,520 @@
+{
+  "package": "visual-toolkit",
+  "canonical_import": "Visual_toolkit",
+  "parent_head": "6569afaae1e0e79a24790c5f15aa60cd48e3a56f",
+  "destination": "D:/Visual_toolkit",
+  "staging_path": "D:/projectome_analysis/work/visual_toolkit_extraction/repository",
+  "status": "local/unreleased/uncommitted",
+  "copied_sources": [
+    {
+      "original_path": "main_scripts/Visual_toolkit/toolkit.py",
+      "new_path": "src/Visual_toolkit/toolkit.py",
+      "original_sha256": "ca003d71f0877d98f97a8d0ec56b683c239bd992d266be7f6a7054c943a50d8d",
+      "staged_sha256": "0e576ad6af779102965a0275c669b8a434b1c4a66d3c0d5fb735e402a64f51d2",
+      "canonical_sha256": "9caf81b7d0cce92d8b478af90eebe1753a5e867c4bf0d3bfd75f611678aa7d1d"
+    },
+    {
+      "original_path": "main_scripts/Visual_toolkit/image_geometry.py",
+      "new_path": "src/Visual_toolkit/image_geometry.py",
+      "original_sha256": "8030489001c6137e5f7c0b46a9a6950b14cc98916777953c3b3fad2236ffffe3",
+      "staged_sha256": "93f88b04b11289e49288dbca537763ff597c1c16bed629174897c376b164ca26",
+      "canonical_sha256": "93f88b04b11289e49288dbca537763ff597c1c16bed629174897c376b164ca26"
+    },
+    {
+      "original_path": "main_scripts/Visual_toolkit/dataset_config.py",
+      "new_path": "src/Visual_toolkit/dataset_config.py",
+      "original_sha256": "a89f9cea69de7985bfb809f90e9dff2c3d97523030cc99b8bd353b3d4f10a394",
+      "staged_sha256": "ce2f42e81c4263bf6e6ceb77c4708a1e8968d49adc6cff9b2e1b64651458aeb7",
+      "canonical_sha256": "b4f66d9d084f2d26a2f383df274969258c5521d50b067904b4dfb09fcc1e700c"
+    },
+    {
+      "original_path": "main_scripts/Visual_toolkit/context_resources.py",
+      "new_path": "src/Visual_toolkit/context_resources.py",
+      "original_sha256": "8a3621c00a6227120b4a3f8e035792543b3e6d6cda5b380ebbadb35ddc1fa66b",
+      "staged_sha256": "2eaabd27015cccd3c3dc41736dc9efa1a2a0aebbb6a0fdec7afb5d8a6a264cfd",
+      "canonical_sha256": "4de953ab6eb538817a5cb53dff145f6569133605908909d352a727087640b386"
+    },
+    {
+      "original_path": "main_scripts/Visual_toolkit/derived_context.py",
+      "new_path": "src/Visual_toolkit/derived_context.py",
+      "original_sha256": "18eb701c309e6007691ce21a8cf64be5023d572eb78b3d1a6840070572900512",
+      "staged_sha256": "4d0e17e576c223c09f6d458d0faf5a1b3b98de39e077ca1c850702e1eaee1845",
+      "canonical_sha256": "4d0e17e576c223c09f6d458d0faf5a1b3b98de39e077ca1c850702e1eaee1845"
+    },
+    {
+      "original_path": "main_scripts/Visual_toolkit/review_lock.py",
+      "new_path": "src/Visual_toolkit/review_lock.py",
+      "original_sha256": "0d251e44cf492a2ad63d981a3c7b495c3f2e33c1038dcc2fe9e3d3c8c2d6d141",
+      "staged_sha256": "5d30591c8e91beaf7a13eb66b684336c1039e860f4fb9dafebd41066bdcab427",
+      "canonical_sha256": "5d30591c8e91beaf7a13eb66b684336c1039e860f4fb9dafebd41066bdcab427"
+    },
+    {
+      "original_path": "neuron-vis/neuronVis/RenderGL.py",
+      "new_path": "src/Visual_toolkit/legacy_gl/RenderGL.py",
+      "original_sha256": "5c10d413994e1c95647ffa858ae719da64811bca1103f346b8d8938c903ef7ba",
+      "staged_sha256": "665f964a30fd93980991a72a035049730b924d40cc7db03a76507fffedaaa99e",
+      "canonical_sha256": "665f964a30fd93980991a72a035049730b924d40cc7db03a76507fffedaaa99e"
+    },
+    {
+      "original_path": "neuron-vis/neuronVis/GeometryAdapter.py",
+      "new_path": "src/Visual_toolkit/legacy_gl/GeometryAdapter.py",
+      "original_sha256": "906aa5854b7edf2925a37718fa9cf37f42b9316b3a23a94afbc22da050e4e402",
+      "staged_sha256": "83f27ce6e77303c3679d55d600ac31402b9eef3bc1cf7e2560605bf6a756ec97",
+      "canonical_sha256": "83f27ce6e77303c3679d55d600ac31402b9eef3bc1cf7e2560605bf6a756ec97"
+    },
+    {
+      "original_path": "neuron-vis/neuronVis/Node.py",
+      "new_path": "src/Visual_toolkit/legacy_gl/Node.py",
+      "original_sha256": "4c9bebb933c880241c918326c7577a8ff68c6aedc0647ad4769823ee5c8fa18d",
+      "staged_sha256": "76874b34bfda57e6ee061db6d7020f87836a6be59bd13befc5f66de2fd329ace",
+      "canonical_sha256": "76874b34bfda57e6ee061db6d7020f87836a6be59bd13befc5f66de2fd329ace"
+    },
+    {
+      "original_path": "neuron-vis/neuronVis/SwcLoader.py",
+      "new_path": "src/Visual_toolkit/legacy_gl/SwcLoader.py",
+      "original_sha256": "37e0c2ea9d5b83ea4cffc6c2e8654d9546c8eb6405c248e45b7b4867d1c5df92",
+      "staged_sha256": "aa2c5063b7d80d4ae8b9a177e4428f9afa7bdf269c75ff4d6349b411c97bc93e",
+      "canonical_sha256": "aa2c5063b7d80d4ae8b9a177e4428f9afa7bdf269c75ff4d6349b411c97bc93e"
+    },
+    {
+      "original_path": "neuron-vis/neuronVis/glutils.py",
+      "new_path": "src/Visual_toolkit/legacy_gl/glutils.py",
+      "original_sha256": "97ebe7acdc0eee87abd938b5177a362e5dd923eeb42b90cf22d05e1d4250f698",
+      "staged_sha256": "88fbf028902eaa76c699850c565b844b74c5144cb4a753100c1d1141ed2013c0",
+      "canonical_sha256": "88fbf028902eaa76c699850c565b844b74c5144cb4a753100c1d1141ed2013c0"
+    },
+    {
+      "original_path": "neuron-vis/neuronVis/Arcball.py",
+      "new_path": "src/Visual_toolkit/legacy_gl/Arcball.py",
+      "original_sha256": "1d8ad9d14936b00d9584fbaef43cc9910b9716b09b9d511f4b3c2620770aefd5",
+      "staged_sha256": "d7327d6ff3ad026c7568eb355e86c56c53ffcbf881d3314a4dccc7a0c2d30707",
+      "canonical_sha256": "d7327d6ff3ad026c7568eb355e86c56c53ffcbf881d3314a4dccc7a0c2d30707"
+    },
+    {
+      "original_path": "main_scripts/Visual_toolkit/montage.py",
+      "new_path": "src/Visual_toolkit/volume_montage.py",
+      "original_sha256": "96e47ad8689e869f6e602e4cc2832ba19ae1ef7cbb4cb89e4af0cbe09b45604e",
+      "staged_sha256": "58892012ec2e8b2234d7b9354db82ff5321885a6845020edd7cbc8eeb1a97a55",
+      "canonical_sha256": "58892012ec2e8b2234d7b9354db82ff5321885a6845020edd7cbc8eeb1a97a55",
+      "scope": "Reusable numerical/render helpers and generic view constants; cohort, workbook, source selection, and legacy layout remain in the projectome adapter."
+    }
+  ],
+  "generated_files": [
+    {
+      "path": "src/Visual_toolkit/_version.py",
+      "staged_sha256": "06caca764b9b9194c058b4d2130aba710613c495ab8d6600f33740caac0248a0",
+      "canonical_sha256": "06caca764b9b9194c058b4d2130aba710613c495ab8d6600f33740caac0248a0"
+    },
+    {
+      "path": "src/Visual_toolkit/__init__.py",
+      "staged_sha256": "cfa3d7c2ed90be0000668ebff16e018ba3c6d1fecf4fe7d2f8b95fffe009b362",
+      "canonical_sha256": "42f0e81c34a7a8c38e0e1f61737f1126d4c03a1a8c92005625794ffa66f88a66"
+    },
+    {
+      "path": "src/Visual_toolkit/__main__.py",
+      "staged_sha256": "ad08eb1ad6720bd9511b0ce678bcea04879173f1bb50787bb72ad09e18eaf44a",
+      "canonical_sha256": "ad08eb1ad6720bd9511b0ce678bcea04879173f1bb50787bb72ad09e18eaf44a"
+    },
+    {
+      "path": "src/Visual_toolkit/cli.py",
+      "staged_sha256": "c60c4917cfc8f334a07d85d088223bf53c3701fa6efe2f596900403d77c9117b",
+      "canonical_sha256": "a5e0499f57fe52ea2d16502c207eb48f3f68a261f76c3a4e94e75a498caf7960"
+    },
+    {
+      "path": "src/Visual_toolkit/sources.py",
+      "staged_sha256": "3ffebb3ed0b9b032208a55a51d69b56bffdadb8f1f74e1db579e6c84b64eeb74",
+      "canonical_sha256": "2c0f98c10f48f99b6dfde88b6aa0dbbfa08c0111d9a4b1f560ccde676b6fee4c"
+    },
+    {
+      "path": "pyproject.toml",
+      "staged_sha256": "012965aea01343de3371f26f45e7e8a2aed0183c120a4946f97361c6cb6561ea",
+      "canonical_sha256": "13561b1d4d9ea0d37bacee0a6d3216b48ee1771599cdb527a92485de0b5e5e45"
+    },
+    {
+      "path": ".gitignore",
+      "staged_sha256": "cf507fcf68b0fd0bfc9aac607c723e295f95aff91cb0689c49f196391d0a9be1",
+      "canonical_sha256": "cf507fcf68b0fd0bfc9aac607c723e295f95aff91cb0689c49f196391d0a9be1"
+    },
+    {
+      "path": "README.md",
+      "staged_sha256": "9e3eb07364d16607d489d9d51d6956b80af64da6c529f38b20ab5b61c6bdb9f4",
+      "canonical_sha256": "93989e67dcd00011f5df2e6f99e91d4b62148c3a7f59b0c917b8ecc6f1559024"
+    },
+    {
+      "path": "CHANGELOG.md",
+      "staged_sha256": "77e72af13950f60fecc37b87ef9fa7a321742ddd70ef19fe024f32cb1c72e9f5",
+      "canonical_sha256": "ab5170a70a3cac626099aa914bd1946ffb309d5c7ec25e3fc5d321697f20bb0a"
+    },
+    {
+      "path": "requirements-runtime-win-py313.lock",
+      "staged_sha256": "ce525f4b13f15674334411d83a69469cce0a948f8cea21395e5331f6a8339140",
+      "canonical_sha256": "ce525f4b13f15674334411d83a69469cce0a948f8cea21395e5331f6a8339140"
+    },
+    {
+      "path": "tests/test_cli.py",
+      "staged_sha256": "1bbb8690e255e6e4b77f8e53796f1ec32cc4c72dec59af5614e7ba5bb6a2a556",
+      "canonical_sha256": "e7a9fb1bf2eab01083d12860d2c97070b3a38a617e4f2c646c5c95c74369f749"
+    },
+    {
+      "path": "tests/test_core_sources_config.py",
+      "staged_sha256": "b6f130efada56dcd9643f98dd926fc13579b24b219acbb66e4aa90223bb35a7b",
+      "canonical_sha256": "aa7eb51335f4ffee113a902ae79072ac0d38705185f498d46411aaf72cb652d9"
+    },
+    {
+      "path": "src/Visual_toolkit/opengl.py",
+      "canonical_sha256": "d958fd5f115d20179ac1fd4221de5d5ffd1646577e39ca3152d6f5701ef1115e",
+      "purpose": "optional original legacy OpenGL worker or focused tests/dependency lock"
+    },
+    {
+      "path": "src/Visual_toolkit/legacy_gl/__init__.py",
+      "canonical_sha256": "89fd547fa025bd40a63269dc8826710e0ecb77ed8f18d733834ee47bf63b201b",
+      "purpose": "optional original legacy OpenGL worker or focused tests/dependency lock"
+    },
+    {
+      "path": "tests/test_opengl.py",
+      "canonical_sha256": "22fb6ed9083651bab9d39feb53afe9d951039e72d7465f19f933cb4e12472eaf",
+      "purpose": "optional original legacy OpenGL worker or focused tests/dependency lock"
+    },
+    {
+      "path": "tests/test_legacy_gl.py",
+      "canonical_sha256": "fe20a5b747d7011c52e48e5cfbac7750189345c07fb1822ea845a44023f2e058",
+      "purpose": "optional original legacy OpenGL worker or focused tests/dependency lock"
+    },
+    {
+      "path": "requirements-legacy-gl-win-py313.lock",
+      "canonical_sha256": "6410bd132132838d94ff953207579fcb280c1815e1782a0822c0e8914a1216cd",
+      "purpose": "optional original legacy OpenGL worker or focused tests/dependency lock"
+    },
+    {
+      "path": "src/Visual_toolkit/volume_montage.py",
+      "staged_sha256": "58892012ec2e8b2234d7b9354db82ff5321885a6845020edd7cbc8eeb1a97a55",
+      "canonical_sha256": "58892012ec2e8b2234d7b9354db82ff5321885a6845020edd7cbc8eeb1a97a55"
+    },
+    {
+      "path": "tests/test_volume_montage.py",
+      "staged_sha256": "a1c814963da10681912fbf7caf0f01d9191f7d70e80449dd0d90623976e016a1",
+      "canonical_sha256": "d57f8c039749a96c0d4007cb40ee48b42d30d5c2ac12adaf6a231f0280d2d949"
+    },
+    {
+      "path": "src/Visual_toolkit/default_config.yaml",
+      "status": "package-owned neutral default template; creation lifecycle in progress"
+    }
+  ],
+  "excluded_project_owned": [
+    "main_scripts/Visual_toolkit/montage.py",
+    "main_scripts/Visual_toolkit/visual_toolkit_config.yaml"
+  ],
+  "data_copied": false,
+  "license": "not assigned; resolve before public remote",
+  "consumer_owned_source_mapping": [
+    {
+      "original_path": "main_scripts/Visual_toolkit/gui.py",
+      "new_path": "src/Visual_toolkit/gui.py",
+      "original_sha256": "71a00ea9b3633c5d74c583df9f8c6d7c4ee8dfffdb0c65a3f717e47ffabebb4d",
+      "staged_sha256": "e801544e0b870aca3127424394f820c5a9cf25819865e8e164c4e3338c3630c7",
+      "canonical_deployed_sha256": "199522ad055482988edccbe5ee8e14c595858b4055c3e6406543f300ab8d0f5e"
+    }
+  ],
+  "package_version": "1.10.0.dev0",
+  "deployment_status": "Current canonical 1.10.0.dev0 installed; exact 22-member source/wheel/installed parity; installed suite 73/73 before test-only assertion edit plus affected test 1/1 after; Projectome 115/115; pip check clean. Synthetic plate technical-only; no scientific/native GUI acceptance.",
+  "runtime_environment": {
+    "path": "D:/Visual_toolkit/.venv",
+    "python": "CPython 3.13.13",
+    "include_system_site_packages": false,
+    "source": "neutral Miniconda base, separate from projectome Python 3.10",
+    "status": "Current approved wheel installed and verified; isolated CPython 3.13.13; pip check clean; installed suite 67/67."
+  },
+  "original_source_version": "1.9.1",
+  "source_version": "1.10.0.dev0",
+  "recovery_artifacts": [
+    {
+      "path": "../original_source_changes.patch",
+      "sha256": "60ed1a5244482614857db584d854012a47c271ab221b1ed50a689e15a228cee7",
+      "purpose": "restore original dirty GUI changes"
+    }
+  ],
+  "canonical_deployment": {
+    "scope": "Canonical extracted 2D package/settings/TIFF recovery, current GUI neuron list and optional faithful original legacy OpenGL worker; generic NIfTI mesh.py/brain_view.py and VisPy GUI remain absent and staging-only.",
+    "version": "1.10.0.dev0",
+    "wheel": {
+      "path": "dist/lifecycle_20261019/visual_toolkit-1.10.0.dev0-py3-none-any.whl",
+      "sha256": "d3ecfbf168e523fae2358ff7ebd5acf1bdf7fba7cf3fc6af7f076dc4dc062e5e",
+      "size_bytes": 141003,
+      "supersedes_sha256": "ccaea2fba4683ba2337de5ed93bca077f33290e71c087cf3d11495868244674b"
+    },
+    "worker_python": "D:/Visual_toolkit/.venv/Scripts/python.exe",
+    "worker_prefix": "D:/Visual_toolkit/.venv",
+    "worker_python_version": "CPython 3.13.13",
+    "include_system_site_packages": false,
+    "installed_package": "D:/Visual_toolkit/.venv/Lib/site-packages/Visual_toolkit",
+    "package_python_sha256": {
+      "cli.py": "0fb65ceb56779a53a3d1347a3860c6279ffe7cd838370ab4248d4c9eb4572cab",
+      "context_resources.py": "4de953ab6eb538817a5cb53dff145f6569133605908909d352a727087640b386",
+      "dataset_config.py": "fedc6e4edb4e47dee14d98a70dcebbaeb830d275ec8afaf9eac9ef6e25433c27",
+      "derived_context.py": "4d0e17e576c223c09f6d458d0faf5a1b3b98de39e077ca1c850702e1eaee1845",
+      "gui.py": "0e56499b70e355b773d2e4fe78eb5aac5e6aef7f3aaee244b3b12d05d3a74ef6",
+      "image_geometry.py": "93f88b04b11289e49288dbca537763ff597c1c16bed629174897c376b164ca26",
+      "opengl.py": "d958fd5f115d20179ac1fd4221de5d5ffd1646577e39ca3152d6f5701ef1115e",
+      "review_lock.py": "5d30591c8e91beaf7a13eb66b684336c1039e860f4fb9dafebd41066bdcab427",
+      "settings.py": "2dda1ed5b1da0109f1e33df5a71655f3f5eadcf4df47f44b3e24e716729bd9d2",
+      "sources.py": "2c0f98c10f48f99b6dfde88b6aa0dbbfa08c0111d9a4b1f560ccde676b6fee4c",
+      "toolkit.py": "9caf81b7d0cce92d8b478af90eebe1753a5e867c4bf0d3bfd75f611678aa7d1d",
+      "volume_montage.py": "58892012ec2e8b2234d7b9354db82ff5321885a6845020edd7cbc8eeb1a97a55",
+      "_version.py": "06caca764b9b9194c058b4d2130aba710613c495ab8d6600f33740caac0248a0",
+      "__init__.py": "42f0e81c34a7a8c38e0e1f61737f1126d4c03a1a8c92005625794ffa66f88a66",
+      "__main__.py": "ad08eb1ad6720bd9511b0ce678bcea04879173f1bb50787bb72ad09e18eaf44a",
+      "legacy_gl/Arcball.py": "d7327d6ff3ad026c7568eb355e86c56c53ffcbf881d3314a4dccc7a0c2d30707",
+      "legacy_gl/GeometryAdapter.py": "83f27ce6e77303c3679d55d600ac31402b9eef3bc1cf7e2560605bf6a756ec97",
+      "legacy_gl/glutils.py": "88fbf028902eaa76c699850c565b844b74c5144cb4a753100c1d1141ed2013c0",
+      "legacy_gl/Node.py": "76874b34bfda57e6ee061db6d7020f87836a6be59bd13befc5f66de2fd329ace",
+      "legacy_gl/RenderGL.py": "665f964a30fd93980991a72a035049730b924d40cc7db03a76507fffedaaa99e",
+      "legacy_gl/SwcLoader.py": "aa2c5063b7d80d4ae8b9a177e4428f9afa7bdf269c75ff4d6349b411c97bc93e",
+      "legacy_gl/__init__.py": "89fd547fa025bd40a63269dc8826710e0ecb77ed8f18d733834ee47bf63b201b"
+    },
+    "generated_python_test_hashes": {
+      "tests/test_cli.py": "785243d15d2b395cfffcaaff970a8e187e2215fdb3e4210ebcf5f8aad6bbd368",
+      "tests/test_core_sources_config.py": "3b93b7c74f14ba84be356aef4ed5b4bc84931a9dd4c6bcf76fa8d1c20d9e2e3a",
+      "tests/test_legacy_gl.py": "fe20a5b747d7011c52e48e5cfbac7750189345c07fb1822ea845a44023f2e058",
+      "tests/test_neuron_catalog.py": "76d2d7f722d267c57e892507af2163dfbf55d8572eb85405529b921b5eb65ddc",
+      "tests/test_opengl.py": "22fb6ed9083651bab9d39feb53afe9d951039e72d7465f19f933cb4e12472eaf",
+      "tests/test_volume_montage.py": "d57f8c039749a96c0d4007cb40ee48b42d30d5c2ac12adaf6a231f0280d2d949"
+    },
+    "source_hashes": {
+      "README.md": "cd85df4382ae5f01222941b34f35f630db33af898019b393d7a096533edb1a85",
+      "CHANGELOG.md": "a3eea8ee9170a1551595383213c6c126b3c0d53698bc99685f34e917a1403727",
+      "pyproject.toml": "322431d4e39b3988bc7441da6ec9b5146c3cce5ad868a267c9f663c3917d8f63",
+      "Visual_toolkit/cli.py": "0fb65ceb56779a53a3d1347a3860c6279ffe7cd838370ab4248d4c9eb4572cab",
+      "Visual_toolkit/context_resources.py": "4de953ab6eb538817a5cb53dff145f6569133605908909d352a727087640b386",
+      "Visual_toolkit/dataset_config.py": "fedc6e4edb4e47dee14d98a70dcebbaeb830d275ec8afaf9eac9ef6e25433c27",
+      "Visual_toolkit/derived_context.py": "4d0e17e576c223c09f6d458d0faf5a1b3b98de39e077ca1c850702e1eaee1845",
+      "Visual_toolkit/gui.py": "0e56499b70e355b773d2e4fe78eb5aac5e6aef7f3aaee244b3b12d05d3a74ef6",
+      "Visual_toolkit/image_geometry.py": "93f88b04b11289e49288dbca537763ff597c1c16bed629174897c376b164ca26",
+      "Visual_toolkit/opengl.py": "d958fd5f115d20179ac1fd4221de5d5ffd1646577e39ca3152d6f5701ef1115e",
+      "Visual_toolkit/review_lock.py": "5d30591c8e91beaf7a13eb66b684336c1039e860f4fb9dafebd41066bdcab427",
+      "Visual_toolkit/settings.py": "2dda1ed5b1da0109f1e33df5a71655f3f5eadcf4df47f44b3e24e716729bd9d2",
+      "Visual_toolkit/sources.py": "2c0f98c10f48f99b6dfde88b6aa0dbbfa08c0111d9a4b1f560ccde676b6fee4c",
+      "Visual_toolkit/toolkit.py": "9caf81b7d0cce92d8b478af90eebe1753a5e867c4bf0d3bfd75f611678aa7d1d",
+      "Visual_toolkit/volume_montage.py": "58892012ec2e8b2234d7b9354db82ff5321885a6845020edd7cbc8eeb1a97a55",
+      "Visual_toolkit/_version.py": "06caca764b9b9194c058b4d2130aba710613c495ab8d6600f33740caac0248a0",
+      "Visual_toolkit/__init__.py": "42f0e81c34a7a8c38e0e1f61737f1126d4c03a1a8c92005625794ffa66f88a66",
+      "Visual_toolkit/__main__.py": "ad08eb1ad6720bd9511b0ce678bcea04879173f1bb50787bb72ad09e18eaf44a",
+      "Visual_toolkit/legacy_gl/Arcball.py": "d7327d6ff3ad026c7568eb355e86c56c53ffcbf881d3314a4dccc7a0c2d30707",
+      "Visual_toolkit/legacy_gl/GeometryAdapter.py": "83f27ce6e77303c3679d55d600ac31402b9eef3bc1cf7e2560605bf6a756ec97",
+      "Visual_toolkit/legacy_gl/glutils.py": "88fbf028902eaa76c699850c565b844b74c5144cb4a753100c1d1141ed2013c0",
+      "Visual_toolkit/legacy_gl/Node.py": "76874b34bfda57e6ee061db6d7020f87836a6be59bd13befc5f66de2fd329ace",
+      "Visual_toolkit/legacy_gl/RenderGL.py": "665f964a30fd93980991a72a035049730b924d40cc7db03a76507fffedaaa99e",
+      "Visual_toolkit/legacy_gl/SwcLoader.py": "aa2c5063b7d80d4ae8b9a177e4428f9afa7bdf269c75ff4d6349b411c97bc93e",
+      "Visual_toolkit/legacy_gl/__init__.py": "89fd547fa025bd40a63269dc8826710e0ecb77ed8f18d733834ee47bf63b201b"
+    },
+    "verification": {
+      "installed_suite": "PASS; 79/79 installed tests in 19.910 s (2026-10-19)",
+      "projectome_compatibility": "PASS; 115/115 in 22.705 s across 13 named modules (2026-10-19)",
+      "pip_check": "PASS; no broken requirements.",
+      "package_member_gate": "22/22 exact source/wheel/installed Python member parity.",
+      "gui_entrypoint": "Installed visual-toolkit-gui executable targets Visual_toolkit.gui:main.",
+      "config_policy_gate": "Generic geometry/correction/default descriptors validated; focused core 27/27 before assertion-only test edit and affected test 1/1 afterward.",
+      "config_lifecycle": "PASS; YAML suffix, scoped validation/materialization, implicit-only migration, config-relative swc_cache and parse-before-initialize verified; user JSON not migrated.",
+      "native_gui": "PASS 2026-10-19; Sky native window2 API on the unsandboxed installed GUI exercised Neuron list (574 rows) and 3D brain view (viewer window opened). Evidence: D:/projectome_analysis/work/visual_toolkit_extraction/validation/gui_*_20261019.png and gui_smoke_20261019.json."
+    },
+    "optional_locks": {
+      "core": "requirements-runtime-win-py313.lock",
+      "legacy_gl": "requirements-legacy-gl-win-py313.lock",
+      "legacy_gl_sha256": "6410bd132132838d94ff953207579fcb280c1815e1782a0822c0e8914a1216cd",
+      "resolution": "Both hash locks resolved offline together; packages installed only in isolated D worker. SSH/Paramiko remains unvalidated; credential unavailable."
+    },
+    "projectome_validation_receipt": {
+      "path": "D:/projectome_analysis/work/visual_toolkit_extraction/validation.json",
+      "sha256": "24bff59aac0799c87242f4e10b22fbefa6e31f39a8c87598e53ff578fec58f90"
+    }
+  },
+  "final_visual_artifact": {
+    "png": "D:/projectome_analysis/work/visual_toolkit_extraction/validation/legacy_gl_251637_001_camera.png",
+    "png_sha256": "263bb276f50785c65d4e16d62bdacee6b77a46781b1075c47bd661d3453c8490",
+    "receipt": "D:/projectome_analysis/work/visual_toolkit_extraction/validation/legacy_gl_251637_001_camera.json",
+    "receipt_sha256": "73c9ad3bc943cfe82a942cdd88c771dc80d126e23e700f68982a1464aee292fb",
+    "mesh_sha256": "0e93cc89a9397d8bbd047cfbbb438bd494fa6842de89f7122b17beac8becbfec",
+    "processed_swc_sha256": "82df0f6ad819cf205a2d77ebe6b2249034ec78a8e1b6c5bb79f65e92b4f8fed8",
+    "scope": "Bounded one-neuron local render; coordinates as stored, no transform/mirror; technical framing only."
+  },
+  "unreleased_settings_interface": {
+    "status": "Current wheel built/installed; shared settings and external config-policy interfaces verified; installed 73/73 before assertion-only test edit plus affected test 1/1 after; Projectome 115/115; 22-member parity.",
+    "scope": "Unified review, brain-view, and montage settings discovery/resolution/application; existing JSON/YAML config layers and GUI format-preserving validation.",
+    "files": [
+      {
+        "path": "src/Visual_toolkit/settings.py",
+        "sha256": "2dda1ed5b1da0109f1e33df5a71655f3f5eadcf4df47f44b3e24e716729bd9d2",
+        "purpose": "Shared scoped settings API and config layering"
+      },
+      {
+        "path": "src/Visual_toolkit/__init__.py",
+        "sha256": "42f0e81c34a7a8c38e0e1f61737f1126d4c03a1a8c92005625794ffa66f88a66",
+        "purpose": "Lazy package exports"
+      },
+      {
+        "path": "src/Visual_toolkit/toolkit.py",
+        "sha256": "9caf81b7d0cce92d8b478af90eebe1753a5e867c4bf0d3bfd75f611678aa7d1d",
+        "purpose": "Config-driven geometry/correction policy and compatibility API"
+      },
+      {
+        "path": "src/Visual_toolkit/dataset_config.py",
+        "sha256": "b4f66d9d084f2d26a2f383df274969258c5521d50b067904b4dfb09fcc1e700c",
+        "purpose": "Generic schema validation for sample descriptors and GUI defaults"
+      },
+      {
+        "path": "src/Visual_toolkit/gui.py",
+        "sha256": "8b2ec24a0ed35a21486ee175ca4e0b599a1e8415482deaaa0a3333c43c3aa5de",
+        "purpose": "Config-driven GUI identity/autoload defaults"
+      },
+      {
+        "path": "src/Visual_toolkit/cli.py",
+        "sha256": "a5e0499f57fe52ea2d16502c207eb48f3f68a261f76c3a4e94e75a498caf7960",
+        "purpose": "CLI settings resolution and render dispatch"
+      },
+      {
+        "path": "tests/test_core_sources_config.py",
+        "sha256": "aa7eb51335f4ffee113a902ae79072ac0d38705185f498d46411aaf72cb652d9",
+        "purpose": "Policy, malformed config, geometry and atomicity regressions"
+      },
+      {
+        "path": "tests/test_cli.py",
+        "sha256": "e7a9fb1bf2eab01083d12860d2c97070b3a38a617e4f2c646c5c95c74369f749",
+        "purpose": "CLI precedence and configuration regressions"
+      },
+      {
+        "path": "README.md",
+        "sha256": "93989e67dcd00011f5df2e6f99e91d4b62148c3a7f59b0c917b8ecc6f1559024",
+        "purpose": "Config schema and operator guide"
+      },
+      {
+        "path": "CHANGELOG.md",
+        "sha256": "ab5170a70a3cac626099aa914bd1946ffb309d5c7ec25e3fc5d321697f20bb0a",
+        "purpose": "Local/unreleased package history"
+      }
+    ],
+    "source_verification": "Source/wheel/installed parity 22/22; installed 73/73 before assertion-only test edit plus affected 1/1 after; Projectome 115/115; pip check clean.",
+    "wheel_sha256": "a926fdb6212b2bfc23a77f93224060cb0ae845efea7f95818af53f279ea136ba",
+    "wheel_size_bytes": 137141,
+    "wheel_python_members": 22,
+    "source_wheel_installed_parity": true,
+    "readme_metadata_utf8_equal": true,
+    "projectome_validation_receipt": "D:/projectome_analysis/work/visual_toolkit_extraction/validation.json",
+    "historical_prebuild_source_validation": {
+      "status": "Historical source-only validation before wheel build; superseded by canonical_deployment verification.",
+      "source_verification": "Four focused unittest modules 49/49 passed before the installed-import path correction; no wheel rebuild/install at that earlier checkpoint."
+    },
+    "metadata_only_rebuild": {
+      "previous_wheel_sha256": "2b7d1e4032afbfdd1c88c5a22486b9176ee2bc2e7ce5560860b079a312030782",
+      "current_wheel_sha256": "878d9c9d892f7a41574e79fb95e60aa9fe46ac33114b4751ae64da83c43163c5",
+      "reason": "Corrected docs statement about review toolkit initialization potentially reading selected config; brain-view/montage defaults still use package defaults absent explicit config. No Python source changed."
+    },
+    "pending_source_change": "Resolved in the current canonical wheel: reviewed geometry, corrected-source policy and GUI identity/autoload values now come from explicit config. Other fixed legacy rendering assumptions remain.",
+    "historical_pending_source_change": "Single-panel labeled CLI review gets font-bbox-derived legend clearance; multi-panel and unlabeled review layouts retain legacy spacing. Focused regressions passed: package bbox/layout target 1/1 and projectome three-panel legend compatibility 1/1. Not yet included in the recorded wheel.",
+    "projectome_validation_receipt_sha256": "24bff59aac0799c87242f4e10b22fbefa6e31f39a8c87598e53ff578fec58f90"
+  },
+  "superseded_canonical_deployment_history": {
+    "wheel": {
+      "path": "dist/visual_toolkit-1.10.0.dev0-py3-none-any.whl",
+      "sha256": "cfbb55e0c30e2e42a1290ba84e5f909fbf0b6a39dcb3b916fedebde96cc5d5cd",
+      "size_bytes": 115313
+    },
+    "installed_test_result": "PASS; isolated CPython 3.13.13 -I suite 47/47 in 9.822 s on final wheel.",
+    "member_count": 20,
+    "status": "Prior fcbb55e wheel / pre-shared-settings build; retained as history, superseded by current canonical gate.",
+    "metadata_only_previous_wheel": {
+      "sha256": "2b7d1e4032afbfdd1c88c5a22486b9176ee2bc2e7ce5560860b079a312030782",
+      "size_bytes": 132560,
+      "reason": "README accuracy correction; all 22 Python members remain byte-identical, so prior 66 installed and 114 projectome tests remain same-code evidence."
+    },
+    "previous_readme_only_wheel": {
+      "wheel": {
+        "path": "dist/visual_toolkit-1.10.0.dev0-py3-none-any.whl",
+        "sha256": "878d9c9d892f7a41574e79fb95e60aa9fe46ac33114b4751ae64da83c43163c5",
+        "size_bytes": 132617,
+        "supersedes_sha256": "2b7d1e4032afbfdd1c88c5a22486b9176ee2bc2e7ce5560860b079a312030782"
+      },
+      "installed_tests": "66/66",
+      "projectome_compatibility": "114/114 on unchanged pre-layout-fix code",
+      "superseded_by": "84132301f9a39f34b21ff309d44547579c28371144905d663367f8f965be85db"
+    },
+    "overbroad_layout_candidate": {
+      "wheel": {
+        "path": "dist/visual_toolkit-1.10.0.dev0-py3-none-any.whl",
+        "sha256": "84132301f9a39f34b21ff309d44547579c28371144905d663367f8f965be85db",
+        "size_bytes": 133231,
+        "supersedes_sha256": "878d9c9d892f7a41574e79fb95e60aa9fe46ac33114b4751ae64da83c43163c5"
+      },
+      "installed_tests": "67/67",
+      "projectome_compatibility": "113/114; one small labeled-figure legend clearance RuntimeError.",
+      "reason": "Rejected as overbroad; corrected final behavior limits clearance adjustment to labeled single-panel renders and retains multi-panel/unlabeled spacing.",
+      "superseded_by_sha256": "ccaea2fba4683ba2337de5ed93bca077f33290e71c087cf3d11495868244674b"
+    },
+    "pre_config_policy_externalization": {
+      "status": "Historical canonical deployment; superseded by the externalized config-policy gate.",
+      "wheel": {
+        "path": "dist/visual_toolkit-1.10.0.dev0-py3-none-any.whl",
+        "sha256": "ccaea2fba4683ba2337de5ed93bca077f33290e71c087cf3d11495868244674b",
+        "size_bytes": 133236,
+        "supersedes_sha256": "84132301f9a39f34b21ff309d44547579c28371144905d663367f8f965be85db"
+      },
+      "verification": {
+        "source_suite": "Focused corrected installed-import guard test passed 1/1 in source mode; earlier 49-test focused source suite predates that test-only correction.",
+        "installed_suite": "PASS; 67/67 tests under isolated CPython 3.13.13 using -I, including labeled review axes/shared legend clearance and legacy-spacing tests.",
+        "pip_check": "PASS; no broken requirements.",
+        "projectome_compatibility": "PASS; same 13 named modules 114/114 in 24.007 seconds after final narrowed layout fix.",
+        "package_hash_gate": "PASS; all 22 Python members exactly match canonical source, wheel and installed site-packages.",
+        "gui_entrypoint": "PASS; visual-toolkit-gui -> Visual_toolkit.gui:main; installed executable present.",
+        "settings_config": "PASS; installed resolver confirms current YAML settings and CLI override precedence; project config SHA-256 b47b21a9087ee8de4a53c3ce07052374ac3c75580853479263e3e23f13d98787.",
+        "readme_metadata": "PASS; UTF-8 README and wheel METADATA descriptions match after newline/trailing-whitespace normalization.",
+        "open_gl_snapshot": "PASS technical framing review; see work/visual_toolkit_extraction/validation/legacy_gl_251637_001_camera.png and adjacent receipt. No anatomical/registration acceptance.",
+        "gui_visual": "Installed GUI entry metadata/executable and Tk runtime verified; native screenshot/button visual review remains held until user returns.",
+        "documentation_rebuild": "PASS; rebuilt and reinstalled for README-only config-loading clarification. All 22 Python modules remain byte-identical; previous 66/66 installed suite and 114/114 projectome suite validate unchanged code. Rechecked metadata equality, GUI entry point, and pip check.",
+        "layout_fix_scope": "Reviewed narrow labeled single-panel clearance adjustment; multi-panel and unlabeled legacy spacing preserved."
+      },
+      "source_hashes": {
+        "README.md": "4e490c2ef765377f49d3d3953679bc77df8806d5ac02dcf4deddf9d153c0180f",
+        "CHANGELOG.md": "490d8974596aef87bd970eb3b417119dbf214581b118d807eea0222cb1d3ac24",
+        "pyproject.toml": "13561b1d4d9ea0d37bacee0a6d3216b48ee1771599cdb527a92485de0b5e5e45",
+        "requirements-runtime-win-py313.lock": "ce525f4b13f15674334411d83a69469cce0a948f8cea21395e5331f6a8339140",
+        "requirements-legacy-gl-win-py313.lock": "6410bd132132838d94ff953207579fcb280c1815e1782a0822c0e8914a1216cd",
+        "src/Visual_toolkit/cli.py": "a5e0499f57fe52ea2d16502c207eb48f3f68a261f76c3a4e94e75a498caf7960",
+        "src/Visual_toolkit/context_resources.py": "4de953ab6eb538817a5cb53dff145f6569133605908909d352a727087640b386",
+        "src/Visual_toolkit/dataset_config.py": "293a2b5cf11238d54035a6a6bcb86d3d2e7e0ca10a659b2f32568bb873e95d38",
+        "src/Visual_toolkit/derived_context.py": "4d0e17e576c223c09f6d458d0faf5a1b3b98de39e077ca1c850702e1eaee1845",
+        "src/Visual_toolkit/gui.py": "4ad73b28793237152de12758bd9b1698bdd1d3788a924ef7a8e6d04bd5e5bf2b",
+        "src/Visual_toolkit/image_geometry.py": "93f88b04b11289e49288dbca537763ff597c1c16bed629174897c376b164ca26",
+        "src/Visual_toolkit/opengl.py": "d958fd5f115d20179ac1fd4221de5d5ffd1646577e39ca3152d6f5701ef1115e",
+        "src/Visual_toolkit/review_lock.py": "5d30591c8e91beaf7a13eb66b684336c1039e860f4fb9dafebd41066bdcab427",
+        "src/Visual_toolkit/settings.py": "2dda1ed5b1da0109f1e33df5a71655f3f5eadcf4df47f44b3e24e716729bd9d2",
+        "src/Visual_toolkit/sources.py": "2c0f98c10f48f99b6dfde88b6aa0dbbfa08c0111d9a4b1f560ccde676b6fee4c",
+        "src/Visual_toolkit/toolkit.py": "cf40c0bf962089ff8326b15bdedc4d98e4a18c14340520a67d86bd74c54e8f7c",
+        "src/Visual_toolkit/volume_montage.py": "58892012ec2e8b2234d7b9354db82ff5321885a6845020edd7cbc8eeb1a97a55",
+        "src/Visual_toolkit/_version.py": "06caca764b9b9194c058b4d2130aba710613c495ab8d6600f33740caac0248a0",
+        "src/Visual_toolkit/__init__.py": "42f0e81c34a7a8c38e0e1f61737f1126d4c03a1a8c92005625794ffa66f88a66",
+        "src/Visual_toolkit/__main__.py": "ad08eb1ad6720bd9511b0ce678bcea04879173f1bb50787bb72ad09e18eaf44a",
+        "src/Visual_toolkit/legacy_gl/Arcball.py": "d7327d6ff3ad026c7568eb355e86c56c53ffcbf881d3314a4dccc7a0c2d30707",
+        "src/Visual_toolkit/legacy_gl/GeometryAdapter.py": "83f27ce6e77303c3679d55d600ac31402b9eef3bc1cf7e2560605bf6a756ec97",
+        "src/Visual_toolkit/legacy_gl/glutils.py": "88fbf028902eaa76c699850c565b844b74c5144cb4a753100c1d1141ed2013c0",
+        "src/Visual_toolkit/legacy_gl/Node.py": "76874b34bfda57e6ee061db6d7020f87836a6be59bd13befc5f66de2fd329ace",
+        "src/Visual_toolkit/legacy_gl/RenderGL.py": "665f964a30fd93980991a72a035049730b924d40cc7db03a76507fffedaaa99e",
+        "src/Visual_toolkit/legacy_gl/SwcLoader.py": "aa2c5063b7d80d4ae8b9a177e4428f9afa7bdf269c75ff4d6349b411c97bc93e",
+        "src/Visual_toolkit/legacy_gl/__init__.py": "89fd547fa025bd40a63269dc8826710e0ecb77ed8f18d733834ee47bf63b201b"
+      }
+    }
+  },
+  "config_policy_externalization": {
+    "project_config": {
+      "path": "D:/projectome_analysis/main_scripts/Visual_toolkit/visual_toolkit_config.yaml",
+      "sha256": "9c43c87e42e45056d34f3d982126b63d28f1e8be5d040d516cbf89c2cb38a0f6"
+    },
+    "per_user_config": {
+      "path": "C:/Users/laika_yan/AppData/Roaming/VisualToolkit/visual_toolkit_config.json",
+      "sha256": "26017960698f810a033a57bf7b03547702464113f270c16e8ff95891825192c6"
+    },
+    "scope": [
+      "sample geometry descriptor",
+      "corrected 5-um source descriptor and isolated cache namespace",
+      "GUI identity/neuron/autoload defaults"
+    ],
+    "limit": "No renderer/math/source-loader or scientific acceptance behavior changed. Fixed legacy display assumptions remain."
+  }
+}
