@@ -9,6 +9,11 @@ tree but has not been committed or published; dates are Asia/Shanghai.
 
 ## 1.11.0.dev0 — 2026-10-19 (local/unreleased)
 
+- Added the `review` extra, which resolves the Tk/NumPy/Matplotlib core plus
+  TIFF, NIfTI, SciPy/scikit-image, montage and legacy-GL packages in one
+  `pip install "visual-toolkit[review]"`. Third-party distributions are not
+  embedded in the wheel; the documented wheelhouse + `--no-index` route keeps
+  offline setup fast and reproducible.
 - Redesigned the Tk review window to the approved single-column layout — titled
   **Review steps** block (the original LOAD/TARGET/ACQUIRE/FALLBACK/REVIEW copy
   plus an orange **3D VIEW** step), a primary teal **Neuron list** button beside
