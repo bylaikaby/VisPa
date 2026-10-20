@@ -15,6 +15,7 @@ param(
     [string]$Wheel = '',
     [string]$Wheelhouse = '',
     [string]$Config = '',
+    [switch]$Source,
     [switch]$NoPath,
     [switch]$NoLaunch,
     [switch]$NoShortcut,
@@ -29,12 +30,13 @@ if (-not $Config -and $env:VISUAL_TOOLKIT_CONFIG) {
 if (-not $Wheelhouse -and $env:VISUAL_TOOLKIT_WHEELHOUSE) {
     $Wheelhouse = $env:VISUAL_TOOLKIT_WHEELHOUSE
 }
-if (-not $Wheel) {
+if (-not $Wheel -and -not $Source) {
     $wheels = Get-ChildItem -Path (Join-Path $repo 'dist') -Recurse `
         -Filter 'visual_toolkit-*.whl' -File -ErrorAction SilentlyContinue |
         Sort-Object LastWriteTime -Descending
     if ($wheels) { $Wheel = $wheels[0].FullName }
 }
+$sourceMode = $Source -or (-not $Wheel -and (Test-Path (Join-Path $repo 'pyproject.toml')))
 $venvPython = Join-Path $InstallDir 'Scripts\python.exe'
 $plan = [ordered]@{
     install_dir = $InstallDir
@@ -42,6 +44,7 @@ $plan = [ordered]@{
     wheel = $Wheel
     wheelhouse = $Wheelhouse
     config = $Config
+    source_install = $sourceMode
     add_user_path = (-not $NoPath)
     launch_gui = (-not $NoLaunch)
     desktop_shortcut = (-not $NoShortcut)
@@ -50,14 +53,17 @@ if ($DryRun) {
     $plan | ConvertTo-Json
     return
 }
-if (-not $Wheel -and -not $Wheelhouse) {
-    throw "No wheel found under $repo\dist. Pass -Wheel or -Wheelhouse."
+if (-not $Wheel -and -not $sourceMode) {
+    throw "No wheel found under $repo\dist and no pyproject.toml is present."
 }
 if ($Python -eq 'py' -and -not (Get-Command py -ErrorAction SilentlyContinue)) {
     $Python = 'python'
 }
 if (-not (Test-Path -LiteralPath $venvPython)) {
     & $Python -m venv $InstallDir
+    if ($LASTEXITCODE -ne 0) {
+        throw "Creating the virtual environment failed with exit code $LASTEXITCODE."
+    }
 }
 
 $pipArgs = @('-m', 'pip', 'install', '--disable-pip-version-check', '--upgrade')
@@ -68,18 +74,36 @@ if ($Wheelhouse) {
         '--find-links', (Join-Path $Wheelhouse 'optional-py313')
     )
 }
-$spec = if ($Wheel) {
+$spec = if ($sourceMode) {
+    '.[3d]'
+} elseif ($Wheel) {
     "visual-toolkit[3d] @ file:///$($Wheel.Replace('\', '/'))"
 } else {
     'visual-toolkit[3d]'
 }
 $pipArgs += $spec
-& $venvPython @pipArgs
+if ($sourceMode) {
+    Push-Location $repo
+    try {
+        & $venvPython @pipArgs
+        if ($LASTEXITCODE -ne 0) {
+            throw "pip install failed with exit code $LASTEXITCODE."
+        }
+    } finally { Pop-Location }
+} else {
+    & $venvPython @pipArgs
+    if ($LASTEXITCODE -ne 0) {
+        throw "pip install failed with exit code $LASTEXITCODE."
+    }
+}
 
 if (-not $NoPath) {
     $pathArgs = @('install-path')
     if ($Config) { $pathArgs += @('--config', $Config) }
     & (Join-Path $InstallDir 'Scripts\visual-toolkit.exe') @pathArgs
+    if ($LASTEXITCODE -ne 0) {
+        throw "Registering the user PATH failed with exit code $LASTEXITCODE."
+    }
 }
 $gui = Join-Path $InstallDir 'Scripts\visual-toolkit-gui.exe'
 if (-not $NoShortcut) {

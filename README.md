@@ -6,16 +6,22 @@ This extraction is **1.11.0.dev0, local and unreleased**. It preserves the exist
 
 ## Quick start (Windows)
 
-1. Open PowerShell in `D:\Visual_toolkit`.
-2. Run:
+1. Clone from GitHub (first time only; the repository is private, so run `gh auth login` first if needed):
 
    ```powershell
-   .\install.cmd
+   gh repo clone bylaikaby/Visual_toolkit D:\Visual_toolkit
+   cd D:\Visual_toolkit
+   ```
+
+2. Install from the checkout:
+
+   ```powershell
+   .\install.cmd -Source
    ```
 
 3. The GUI opens. A **VisualToolkit** shortcut is added to the desktop for later use.
 
-The installer creates `%LOCALAPPDATA%\VisualToolkit\venv`, installs the newest wheel with the `[3d]` review stack, adds it to your user PATH, uses `VISUAL_TOOLKIT_CONFIG` when set, and launches the GUI.
+`-Source` installs the code currently in the GitHub checkout and the full `[3d]` stack. If the repo is already cloned, only step 2 is needed. Without `-Source`, the installer uses the newest local wheel under `dist\` when one exists.
 
 If the config is not set:
 

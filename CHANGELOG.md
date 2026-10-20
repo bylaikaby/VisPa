@@ -12,7 +12,9 @@ tree but has not been committed or published; dates are Asia/Shanghai.
 - Added a one-command Windows installer (`install.cmd` + `tools/install.ps1`):
   it creates `%LOCALAPPDATA%\VisualToolkit\venv`, installs the newest wheel
   with `[3d]`, optionally uses an offline wheelhouse, registers the user PATH
-  and config, and launches the GUI. `-DryRun` prints the resolved plan.
+  and config, creates a desktop shortcut, and launches the GUI. `-Source`
+  installs the current GitHub checkout; `-DryRun` prints the resolved plan.
+  Native pip/venv failures now stop the installer instead of reporting success.
 - The Sample card now shows the current neuron's **Portal region** from the
   configured catalog (for example `PrCO_49`), refreshed on Sample/Neuron ID
   changes and cached per sample. The value is display metadata; it does not
