@@ -4,13 +4,54 @@ VisualToolkit renders local macaque microscopy arrays into soma and context revi
 
 This extraction is **1.11.0.dev0, local and unreleased**. It preserves the existing rendering and source-verification algorithms. The DS00 sagittal panel retains its two documented axis hypotheses and its manifest, hash, geometry, and source checks; those hypotheses remain candidates pending independent anatomical validation. No study data, lab configuration, or private source tree is included.
 
-## Install and run
+## Quick start (Windows)
 
-Use Python 3.10 or newer in a dedicated virtual environment; do not install into the projectome analysis interpreter. In PowerShell, create and use a local environment with `py -3 -m venv .venv`, then install the core with `.\.venv\Scripts\python.exe -m pip install .`. The full review/3D stack is the `[3d]` extra: `.\.venv\Scripts\python.exe -m pip install ".[3d]"`. The legacy SSH fallback is manual: `.\.venv\Scripts\python.exe -m pip install paramiko`. `python -m build` creates distributions when the `build` tool is already installed; `python -m unittest discover -s tests -v` runs the package checks.
+1. Open PowerShell in `D:\Visual_toolkit`.
+2. Run:
 
-The `[3d]` extra carries the full review stack. A wheel cannot embed third-party distributions; for fast offline setup, build a wheelhouse once with `pip download "visual-toolkit[3d]" -d wheelhouse`, then install with `pip install --no-index --find-links wheelhouse "visual-toolkit[3d]"`.
+   ```powershell
+   .\install.cmd
+   ```
 
-To expose `visual-toolkit` and `visual-toolkit-gui` in new terminals, run `& '.\.venv\Scripts\visual-toolkit.exe' install-path --dry-run`, then repeat without `--dry-run`. It adds only the current venv's `Scripts` folder to the **current user's** PATH, is idempotent, and supports `--remove`. Add `--config <project yaml>` to also set `VISUAL_TOOLKIT_CONFIG` for the current user. Wheel installs do not modify PATH automatically.
+3. The GUI opens. A **VisualToolkit** shortcut is added to the desktop for later use.
+
+The installer creates `%LOCALAPPDATA%\VisualToolkit\venv`, installs the newest wheel with the `[3d]` review stack, adds it to your user PATH, uses `VISUAL_TOOLKIT_CONFIG` when set, and launches the GUI.
+
+If the config is not set:
+
+```powershell
+.\install.cmd -Config D:\projectome_analysis\main_scripts\Visual_toolkit\visual_toolkit_config.yaml
+```
+
+Offline / no download:
+
+```powershell
+.\install.cmd -Wheelhouse D:\projectome_analysis\work\visual_toolkit_extraction\wheelhouse
+```
+
+Preview only:
+
+```powershell
+.\install.cmd -DryRun
+```
+
+Uninstall:
+
+```powershell
+visual-toolkit install-path --remove
+Remove-Item -Recurse "$env:LOCALAPPDATA\VisualToolkit\venv"
+```
+
+## Using the GUI
+
+1. Enter a Sample ID and Neuron ID, or click **Neuron list** to choose one.
+2. Click **Load & Auto-Fill Soma**.
+3. Click **Render**; the output folder is shown in **Saving**.
+4. Use **3D brain view** and **fnt-tracer** for the 3D and tracing views.
+
+## Manual install
+
+Use Python 3.10 or newer in a dedicated virtual environment; do not install into the projectome analysis interpreter. Create `.venv` with `py -3 -m venv .venv`, install the core with `.\.venv\Scripts\python.exe -m pip install .`, and add the full review/3D stack with `.\.venv\Scripts\python.exe -m pip install ".[3d]"`. The legacy SSH fallback is manual: `.\.venv\Scripts\python.exe -m pip install paramiko`. A wheel cannot embed third-party distributions; for offline setup, build a wheelhouse once with `pip download "visual-toolkit[3d]" -d wheelhouse` and install with `pip install --no-index --find-links wheelhouse "visual-toolkit[3d]"`. Run `visual-toolkit install-path` to expose the commands. `python -m build` creates distributions when the `build` tool is installed; `python -m unittest discover -s tests -v` runs the package checks.
 
 The projectome main environment remains Python 3.10. On this machine, the standalone worker uses a full Windows x64 CPython 3.13.13 virtual environment at `.venv`, created from the neutral Miniconda base; `pyvenv.cfg` sets `include-system-site-packages = false`. Install its exact core plus TIFF, NIfTI and YAML dependency set from `requirements-runtime-win-py313.lock` with `& '.\.venv\Scripts\python.exe' -m pip install --require-hashes -r requirements-runtime-win-py313.lock`. To add the legacy OpenGL viewer, install both locks together by adding `-r requirements-legacy-gl-win-py313.lock` to that command. SSH dependencies are outside these locks. `pyproject.toml` keeps general package requirements, and this verification does not establish broader minimum or maximum supported versions.
 
