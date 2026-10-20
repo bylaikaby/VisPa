@@ -2,7 +2,7 @@
 Visual_toolkit.py - Macaque Brain Hybrid-Resolution Visualization Toolkit
 
 Version: 1.11.0.dev0 (local/unreleased)
-Last updated: 2026-10-19
+Last updated: 2026-10-20
 Change history: CHANGELOG.md (this folder)
 Status: candidate (visual review pending)
 
@@ -934,7 +934,14 @@ class Visual_toolkit:
             # frame inside its own cube, never larger than that cube, and record the
             # achieved centre offset instead of pretending the soma is centred.
             if soma_block not in blocks:
-                raise ValueError("Soma's central high-resolution cube is unavailable")
+                detail = self._block_errors.get(tuple(soma_block), "no cube returned")
+                raise ValueError(
+                    f"Soma's central high-resolution cube {tuple(soma_block)} "
+                    f"is unavailable for {self.sample_id} at "
+                    f"{[round(v, 1) for v in center_um]} from "
+                    f"{HTTP_HOST}/{HTTP_PATH} and the local cache "
+                    f"({len(missing)} requested cube(s) unavailable); "
+                    f"last error: {detail}")
             block = blocks[soma_block]
             window_wpx = min(candidates[-1][0], block.shape[2])
             window_hpx = min(candidates[-1][1], block.shape[1])

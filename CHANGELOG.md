@@ -9,6 +9,11 @@ tree but has not been committed or published; dates are Asia/Shanghai.
 
 ## 1.11.0.dev0 — 2026-10-19 (local/unreleased)
 
+- Soma acquisition now reports the missing central cube index, sample, soma
+  coordinates, HTTP source and last cache/HTTP error instead of a generic
+  "cube is unavailable" message. No lower-resolution fallback was added: the
+  legacy `get_high_res_block` path also required the central cube, and the
+  three 252385 test neurons have no legacy SomaBlock.
 - Renamed the full-stack extra to `[3d]` (2026-10-20): `pip install
   "visual-toolkit[3d]"` resolves the TIFF/NIfTI, SciPy/scikit-image, montage
   and legacy-GL packages, while the core stays NumPy/Matplotlib/Pillow/PyYAML.
