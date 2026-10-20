@@ -6,9 +6,9 @@ This extraction is **1.11.0.dev0, local and unreleased**. It preserves the exist
 
 ## Install and run
 
-Use Python 3.10 or newer in a dedicated virtual environment; do not install into the projectome analysis interpreter. In PowerShell, create and use a local environment with `py -3 -m venv .venv`, then install with `.\.venv\Scripts\python.exe -m pip install .`. Optional features use `.\.venv\Scripts\python.exe -m pip install ".[tiff,nifti,montage,ssh,yaml]"`. The core requires NumPy, Matplotlib, and Pillow; TIFF, NIfTI, montage (NIfTI plus SciPy), SSH and YAML configuration are optional extras, while Tk GUI uses Python's Tk runtime. `python -m build` creates distributions when the `build` tool is already installed; `python -m unittest discover -s tests -v` runs the package checks.
+Use Python 3.10 or newer in a dedicated virtual environment; do not install into the projectome analysis interpreter. In PowerShell, create and use a local environment with `py -3 -m venv .venv`, then install the core with `.\.venv\Scripts\python.exe -m pip install .`. The full review/3D stack is the `[3d]` extra: `.\.venv\Scripts\python.exe -m pip install ".[3d]"`. The legacy SSH fallback is manual: `.\.venv\Scripts\python.exe -m pip install paramiko`. `python -m build` creates distributions when the `build` tool is already installed; `python -m unittest discover -s tests -v` runs the package checks.
 
-For the complete review stack in one command, use `pip install "visual-toolkit[review]"`. A wheel cannot embed third-party distributions; for fast offline setup, build a wheelhouse once with `pip download "visual-toolkit[review]" -d wheelhouse`, then install with `pip install --no-index --find-links wheelhouse "visual-toolkit[review]"`.
+The `[3d]` extra carries the full review stack. A wheel cannot embed third-party distributions; for fast offline setup, build a wheelhouse once with `pip download "visual-toolkit[3d]" -d wheelhouse`, then install with `pip install --no-index --find-links wheelhouse "visual-toolkit[3d]"`.
 
 To expose `visual-toolkit` and `visual-toolkit-gui` in new terminals, run `& '.\.venv\Scripts\visual-toolkit.exe' install-path --dry-run`, then repeat without `--dry-run`. It adds only the current venv's `Scripts` folder to the **current user's** PATH, is idempotent, and supports `--remove`. Add `--config <project yaml>` to also set `VISUAL_TOOLKIT_CONFIG` for the current user. Wheel installs do not modify PATH automatically.
 
@@ -26,7 +26,7 @@ Use `--role context` for the 5 µm style. `--set PATH=VALUE` overrides review se
 
 ## One-volume DS00 montage
 
-`visual-toolkit montage` renders one explicitly named 3D NIfTI into the preserved five DS00 views. It does not discover cohorts, read workbooks, choose files, or apply a transform. The affine must yield LPS voxel axis codes, as in the source montage. NIfTI affines map voxel indices into RAS+ world coordinates; each panel labels increasing projected anatomical directions in RAS+ millimetres. The header must declare millimetres, or the operator must explicitly declare `--units mm` when the header units are unknown; known non-mm units are rejected. The output includes a compact intensity-image legend. Install `.[montage]` for nibabel and SciPy.
+`visual-toolkit montage` renders one explicitly named 3D NIfTI into the preserved five DS00 views. It does not discover cohorts, read workbooks, choose files, or apply a transform. The affine must yield LPS voxel axis codes, as in the source montage. NIfTI affines map voxel indices into RAS+ world coordinates; each panel labels increasing projected anatomical directions in RAS+ millimetres. The header must declare millimetres, or the operator must explicitly declare `--units mm` when the header units are unknown; known non-mm units are rejected. The output includes a compact intensity-image legend. The `[3d]` extra provides the montage dependencies.
 
 ```powershell
 & '.\.venv\Scripts\visual-toolkit.exe' montage --input 'D:\data\sample.nii.gz' --output 'D:\review\sample-5view.png' --units mm --max-voxels 64000000 --set display_gamma=0.88 --dry-run
@@ -68,8 +68,8 @@ Review the resolved header, affine, setting values, output path, and receipt pat
 
 These are display settings inherited from the project montage. They do not change anatomy or establish registration or scientific acceptance.
 
-The optional legacy OpenGL viewer is installed into the dedicated worker with
-`& '.\.venv\Scripts\python.exe' -m pip install '.[legacy-gl]'`. It requires a local OBJ mesh, an explicit sample ID and processed
+The legacy OpenGL viewer is installed into the dedicated worker with
+`& '.\.venv\Scripts\python.exe' -m pip install '.[3d]'`. It requires a local OBJ mesh, an explicit sample ID and processed
 SWC filename, and explicit coordinate-frame and coordinate-unit declarations in
 `sources.brain_view`; it does not resolve cohort identities, use raw SWCs, fetch remote
 data, or apply registration/mirroring. Preview the resolved paths and display settings
@@ -89,7 +89,7 @@ keys `eye_direction`, `up`, `camera_distance_scale`, `line_width`, `soma_radius`
 `background`, `mesh_color`, `neuron_color`, and `window_size`, or pass the matching
 `--eye-direction`, `--up`, `--camera-distance-scale`, `--line-width`, `--soma-radius`,
 `--background`, `--mesh-color`, `--neuron-color`, and `--window-size` flags. The core
-package remains installable without these optional OpenGL dependencies.
+package remains installable without the `[3d]` OpenGL dependencies.
 
 | Setting / CLI flag | Default | Effect | Valid range |
 |---|---:|---|---|
@@ -160,7 +160,7 @@ vector relationship; add `--config PATH` to include configured current values.
 
 ## Sources and configuration
 
-No specimen, share, URL, SSH host, or project directory is configured by default. An absent config provides per-user cache and output folders only. Set `VISUAL_TOOLKIT_CONFIG` or pass `--config PATH`; the older `PROJECTOME_DATASETS` environment variable remains accepted. JSON works with the standard library. YAML needs the `yaml` extra. Relative paths resolve from the config file's folder, or from the optional top-level `base_dir`.
+No specimen, share, URL, SSH host, or project directory is configured by default. An absent config provides per-user cache and output folders only. Set `VISUAL_TOOLKIT_CONFIG` or pass `--config PATH`; the older `PROJECTOME_DATASETS` environment variable remains accepted. JSON works with the standard library; YAML is included in the core install. Relative paths resolve from the config file's folder, or from the optional top-level `base_dir`.
 
 Create the per-user YAML without overwriting anything already present:
 

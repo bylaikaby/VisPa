@@ -11,14 +11,7 @@ requires-python = ">=3.10"
 dependencies = ["numpy", "matplotlib", "Pillow", "PyYAML"]
 
 [project.optional-dependencies]
-tiff = ["tifffile"]
-nifti = ["nibabel"]
-montage = ["nibabel", "scipy"]
-yaml = ["PyYAML"]
-ssh = ["paramiko"]
-gui = []
-legacy-gl = ["PyOpenGL==3.1.10", "PyGLM==2.8.3", "glfw==2.11.0", "trimesh==5.1.1", "vispy==0.17.0"]
-review = [
+"3d" = [
     "freetype-py",
     "glfw==2.11.0",
     "hsluv",
