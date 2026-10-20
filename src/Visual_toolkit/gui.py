@@ -496,12 +496,16 @@ class NeuroVisGUI:
         self._catalog_sample_id = None
         self._catalog_snapshot = None
         self._catalog_rows_by_iid = {}
+        self._portal_region_cache = {}
         self._neuron_catalog_window = None
         self.neuron_catalog_table = None
         self.neuron_catalog_load_button = None
         self.neuron_catalog_info = tk.StringVar(value="Portal inventory has not been loaded.")
         
         self.build_full_gui()
+        self.sample_id.trace_add('write', lambda *_: self._refresh_portal_region())
+        self.neuron_id.trace_add('write', lambda *_: self._refresh_portal_region())
+        self._refresh_portal_region()
         
         # Start only after the form has been built; dry-run never reaches this path.
         if auto_load and sample_id and neuron_id:
@@ -630,13 +634,17 @@ class NeuroVisGUI:
         body = self._card(inner, "Sample")
         self._field(body, "Sample ID", self.sample_id, 0, width=16)
         self._field(body, "Neuron ID", self.neuron_id, 1, width=16)
+        self.portal_region_var = tk.StringVar(value="Portal region: —")
+        tk.Label(body, textvariable=self.portal_region_var, bg=C['card'],
+                 fg=C['muted'], font=('Segoe UI', 9), anchor='w').grid(
+                     row=2, column=0, columnspan=3, sticky='w', pady=(P(2), P(2)))
         self._flat_button(body, "Load & Auto-Fill Soma", self.load_and_autofill,
                           primary=True).grid(
-            row=2, column=0, columnspan=3, sticky='ew', pady=(P(8), P(2)))
+            row=3, column=0, columnspan=3, sticky='ew', pady=(P(8), P(2)))
         self.neuron_catalog_open_button = self._flat_button(
             body, "Neuron list", self._open_neuron_catalog, primary=True)
         self.neuron_catalog_open_button.grid(
-            row=3, column=0, columnspan=3, sticky='ew', pady=(P(4), P(2)))
+            row=4, column=0, columnspan=3, sticky='ew', pady=(P(4), P(2)))
 
         # Review steps: one row per stage, all six visible without scrolling.
         steps_body = self._card(inner, "Step guide")
@@ -1326,6 +1334,47 @@ class NeuroVisGUI:
             if row:
                 table.selection_set(row)
         self.load_selected_catalog_row()
+
+    def _refresh_portal_region(self):
+        """Show the configured catalog's region for the current neuron."""
+        sample = self.sample_id.get().strip()
+        neuron = self.neuron_id.get().strip()
+        if not sample or not neuron:
+            self.portal_region_var.set("Portal region: —")
+            return
+        mapping = self._portal_region_cache.get(sample)
+        if mapping is not None:
+            self._apply_portal_region(neuron, mapping)
+            return
+
+        def worker():
+            try:
+                from .dataset_config import load
+                result = IT.list_neurons(sample, load(self.config_path))
+                mapping = {
+                    str(row["neuron_id"]): (row.get("portal_region") or "Unassigned")
+                    for row in result["rows"]}
+            except Exception as exc:
+                self._ui_call(
+                    self.portal_region_var.set,
+                    f"Portal region: unavailable ({exc})")
+                return
+            self._ui_call(self._store_portal_regions, sample, mapping)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _store_portal_regions(self, sample, mapping):
+        self._portal_region_cache[sample] = mapping
+        if self.sample_id.get().strip() == sample:
+            self._apply_portal_region(self.neuron_id.get().strip(), mapping)
+
+    def _apply_portal_region(self, neuron, mapping):
+        if not neuron:
+            self.portal_region_var.set("Portal region: —")
+        elif neuron in mapping:
+            self.portal_region_var.set(f"Portal region: {mapping[neuron]}")
+        else:
+            self.portal_region_var.set("Portal region: not in catalog")
 
     def _refresh_dataset_sources(self):
         sample = self.sample_id.get().strip() or 'sample'

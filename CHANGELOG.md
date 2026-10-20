@@ -9,6 +9,10 @@ tree but has not been committed or published; dates are Asia/Shanghai.
 
 ## 1.11.0.dev0 — 2026-10-19 (local/unreleased)
 
+- The Sample card now shows the current neuron's **Portal region** from the
+  configured catalog (for example `PrCO_49`), refreshed on Sample/Neuron ID
+  changes and cached per sample. The value is display metadata; it does not
+  load coordinates or establish anatomical membership.
 - Soma acquisition now reports the missing central cube index, sample, soma
   coordinates, HTTP source and last cache/HTTP error instead of a generic
   "cube is unavailable" message. No lower-resolution fallback was added: the
