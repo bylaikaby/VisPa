@@ -2,11 +2,11 @@
 
 VisualToolkit renders local macaque microscopy arrays into soma and context review figures. The source tree is packaged independently from projectome; the projectome checkout can connect its cohort scripts and configured lab data through the provider and configuration interfaces described below.
 
-This extraction is **1.11.0.dev0, local and unreleased**. It preserves the existing rendering and source-verification algorithms. The DS00 sagittal panel retains its two documented axis hypotheses and its manifest, hash, geometry, and source checks; those hypotheses remain candidates pending independent anatomical validation. No study data, lab configuration, or private source tree is included.
+This checkout is **1.11.0.dev1, local and unreleased**. It preserves the existing rendering and source-verification algorithms. The DS00 sagittal panel retains its two documented axis hypotheses and its manifest, hash, geometry, and source checks; those hypotheses remain candidates pending independent anatomical validation. No study data, lab configuration, or private source tree is included. `extraction_manifest.json` records the historical extraction snapshot; today's build, installer selection and validation hashes are recorded in the shared project receipt.
 
 ## Quick start (Windows)
 
-1. Clone from GitHub (first time only; the repository is private, so run `gh auth login` first if needed):
+1. Clone from GitHub (first time only):
 
    ```powershell
    gh repo clone bylaikaby/Visual_toolkit D:\Visual_toolkit
@@ -21,18 +21,18 @@ This extraction is **1.11.0.dev0, local and unreleased**. It preserves the exist
 
 3. The GUI opens. A **VisualToolkit** shortcut is added to the desktop for later use.
 
-`-Source` installs the code currently in the GitHub checkout and the full `[3d]` stack. If the repo is already cloned, only step 2 is needed. Without `-Source`, the installer uses the newest local wheel under `dist\` when one exists.
+The installer defaults to the code in the current checkout and installs the full `[3d]` stack. If the repo is already cloned, only step 2 is needed. Pass `-Wheel PATH` to install a built wheel explicitly; `-Wheel` and `-Source` cannot be combined.
 
 If the config is not set:
 
 ```powershell
-.\install.cmd -Config D:\projectome_analysis\main_scripts\Visual_toolkit\visual_toolkit_config.yaml
+.\install.cmd -Config C:\data\visual_toolkit_config.yaml
 ```
 
 Offline / no download:
 
 ```powershell
-.\install.cmd -Wheelhouse D:\projectome_analysis\work\visual_toolkit_extraction\wheelhouse
+.\install.cmd -Wheel .\dist\build_20261022_dev1\visual_toolkit-1.11.0.dev1-py3-none-any.whl -Wheelhouse C:\path\to\wheelhouse
 ```
 
 Preview only:
@@ -123,7 +123,7 @@ data, or apply registration/mirroring. Preview the resolved paths and display se
 before launching a window:
 
 ```powershell
-& 'D:\Visual_toolkit\.venv\Scripts\python.exe' -I -m Visual_toolkit brain-view --sample 251637 --neuron 001.swc --config 'D:\projectome_analysis\main_scripts\Visual_toolkit\visual_toolkit_config.yaml' --dry-run
+& '.\.venv\Scripts\python.exe' -I -m Visual_toolkit brain-view --sample 251637 --neuron 001.swc --config 'C:\data\visual_toolkit_config.yaml' --dry-run
 ```
 
 Remove `--dry-run` for an interactive review, or add `--snapshot 'D:\review\view.png'`
@@ -229,7 +229,7 @@ unless `swc_cache_root` or `swc_root` is declared. The GUI parses its arguments
 first (abbreviations are rejected) and initializes only a valid implicit launch;
 `--config`, `--dry-run` and a configured environment path never create a file.
 
-For SSH sections, set `ssh_sample_id` alongside `ssh_remote_base`; that remote root is only eligible for the matching sample. `low_res_ssh_base=` is an explicit per-instance override. The GUI identity and auto-load behavior is selected from `visual_toolkit.default_sample`, `visual_toolkit.default_neuron`, and `visual_toolkit.auto_load`. A package-only config leaves these blank and disables startup auto-load; explicit CLI/constructor identities take precedence, and `--no-autoload` always disables it. Use the existing project YAML with `--config PATH` to preserve lab-specific paths and source settings. In the GUI, **Neuron list** loads the configured portal snapshot; selecting a row fills only the Neuron ID field. **Render** (F5) produces the complete panel set (Soma, Context, Sagittal and TrioPlot); there is no per-panel selection. **Save outputs** beside Render chooses whether the run writes files (unticked = preview only), and **Save Soma NIfTI (.nii.gz)** in Saving controls the soma volume. The **3D brain view** action carries the current sample, neuron ID, and any loaded portal region to the isolated original OpenGL worker, using the configured processed SWC only. **fnt-tracer** opens `<sample>_<neuron>.fnt` from `visual_toolkit.fnt_tracer.project_root`, or starts the configured tracer alone when no project exists. There is no bulk action.
+For SSH sections, set `ssh_sample_id` alongside `ssh_remote_base`; that remote root is only eligible for the matching sample. `low_res_ssh_base=` is an explicit per-instance override. The GUI identity and auto-load behavior is selected from `visual_toolkit.default_sample`, `visual_toolkit.default_neuron`, and `visual_toolkit.auto_load`. A package-only config leaves these blank and disables startup auto-load; explicit CLI/constructor identities take precedence, and `--no-autoload` always disables it. Use the existing project YAML with `--config PATH` to preserve lab-specific paths and source settings. In the GUI, **Neuron list** loads the configured portal snapshot; selecting a row fills only the Neuron ID field. **Render** (F5) produces the complete panel set (Soma, Context, Sagittal and TrioPlot); there is no per-panel selection. **Save outputs** beside Render chooses whether the run writes files (unticked = preview only), and **Save Soma NIfTI (.nii.gz)** in Saving controls the soma volume. The **3D brain view** action carries the current sample, neuron ID, and any loaded portal region to the isolated original OpenGL worker, using the configured processed SWC only. **fnt-tracer** opens `<sample>_<neuron>.fnt` from `visual_toolkit.fnt_tracer.project_root`, and requires both a configured executable and that matching project. There is no bulk action.
 
 Per-sample `ds00_expected_geometry` declares the expected `shape_ijk`,
 `spacing_mm_ijk`, and `affine_diag` for validation and provenance. A configured
@@ -303,10 +303,23 @@ The processed-DS sagittal implementation requires explicit `sources.dataset_mani
 
 The public Python import remains `Visual_toolkit` for compatibility. `Visual_toolkit.Visual_toolkit`, `REVIEW_SETTINGS`, and the plotting helpers are exposed lazily from `Visual_toolkit.toolkit`. Core rendering accepts in-memory arrays, so a consumer can integrate the package without adopting the standalone acquisition providers or source layout.
 
-Projectome owns its cohort runners, montage adapter, source manifest, and lab-specific configuration. It can depend on this distribution and keep a thin compatibility facade that maps its existing `Visual_toolkit` imports, injects the `IONData` provider, and supplies explicit data roots. The independent package contains only the generic single-volume DS00 renderer, not the cohort montage adapter or its workbook/path/selection logic. It carries no cohort YAML, projectome paths, source data, or NeuronView native panel.
+Projectome owns its cohort runners, montage adapter, source manifest, and lab-specific configuration. It can depend on this distribution and keep a thin compatibility facade that maps its existing `Visual_toolkit` imports, injects the `IONData` provider, and supplies explicit data roots. The independent package contains only the generic single-volume DS00 renderer, not the cohort montage adapter or its workbook/path/selection logic. It carries no cohort YAML or source data; `extraction_manifest.json` preserves historical source path and hash provenance.
 
 ## Package checks
 
-The package tests cover clean import without projectome or `IONData`, config-relative resolution, SWC validation and provider fallback, local coordinate geometry, a tiny-array render with its marker and receipt, DS00 frame parity, montage dry-run no-write behavior, and PNG/receipt output. For publication work, check the exact source manifest and resolve the package license before creating a public remote. No license is assigned by this staged extraction.
+The package tests cover clean import without projectome or `IONData`, config-relative resolution, SWC validation and provider fallback, local coordinate geometry, a tiny-array render with its marker and receipt, DS00 frame parity, montage dry-run no-write behavior, and PNG/receipt output. No license is assigned by this staged extraction.
 
 See [CHANGELOG.md](CHANGELOG.md) for the preserved toolkit history and extraction changes.
+
+
+### Single-neuron resource and FNT preflight
+
+Run `visual-toolkit config-check --config settings.yaml --sample 251637 --neuron 003.swc --dry-run` for a read-only JSON inventory (file hashes, source dates unknown as null, coordinate declarations, cache references and cube route/geometry). Add `--fnt` to require both the configured executable and the exact `<sample>_<neuron>.fnt` or `.decimate.fnt`; this mode returns failure when either is unavailable and never starts the binary. Directory references are not recursively hashed; the inventory alone does not establish complete offline panel coverage or scientific acceptance.
+
+In the GUI, **FNT setup…** exposes **FNT executable** and **Project folder**, each with **Browse…**; **Save paths** persists absolute paths in the active config through the existing validated writer. A config changed while the dialog was open must be reopened before saving. **fnt-tracer** requires the matching project. These two paths default to null in neutral configs and do not change scientific rendering parameters.
+
+Combined review figures derive text wrapping, legend/footer height and labeled-axis separation from the selected font metrics and available axes width; panels retain full image extents and original aspect ratios, anchored at the top. These are automatic layout constraints rather than separate scientific parameters. Tune `figure.review_figsize` and `figure.review_dpi` through the existing settings interface.
+
+Soma inline-label presentation: `--set marker.label_mode=none` (default, role legend only), `short` (S), or `numbered` (1 with a thin leader). Cyan box/cross coordinates are identical in all modes. Existing label font size and offset remain tunable; `visual-toolkit settings --scope review` lists the enum and effects.
+
+GUI Render now uses the same combined legend layout as the bounded runner. Soma/Context use explicit crop-pixel index axes, all standalone PNG tabs carry role legends outside the image, and GUI cache keys include gui.py/toolkit.py hashes so local code changes invalidate earlier figure strips even when the package version stays unchanged.

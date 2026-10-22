@@ -1,8 +1,8 @@
 """
 Visual_toolkit_gui.py - GUI for NeuroVis Visual Toolkit
 
-Version: 1.11.0.dev0 (local/unreleased)
-Last updated: 2026-10-19
+Version: 1.11.0.dev1 (local/unreleased)
+Last updated: 2026-10-22
 Change history: ../../CHANGELOG.md
 Status: candidate (visual review pending)
 
@@ -407,7 +407,7 @@ class NeuroVisGUI:
             configuration, sample_id, neuron_id, auto_load)
         self.identity_source = identity_source
         self.root = root
-        self.root.title("VisualToolkit 1.11.0.dev0 · local review")
+        self.root.title("VisualToolkit 1.11.0.dev1 · local review")
         # Design sizes below are quoted in 96-dpi pixels. Tk fonts follow the
         # display DPI, so the container geometry must follow the same factor or
         # a 200 % display renders text 1.75x larger than the fixed column.
@@ -693,7 +693,7 @@ class NeuroVisGUI:
             ("FNT", "Open the matching fnt-tracer project",
              "Launches visual_toolkit.fnt_tracer.executable with "
              "<sample>_<neuron>.fnt (or .decimate.fnt); if no project exists it "
-             "starts fnt-tracer alone."),
+             "reports the missing matching project."),
         )
         for index, (name, headline, detail) in enumerate(steps):
             self._review_step(steps_inner, index, index + 1, name, headline, detail,
@@ -911,6 +911,8 @@ class NeuroVisGUI:
         fnt_button.configure(font=('Segoe UI', 11, 'bold'), fg='#b95f10',
                              activeforeground='#8a4308', padx=P(22), pady=P(12))
         fnt_button.pack(side='left', padx=(P(10), 0))
+        self._flat_button(action_row, "FNT setup…", self._on_fnt_setup).pack(
+            side='left', padx=(P(6), 0))
         # Status strip
         strip = tk.Frame(self.root, bg=C['strip'], highlightbackground=C['border'],
                          highlightthickness=1)
@@ -1195,7 +1197,7 @@ class NeuroVisGUI:
         self.launch_template_brain_view(sample_id, neuron_id, portal_region)
 
     def _on_fnt_tracer(self):
-        """Open this neuron's FNT project (or fnt-tracer itself) beside the 3D view."""
+        """Open this neuron's exact FNT project beside the 3D view."""
         sample_id = self.sample_id.get().strip()
         neuron_id = self.neuron_id.get().strip()
         if not sample_id or not neuron_id:
@@ -1207,41 +1209,72 @@ class NeuroVisGUI:
         except Exception as exc:
             messagebox.showerror("fnt-tracer", f"Could not read the configuration:\n{exc}")
             return
-        tools = (configuration.get("visual_toolkit") or {}).get("fnt_tracer") or {}
-        executable = tools.get("executable")
-        project_root = tools.get("project_root")
-        if not executable:
-            messagebox.showinfo(
-                "fnt-tracer",
-                "Set visual_toolkit.fnt_tracer.executable in the config YAML "
-                "to enable this button.")
-            return
-        if not os.path.isfile(executable):
-            messagebox.showerror(
-                "fnt-tracer", f"fnt-tracer executable was not found:\n{executable}")
-            return
-        stem = f"{sample_id}_{neuron_id.removesuffix('.swc')}"
-        project = None
-        if project_root:
-            for name in (f"{stem}.fnt", f"{stem}.decimate.fnt"):
-                candidate = os.path.join(project_root, name)
-                if os.path.isfile(candidate):
-                    project = candidate
-                    break
-        command = [executable] + ([project] if project else [])
+        from .cli import fnt_plan
         try:
-            subprocess.Popen(command, cwd=os.path.dirname(executable))
+            plan = fnt_plan(configuration, sample_id, neuron_id)
+        except ValueError as exc:
+            messagebox.showerror('fnt-tracer', str(exc))
+            return
+        if not plan["ready"]:
+            messagebox.showerror("fnt-tracer", "\n".join(plan["errors"]) + "\nUse FNT setup… to configure paths.")
+            return
+        try:
+            subprocess.Popen(plan["command"], cwd=os.path.dirname(plan["executable"]))
         except Exception as exc:
             messagebox.showerror("fnt-tracer", f"Could not start fnt-tracer:\n{exc}")
             return
-        if project:
-            self.update_status(f"fnt-tracer opened: {os.path.basename(project)}")
-            self._append_log(f"fnt-tracer opened {stem}: {project}")
-        else:
-            self.update_status(f"fnt-tracer started; no project file for {stem}")
-            self._append_log(
-                f"fnt-tracer started without a project file for {stem} "
-                f"(searched {project_root or 'no project_root'})")
+        self.update_status(f"fnt-tracer opened: {os.path.basename(plan['project'])}")
+        self._append_log(f"fnt-tracer opened: {plan['project']}")
+
+    def _on_fnt_setup(self):
+        """Browse FNT paths and save through the existing validated config writer."""
+        import json
+        import yaml
+        import hashlib
+        from .dataset_config import load
+        try:
+            configuration = load(self.config_path)
+            path = Path(configuration['path'])
+            original_bytes = path.read_bytes()
+            original_hash = hashlib.sha256(original_bytes).hexdigest()
+            raw = json.loads(original_bytes) if path.suffix.lower() == '.json' else yaml.safe_load(original_bytes)
+            current = configuration.get('visual_toolkit', {}).get('fnt_tracer') or {}
+        except Exception as exc:
+            messagebox.showerror('FNT setup', f'Could not read configuration:\n{exc}')
+            return
+        window = tk.Toplevel(self.root)
+        window.title('FNT setup')
+        window.transient(self.root)
+        values = {key: tk.StringVar(value=str(current.get(key) or '')) for key in ('executable', 'project_root')}
+        for row, (key, label) in enumerate((('executable', 'FNT executable'), ('project_root', 'Project folder'))):
+            tk.Label(window, text=label).grid(row=row, column=0, padx=8, pady=8, sticky='w')
+            tk.Entry(window, textvariable=values[key], width=64).grid(row=row, column=1, padx=8, pady=8)
+            def browse(field=key):
+                selected = filedialog.askopenfilename(parent=window, title='Select fnt-tracer executable') if field == 'executable' else filedialog.askdirectory(parent=window, title='Select FNT project folder')
+                if selected:
+                    values[field].set(selected)
+            tk.Button(window, text='Browse…', command=browse).grid(row=row, column=2, padx=8)
+        tk.Label(window, text='Projects must be named <sample>_<neuron>.fnt or .decimate.fnt.').grid(row=2, column=0, columnspan=3, padx=8, pady=8)
+        def save():
+            selected = {key: value.get().strip() for key, value in values.items()}
+            if not Path(selected['executable']).is_file() or not Path(selected['project_root']).is_dir():
+                messagebox.showerror('FNT setup', 'Choose an existing executable and project folder.', parent=window)
+                return
+            try:
+                current_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+            except OSError as exc:
+                messagebox.showerror('FNT setup', f'Could not recheck configuration:\n{exc}', parent=window)
+                return
+            if current_hash != original_hash:
+                messagebox.showerror('FNT setup', 'Configuration changed while this dialog was open. Reopen setup.', parent=window)
+                return
+            raw['visual_toolkit'] = raw.get('visual_toolkit') or {}
+            raw['visual_toolkit']['fnt_tracer'] = {key: str(Path(value).resolve()) for key, value in selected.items()}
+            content = json.dumps(raw, indent=2) if path.suffix.lower() == '.json' else yaml.safe_dump(raw, sort_keys=False, allow_unicode=True)
+            if self._save_config_text(str(path), content):
+                self.update_status('FNT paths saved; matching project checked when opened')
+                window.destroy()
+        tk.Button(window, text='Save paths', command=save).grid(row=3, column=1, pady=12)
 
     def launch_template_brain_view(self, sample_id: str, neuron_id: str,
                                    portal_region: str = ""):
@@ -1625,6 +1658,7 @@ class NeuroVisGUI:
         except Exception:
             return None
         return {
+            'renderer_sha256': {name: self._file_sha256(Path(__file__).with_name(name)) for name in ('gui.py', 'toolkit.py')},
             'sample': self.sample_id.get().strip(),
             'neuron': self.neuron_id.get().strip(),
             'soma_xyz': xyz,
@@ -2364,7 +2398,7 @@ class NeuroVisGUI:
                 trio_target = request.output_dir if saving else self._preview_target_dir(request)
                 trio_path = toolkit.plot_tri_plot(
                     [panels["Soma"], panels["Context"], panels["Sagittal"]],
-                    request.neuron_id, output_dir=trio_target)
+                    request.neuron_id, output_dir=trio_target, legend=True)
                 paths.append(trio_path)
             specs = {role: self._panel_spec(panel) for role, panel in panels.items()}
             if request.save_outputs and fingerprint is not None:

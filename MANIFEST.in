@@ -1,0 +1,6 @@
+include CHANGELOG.md README.md install.cmd
+include requirements-runtime-win-py313.lock requirements-legacy-gl-win-py313.lock
+include tools/install.ps1
+recursive-include src *.py *.yaml
+recursive-include tests *.py
+exclude extraction_manifest.json

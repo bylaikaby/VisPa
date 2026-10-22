@@ -1,7 +1,7 @@
 """Shared scoped settings discovery and validation for VisualToolkit.
 
-Version: 1.10.0.dev0 (local/unreleased)
-Last updated: 2026-10-18
+Version: 1.11.0.dev1 (local/unreleased)
+Last updated: 2026-10-22
 Change history: ../../CHANGELOG.md
 Status: candidate
 
@@ -60,6 +60,7 @@ def _review_schema(config=None) -> dict[str, Any]:
         "marker.min_px": "display pixels",
         "marker.crosshair_px": "display pixels",
         "marker.label_fontsize": "points",
+        "marker.label_mode": "none | short | numbered",
         "marker.label_offset_px": "display pixels",
         "soma_window.cubes_xy": "source cubes",
         "soma_window.cubes_xy_steps": "source cubes",

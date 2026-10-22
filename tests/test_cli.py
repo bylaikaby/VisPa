@@ -1,7 +1,7 @@
 """CLI contract tests for bounded standalone use.
 
-Version: 1.11.0.dev0 (local/unreleased)
-Last updated: 2026-10-19
+Version: 1.11.0.dev1 (local/unreleased)
+Last updated: 2026-10-22
 Change history: ../CHANGELOG.md
 """
 from __future__ import annotations
@@ -96,7 +96,7 @@ class CliContractTests(unittest.TestCase):
             self.assertEqual(run_cli("--help", cwd=tmp_path).returncode, 0)
             version = run_cli("--version", cwd=tmp_path)
             self.assertEqual(version.returncode, 0)
-            self.assertIn("1.11.0.dev0", version.stdout)
+            self.assertIn("1.11.0.dev1", version.stdout)
 
     def test_settings_command_prints_discoverable_json_without_optional_imports(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -192,7 +192,7 @@ assert main(["settings", "--scope", "all"]) == 0
             plan = json.loads(result.stdout)
             assert_backend_is_installed(self, plan)
             self.assertEqual(plan["schema"], "visual-toolkit.render.v1")
-            self.assertEqual(plan["package_version"], "1.11.0.dev0")
+            self.assertEqual(plan["package_version"], "1.11.0.dev1")
             self.assertTrue(Path(plan["python_executable"]).is_file())
             self.assertTrue(Path(plan["runtime"]["python_executable"]).is_file())
             self.assertTrue(Path(plan["runtime"]["backend_module"]).is_file())
@@ -270,7 +270,7 @@ assert main(["settings", "--scope", "all"]) == 0
             self.assertEqual({path.name for path in output.iterdir()}, {png.name, receipt_path.name})
             self.assertTrue(os.path.samefile(receipt["output_png"], png))
             self.assertEqual(receipt["schema"], "visual-toolkit.render.v1")
-            self.assertEqual(receipt["package_version"], "1.11.0.dev0")
+            self.assertEqual(receipt["package_version"], "1.11.0.dev1")
             runtime = receipt["runtime"]
             self.assertTrue(Path(runtime["python_prefix"]).exists())
             self.assertEqual(runtime["backend_sha256"],
@@ -335,6 +335,31 @@ assert main(["settings", "--scope", "all"]) == 0
                 original_settings_ref.update(original_settings)
                 toolkit.REVIEW_SETTINGS = original_settings_ref
                 toolkit._sync_review_setting_constants()
+
+
+
+
+class FNTResourcePreflightTests(unittest.TestCase):
+    def test_requires_matching_project_and_never_starts_binary(self):
+        from Visual_toolkit.cli import fnt_plan
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            exe = root / 'fnt-tracer.exe'
+            exe.write_bytes(b'not executable')
+            config = {'visual_toolkit': {'fnt_tracer': {'executable': exe, 'project_root': root}}}
+            with mock.patch('subprocess.Popen', side_effect=AssertionError('must not launch')):
+                missing = fnt_plan(config, 's01', '003.swc')
+                self.assertFalse(missing['ready'])
+                self.assertIsNone(missing['command'])
+                project = root / 's01_003.decimate.fnt'
+                project.write_bytes(b'fixture project')
+                ready = fnt_plan(config, 's01', '003.swc')
+                self.assertEqual(ready['command'], [str(exe), str(project)])
+                self.assertTrue(ready['ready'])
+                exe.unlink()
+                self.assertFalse(fnt_plan(config, 's01', '003.swc')['ready'])
+                with self.assertRaises(ValueError):
+                    fnt_plan(config, '../s01', '003.swc')
 
 
 if __name__ == "__main__":

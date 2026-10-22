@@ -1,7 +1,7 @@
 """Local SWC source and explicit adapter seam for source-tree providers.
 
-Version: 1.11.0.dev0 (local/unreleased)
-Last updated: 2026-10-19
+Version: 1.11.0.dev1 (local/unreleased)
+Last updated: 2026-10-22
 Change history: ../../CHANGELOG.md
 """
 from __future__ import annotations

@@ -1,7 +1,7 @@
 """Focused checks for the optional isolated legacy OpenGL renderer.
 
-Version: 1.10.0.dev0 (local/unreleased)
-Last updated: 2026-10-18
+Version: 1.11.0.dev1 (local/unreleased)
+Last updated: 2026-10-22
 Change history: ../CHANGELOG.md
 """
 from __future__ import annotations
@@ -50,7 +50,7 @@ class LegacyGLIsolationTests(unittest.TestCase):
                 self.assertNotIn("IONData", text)
                 self.assertNotIn("getFileFromServer", text)
                 self.assertNotIn("sys.path", text)
-                self.assertNotIn(r"D:\projectome_analysis", text)
+                self.assertNotIn("projectome_analysis", text)
         adapter_source = (package_dir / "GeometryAdapter.py").read_text(encoding="utf-8")
         self.assertIn("readFile(processed_swc_path)", adapter_source)
         self.assertIn("somaRadius=200", adapter_source)

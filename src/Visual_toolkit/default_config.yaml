@@ -1,5 +1,5 @@
 # VisualToolkit neutral package defaults; add only local paths and identities you choose.
-# Version: 1.10.0.dev0 (local/unreleased) | Last updated: 2026-10-18
+# Version: 1.11.0.dev1 (local/unreleased) | Last updated: 2026-10-22
 # Change history: ../../CHANGELOG.md
 version: 1
 base_dir: .
@@ -30,6 +30,7 @@ visual_toolkit:
       marker.min_px: 8.0
       marker.crosshair_px: 60.0
       marker.label_fontsize: 12
+      marker.label_mode: none
       marker.label_offset_px: 22.0
       soma_window.cubes_xy: 1.5
       soma_window.cubes_xy_steps:

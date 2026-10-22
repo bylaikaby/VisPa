@@ -4,8 +4,23 @@ One consolidated history for the standalone package. `README.md` is the operator
 guide; per-module headers carry `Version:` / `Last updated:` / `Change history:`
 and point here.
 
-Entries are newest first. "Local/unreleased" means the change is in the working
-tree but has not been committed or published; dates are Asia/Shanghai.
+Entries are newest first. "Local/unreleased" identifies a development build
+that has not been released; Git history records when changes were committed or
+published. Dates are Asia/Shanghai.
+
+## 1.11.0.dev1 — 2026-10-22 (local/unreleased)
+- Advance the local build identity for today's packaging and make the installer use its current source checkout by default; explicit `-Wheel` remains available, and conflicting source/wheel options fail clearly. This avoids choosing stale same-version distributions by filesystem mtime.
+- Document explicit-wheel offline installation and preserve `extraction_manifest.json` as historical extraction provenance. No renderer algorithm or scientific result changed.
+- Validation: installer selection dry-runs, source/sdist/wheel inspection, fresh isolated install, installed package and focused Projectome tests recorded in the shared validation receipt.
+
+## 1.11.0.dev0 — 2026-10-22 (local/unreleased)
+- Add measured outside-image role legends to every standalone panel PNG, preserving full image extent and indexed axes; no source/intensity changes.
+- Route GUI review figures through the shared legend layout, expose true crop-pixel axes in Soma/Context single and combined views, and fingerprint GUI/toolkit code hashes so old strips are not silently reused under the same local package version.
+- Default inline soma labels to none while retaining the cyan box/cross and role legend; expose marker.label_mode none/short/numbered through settings, with compact S or numbered callout alternatives. Shared single-panel and combined rendering use the same marker helper.
+- Derive combined-figure footer wrapping, physical height and labeled-axis clearance from rendered font metrics; top-anchor full-extent panels to align titles/images across aspects. No image crop, resampling, intensity or coordinate change.
+- Add a read-only exact-neuron resource inventory to `config-check` and strict FNT executable plus matching-project preflight; no binary version command is executed, unavailable shares remain unverified rather than missing.
+- Add **FNT setup…** with executable/project-folder browsing and existing validated atomic YAML/JSON persistence; reject concurrent config edits. FNT launch now requires the matching project instead of silently opening an empty application.
+- Validation: focused resolver and installed suite results are recorded in the project validation receipt; GUI visual review remains separate.
 
 ## 1.11.0.dev0 — 2026-10-19 (local/unreleased)
 

@@ -2,8 +2,12 @@
 .SYNOPSIS
 Install VisualToolkit into a dedicated virtual environment.
 
+Version: 1.11.0.dev1 (local/unreleased)
+Last updated: 2026-10-22
+Change history: ../CHANGELOG.md
+
 .EXAMPLE
-.\tools\install.ps1 -Wheelhouse D:\projectome_analysis\work\visual_toolkit_extraction\wheelhouse -Config D:\projectome_analysis\main_scripts\Visual_toolkit\visual_toolkit_config.yaml
+.\tools\install.ps1 -Wheel .\dist\visual_toolkit-1.11.0.dev1-py3-none-any.whl -Wheelhouse C:\path\to\wheelhouse -Config C:\data\visual_toolkit_config.yaml
 
 .EXAMPLE
 .\tools\install.ps1 -DryRun
@@ -30,13 +34,12 @@ if (-not $Config -and $env:VISUAL_TOOLKIT_CONFIG) {
 if (-not $Wheelhouse -and $env:VISUAL_TOOLKIT_WHEELHOUSE) {
     $Wheelhouse = $env:VISUAL_TOOLKIT_WHEELHOUSE
 }
-if (-not $Wheel -and -not $Source) {
-    $wheels = Get-ChildItem -Path (Join-Path $repo 'dist') -Recurse `
-        -Filter 'visual_toolkit-*.whl' -File -ErrorAction SilentlyContinue |
-        Sort-Object LastWriteTime -Descending
-    if ($wheels) { $Wheel = $wheels[0].FullName }
+if ($Wheel -and $Source) {
+    throw 'Choose either -Wheel or -Source; the options cannot be used together.'
 }
-$sourceMode = $Source -or (-not $Wheel -and (Test-Path (Join-Path $repo 'pyproject.toml')))
+$sourceMode = -not $Wheel -and (
+    $Source -or (Test-Path -LiteralPath (Join-Path $repo 'pyproject.toml'))
+)
 $venvPython = Join-Path $InstallDir 'Scripts\python.exe'
 $plan = [ordered]@{
     install_dir = $InstallDir
@@ -54,7 +57,7 @@ if ($DryRun) {
     return
 }
 if (-not $Wheel -and -not $sourceMode) {
-    throw "No wheel found under $repo\dist and no pyproject.toml is present."
+    throw "No source checkout or explicit wheel was provided for $repo."
 }
 if ($Python -eq 'py' -and -not (Get-Command py -ErrorAction SilentlyContinue)) {
     $Python = 'python'

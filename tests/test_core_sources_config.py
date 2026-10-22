@@ -1,7 +1,7 @@
 """Focused regression checks for the standalone extraction seams.
 
-Version: 1.10.0.dev0 (local/unreleased)
-Last updated: 2026-10-19
+Version: 1.11.0.dev1 (local/unreleased)
+Last updated: 2026-10-22
 Change history: ../CHANGELOG.md
 """
 import copy
@@ -209,9 +209,21 @@ class ReviewSettingsTests(unittest.TestCase):
                         np.arange(75, dtype=np.uint8).reshape(3, 5, 5),
                         (0, 0, 0), (1, 1, 1), (2, 2, 1), "001",
                         output_dir=output)
-                    review_png = Path(tool.plot_tri_plot(
-                        [panel], "001", output_dir=output, suffix="APISettings",
-                        legend=True))
+                    import matplotlib.pyplot as plt
+                    with mock.patch.object(plt, 'close'):
+                        review_png = Path(tool.plot_tri_plot(
+                            [panel], "001", output_dir=output, suffix="APISettings",
+                            legend=True))
+                        review_figure = plt.gcf()
+                    review_figure.canvas.draw()
+                    data_ax = review_figure.axes[0]
+                    self.assertTrue(np.allclose(data_ax.collections[0].get_edgecolors()[0], (1, 0, 1, 1)))
+                    self.assertTrue(np.allclose(data_ax.collections[0].get_offsets()[0], (2, 2)))
+                    marker_display = data_ax.transData.transform((2, 2))
+                    tight = review_figure.get_tightbbox(review_figure.canvas.get_renderer())
+                    marker_png_x = (marker_display[0] / review_figure.dpi - tight.x0 + 0.15) * 40
+                    marker_png_y_from_bottom = (marker_display[1] / review_figure.dpi - tight.y0 + 0.15) * 40
+                    plt.close(review_figure)
                 finally:
                     tool.close()
                 self.assertTrue(Path(panel["output_png"]).is_file())
@@ -221,16 +233,20 @@ class ReviewSettingsTests(unittest.TestCase):
                     self.assertGreater(image.height, 50)
                     self.assertLess(image.width, 400)
                     self.assertLess(image.height, 250)
-                    magenta = ((pixels[:, :, 0] > 220) &
-                               (pixels[:, :, 1] < 40) &
-                               (pixels[:, :, 2] > 220))
+                    # At 40 dpi thin markers are antialiased; test chromatic
+                    # dominance rather than requiring fully saturated pixels.
+                    cx, cy = int(round(marker_png_x)), int(round(image.height - marker_png_y_from_bottom))
+                    rgb = pixels[max(0, cy-10):cy+11, max(0, cx-10):cx+11].astype(int)
+                    self.assertGreater(rgb.size, 0)
+                    magenta = ((rgb[:, :, 0] - rgb[:, :, 1] > 80) &
+                               (rgb[:, :, 2] - rgb[:, :, 1] > 80))
                     self.assertGreater(int(magenta.sum()), 0)
             finally:
                 toolkit.REVIEW_SETTINGS.clear()
                 toolkit.REVIEW_SETTINGS.update(original)
                 toolkit._sync_review_setting_constants()
 
-    def test_labeled_review_axes_clear_shared_legend_without_changing_legacy_spacing(self):
+    def test_labeled_review_axes_and_wrapped_legend_clear_at_different_aspects(self):
         import numpy as np
         import matplotlib.pyplot as plt
         from Visual_toolkit import toolkit
@@ -285,6 +301,7 @@ class ReviewSettingsTests(unittest.TestCase):
                 for role, color in (("Soma", "gray"), ("Context", "green"), ("Sagittal", "gray")):
                     multi = dict(panel)
                     multi["role"] = role
+                    multi['notes'] = ['Candidate axes and native source directions remain unaccepted; ' * 8]
                     multi["legend"] = [
                         ("patch", color, f"{role} display"),
                         ("marker", toolkit.TARGET_MARKER_COLOR, role),
@@ -297,7 +314,19 @@ class ReviewSettingsTests(unittest.TestCase):
                         suffix="LegacyMultiPanelSpacing", legend=True, dpi=40)
                 self.assertTrue(Path(multi_path).is_file())
                 multi_grid = figures[-1].axes[0].get_subplotspec().get_gridspec()
-                self.assertEqual(multi_grid.hspace, 0.02)
+                multi_figure = figures[-1]
+                multi_figure.canvas.draw()
+                renderer = multi_figure.canvas.get_renderer()
+                legend_ax = multi_figure.axes[-1]
+                for data_ax in multi_figure.axes[:-1]:
+                    self.assertGreater(data_ax.get_tightbbox(renderer).y0,
+                                       legend_ax.get_tightbbox(renderer).y1)
+                    self.assertEqual(data_ax.get_anchor(), 'N')
+                    self.assertEqual(tuple(data_ax.images[0].get_extent()), tuple(labeled.axes[0].images[0].get_extent()))
+                text_boxes = [text.get_window_extent(renderer) for text in legend_ax.texts if text.get_text()]
+                self.assertLessEqual(max(box.x1 for box in text_boxes), legend_ax.get_window_extent(renderer).x1 + 2)
+                self.assertGreater(text_boxes[0].y0, legend_ax.get_legend().get_window_extent(renderer).y1)
+                self.assertGreater(legend_ax.get_legend().get_window_extent(renderer).y0, text_boxes[-1].y1)
 
                 tool.TRIO_FIGSIZE = (12, 0.01)
                 with mock.patch.object(plt, "figure", side_effect=capture_figure), \
@@ -1017,3 +1046,52 @@ class SWCProviderTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MarkerLabelPresentationTests(unittest.TestCase):
+    def test_label_modes_preserve_marker_position_and_default_hide_inline_text(self):
+        import matplotlib.pyplot as plt
+        from Visual_toolkit import toolkit
+        tool = object.__new__(toolkit.Visual_toolkit)
+        for mode, expected in ((None, ''), ('none', ''), ('short', 'S'), ('numbered', '1')):
+            fig, ax = plt.subplots()
+            try:
+                result = tool._draw_target_marker(ax, 10, 20, label_mode=mode)
+                self.assertEqual(result['label_text'], expected)
+                self.assertEqual([text.get_text() for text in ax.texts], [expected] if expected else [])
+                self.assertEqual(tuple(ax.collections[0].get_offsets()[0]), (10, 20))
+                self.assertEqual(tuple(ax.lines[0].get_ydata()), (20, 20))
+            finally:
+                plt.close(fig)
+        with self.assertRaisesRegex(ValueError, 'one of'):
+            toolkit._parse_setting_value('marker.label_mode', 'unknown', 'none')
+        self.assertEqual(toolkit._parse_setting_value('marker.label_mode', 'short', 'none'), 'short')
+
+    def test_standalone_role_legends_clear_index_labels_and_preserve_image_extent(self):
+        import matplotlib.pyplot as plt
+        import numpy as np
+        from Visual_toolkit import toolkit
+        with tempfile.TemporaryDirectory() as directory:
+            tool = toolkit.Visual_toolkit('SYNTH', cache_dir=directory)
+            volume = np.arange(3 * 120 * 120).reshape(3, 120, 120)
+            real_close = plt.close
+            try:
+                with mock.patch.object(plt.Figure, 'savefig'), mock.patch.object(plt, 'close'):
+                    soma = tool.plot_soma_block(volume, (0, 0, 0), (1, 1, 1), (60, 60, 1), '001')
+                    figures = [plt.gcf()]
+                    tool.plot_widefield_context(volume, (0, 0, 0), (5, 5, 3), (300, 300, 3), '001')
+                    figures.append(plt.gcf())
+                    tool.plot_sagittal_context(dict(soma), '001')
+                    figures.append(plt.gcf())
+                for fig in figures:
+                    fig.canvas.draw()
+                    renderer = fig.canvas.get_renderer()
+                    self.assertEqual(len(fig.legends), 1)
+                    self.assertGreater(fig.axes[0].get_tightbbox(renderer).y0,
+                                       fig.legends[0].get_window_extent(renderer).y1)
+                    self.assertEqual(tuple(fig.axes[0].images[0].get_extent()), (-0.5, 119.5, 119.5, -0.5))
+                    self.assertIn('Source X', fig.axes[0].get_xlabel())
+            finally:
+                for fig in locals().get('figures', []):
+                    real_close(fig)
+                tool.close()

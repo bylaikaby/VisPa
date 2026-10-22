@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "visual-toolkit"
-version = "1.11.0.dev0"
+version = "1.11.0.dev1"
 description = "Standalone macaque microscopy visualization and review tools"
 readme = "README.md"
 requires-python = ">=3.10"

@@ -1,7 +1,7 @@
 """Bounded command line for one local VisualToolkit review render or montage.
 
-Version: 1.11.0.dev0 (local/unreleased)
-Last updated: 2026-10-19
+Version: 1.11.0.dev1 (local/unreleased)
+Last updated: 2026-10-22
 Change history: CHANGELOG.md
 """
 from __future__ import annotations
@@ -426,6 +426,79 @@ def _path_parts(value):
     return [part.strip() for part in str(value or "").split(";") if part.strip()]
 
 
+def fnt_plan(config, sample, neuron):
+    """Resolve an exact FNT project without starting an external application."""
+    if not sample or not neuron or any(Path(str(v)).name != str(v) or str(v) in {".", ".."}
+                                       for v in (sample, neuron)):
+        raise ValueError("sample and neuron must be simple identifiers")
+    settings = config.get("visual_toolkit", {}).get("fnt_tracer", {})
+    executable = settings.get("executable")
+    root = settings.get("project_root")
+    stem = f"{sample}_{str(neuron).removesuffix('.swc')}"
+    candidates = [Path(root) / f"{stem}{suffix}" for suffix in (".fnt", ".decimate.fnt")] if root else []
+    project = next((path for path in candidates if path.is_file()), None)
+    errors = []
+    if not executable or not Path(executable).is_file():
+        errors.append("Configure an existing visual_toolkit.fnt_tracer.executable")
+    if project is None:
+        errors.append(f"Matching project missing: {stem}.fnt or {stem}.decimate.fnt")
+    command = [str(executable), str(project)] if not errors else None
+    return {"sample": sample, "neuron": neuron, "executable": str(executable) if executable else None,
+            "project": str(project) if project else None, "searched": [str(p) for p in candidates],
+            "command": command, "errors": errors, "ready": not errors,
+            "version": None, "version_note": "Binary is not executed during preflight"}
+
+
+def _resource_check(args):
+    from .dataset_config import load
+    config = load(args.config)
+    if not args.sample or not args.neuron:
+        raise ValueError("--sample and --neuron are required together for single-case inventory")
+    plan = fnt_plan(config, args.sample, args.neuron)
+    records = []
+    def record(role, value, space=None):
+        path = Path(value) if value else None
+        item = {"role": role, "path": str(path) if path else None, "source_date": None,
+                "space": space, "exists": None, "sha256": None}
+        try:
+            item['exists'] = bool(path and path.exists())
+            if path and path.is_file():
+                item.update(size_bytes=path.stat().st_size, sha256=_sha256(path))
+        except OSError as exc:
+            item['status'] = 'unverified_access_denied'
+            item['error'] = str(exc)
+        records.append(item)
+    record("config", config["path"])
+    record("fnt_executable", plan["executable"])
+    record("fnt_project", plan["project"])
+    sources = config.get("sources", {})
+    brain = sources.get("brain_view", {})
+    frame = brain.get("coordinate_frame")
+    record("brain_mesh", brain.get("mesh_path"), frame)
+    root = brain.get("processed_swc_root")
+    record("processed_swc", Path(root) / args.sample / (str(args.neuron).removesuffix('.swc') + '.swc') if root else None, frame)
+    raw_root = sources.get("legacy_raw_swc_root")
+    record("raw_swc", Path(raw_root) / args.sample / (str(args.neuron).removesuffix('.swc') + '.swc') if raw_root else None, "source native; axes unaccepted")
+    sample = config.get("samples", {}).get(args.sample, {})
+    for key in ("ds00_processed", "resample_5um", "swc_cache"):
+        record(key, sample.get(key), "native source; see configured geometry")
+    defaults = config.get('defaults', {})
+    cache = defaults.get('cache_root')
+    record('high_res_cache', Path(cache) / args.sample / 'high_res_http' if cache else None, 'source native')
+    from .toolkit import BLOCK_SIZE_PIXELS, RESOLUTION_HIGH
+    host = sources.get('http_base_url') or sources.get('http_host')
+    prefix = str(sources.get('http_path') or '').strip('/')
+    route = f"{str(host).rstrip('/')}/{prefix + '/' if prefix else ''}{args.sample}/cube/{{z}}/{{x}}_{{y}}_{{z}}.tif" if host else None
+    result = {"cube_source": {"host": host, "http_path": prefix, "route": route},
+              "cube_geometry": {"size_xyz_pixels": BLOCK_SIZE_PIXELS, "spacing_xyz_um": RESOLUTION_HIGH, "acceptance": "configured math only; source axes unaccepted"},
+              "schema": "visual-toolkit.resources.v1", "dry_run": True,
+              "config": str(config["path"]), "sample": args.sample, "neuron": args.neuron,
+              "resources": records, "fnt": plan,
+              "limits": "Read-only inventory; directories are references, not recursively hashed. No offline/full-panel acceptance."}
+    print(json.dumps(result, indent=2))
+    return 0 if not args.fnt or plan["ready"] else 1
+
+
 def _same_path(left, right):
     def normalized(value):
         return os.path.normcase(
@@ -559,6 +632,10 @@ def _parser():
     settings.add_argument("--config", help="optional VisualToolkit JSON/YAML settings config")
     config_check = commands.add_parser("config-check", help="check configured source paths")
     config_check.add_argument("--config")
+    config_check.add_argument("--sample", help="exact sample for read-only hashed resource inventory")
+    config_check.add_argument("--neuron", help="exact neuron for read-only hashed resource inventory")
+    config_check.add_argument("--dry-run", action="store_true", help="read-only preflight (config-check never writes)")
+    config_check.add_argument("--fnt", action="store_true", help="require executable AND matching neuron project; never launch")
     config_init = commands.add_parser("config-init", help="create the per-user YAML config without overwriting")
     config_init.add_argument("--output", help="explicit YAML destination; defaults to the per-user config path")
     config_init.add_argument("--from-config", help="copy an existing JSON/YAML config; default target auto-migrates legacy per-user JSON")
@@ -603,6 +680,11 @@ def main(argv=None):
         except (OSError, RuntimeError, ValueError, KeyError) as exc:
             parser.error(str(exc))
     if args.command == "config-check":
+        if args.sample or args.neuron or args.fnt:
+            try:
+                return _resource_check(args)
+            except (OSError, ValueError, KeyError) as exc:
+                parser.error(str(exc))
         from .dataset_config import main as config_main
         check_argv = ["--check"]
         if args.config:

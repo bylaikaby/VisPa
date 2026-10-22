@@ -1,9 +1,9 @@
 """
 Visual_toolkit.py - Macaque Brain Hybrid-Resolution Visualization Toolkit
 
-Version: 1.11.0.dev0 (local/unreleased)
-Last updated: 2026-10-20
-Change history: CHANGELOG.md (this folder)
+Version: 1.11.0.dev1 (local/unreleased)
+Last updated: 2026-10-22
+Change history: ../../CHANGELOG.md
 Status: candidate (visual review pending)
 
 UPDATE NOTES (v1.4.0):
@@ -236,6 +236,7 @@ REVIEW_SETTINGS = {
         'min_px': 8.0,          # smallest drawn box side, in display pixels
         'crosshair_px': 60.0,   # cross arm length from the exact centre
         'label_fontsize': 12,
+        'label_mode': 'none',
         'label_offset_px': 22.0,
     },
     # Soma panel: soma-centred native window, expressed in cubes. The runner starts
@@ -316,6 +317,7 @@ _SETTING_SPECS = {
     'marker.min_px': {'type':'number','minimum':0,'minimum_exclusive':True,'maximum':None,'effect':'Minimum displayed target-box side in pixels.'},
     'marker.crosshair_px': {'type':'number','minimum':0,'minimum_exclusive':True,'maximum':None,'effect':'Positive target crosshair arm length in display pixels.'},
     'marker.label_fontsize': {'type':'integer','minimum':0,'minimum_exclusive':True,'maximum':None,'effect':'Target label font size in points.'},
+    'marker.label_mode': {'type':'enum','choices':['none','short','numbered'],'effect':'Inline soma label: none (legend only), short S, or numbered 1 callout; marker position is unchanged.'},
     'marker.label_offset_px': {'type':'number','minimum':0,'maximum':None,'effect':'Target label offset in display pixels.'},
     'soma_window.cubes_xy': {'type':'number','minimum':0,'minimum_exclusive':True,'maximum':3,'effect':'Requested soma-centred XY window size in source cubes; source acquisition is capped at three cubes.'},
     'soma_window.cubes_xy_steps': {'type':'number_sequence','minimum':0,'minimum_exclusive':True,'maximum':3,'min_items':1,'effect':'Descending centred XY window alternatives in source cubes.'},
@@ -370,6 +372,11 @@ def _sync_review_setting_constants():
 def _parse_setting_value(path, raw, current):
     spec = _SETTING_SPECS[path]
     kind = spec['type']
+    if kind == 'enum':
+        value = str(raw).strip().lower()
+        if value not in spec['choices']:
+            raise ValueError(f"Review setting {path!r} needs one of {spec['choices']}")
+        return value
     if kind == 'color':
         value = str(raw).strip()
         if not (len(value) == 7 and value.startswith('#')
@@ -411,6 +418,10 @@ def _parse_setting_value(path, raw, current):
 def _validate_review_settings(settings):
     for path, spec in _SETTING_SPECS.items():
         value = _setting_at(settings, path)
+        if spec['type'] == 'enum':
+            if value not in spec['choices']:
+                raise ValueError(f"Review setting {path!r} needs one of {spec['choices']}")
+            continue
         if spec['type'] == 'color':
             if not (isinstance(value, str) and len(value) == 7 and value.startswith('#')
                     and all(ch in '0123456789abcdefABCDEF' for ch in value[1:])):
@@ -1323,7 +1334,7 @@ class Visual_toolkit:
 
     def _draw_target_marker(self, ax, x, y, color=None, size_um=None,
                             label="Target Soma", min_px=None, crosshair_px=None,
-                            label_fontsize=None, label_offset_px=None,
+                            label_fontsize=None, label_offset_px=None, label_mode=None,
                             resolution_um=None):
         """Draw the shared target marker: one cyan/turquoise open box with a cross.
 
@@ -1333,6 +1344,9 @@ class Visual_toolkit:
         enlarged for visibility, so the intersection is the true position.
         """
         style = REVIEW_SETTINGS['marker']
+        mode = style['label_mode'] if label_mode is None else label_mode
+        if mode not in ('none', 'short', 'numbered'):
+            raise ValueError("marker label_mode must be none, short or numbered")
         color = color or style['color']
         res_x = float((resolution_um or (1.0, 1.0))[0])
         floor_px = float(style['min_px'] if min_px is None else min_px)
@@ -1345,14 +1359,18 @@ class Visual_toolkit:
                     linewidth=1.1, alpha=0.9, zorder=11, solid_capstyle='butt')
             ax.plot([x, x], [y - arms_px, y + arms_px], color=color,
                     linewidth=1.1, alpha=0.9, zorder=11, solid_capstyle='butt')
-        if label:
+        text = {'none': '', 'short': 'S', 'numbered': '1'}[mode] if label else ''
+        if text:
             offset_px = float(style['label_offset_px'] if label_offset_px is None
                               else label_offset_px)
-            ax.text(x + offset_px, y + offset_px, label, color=color,
+            ax.annotate(text, xy=(x, y), xytext=(offset_px, offset_px), textcoords='offset pixels', color=color,
                     fontsize=(float(style['label_fontsize']) if label_fontsize is None
                               else float(label_fontsize)),
-                    fontweight='bold', zorder=12)
-        return {'color': color, 'size_px': size_px, 'crosshair_px': arms_px}
+                    fontweight='bold', zorder=12,
+                    bbox=dict(boxstyle='round,pad=0.15', fc='black', ec='none', alpha=0.7),
+                    arrowprops=dict(arrowstyle='-', color=color, linewidth=0.6) if mode == 'numbered' else None)
+        return {'color': color, 'size_px': size_px, 'crosshair_px': arms_px,
+                'label_mode': mode, 'label_text': text}
 
     def _draw_panel(self, ax, panel, marker_min_px=8.0):
         """Draw one styled panel; single plots and the tri-plot share this path."""
@@ -1384,6 +1402,7 @@ class Visual_toolkit:
                 crosshair_px=options.get('crosshair_px'),
                 label_fontsize=options.get('label_fontsize'),
                 label_offset_px=options.get('label_offset_px'),
+                label_mode=options.get('label_mode'),
                 resolution_um=panel.get('resolution_um', (1.0, 1.0)),
             )
         bar_um = panel.get('scale_bar_um')
@@ -1422,6 +1441,7 @@ class Visual_toolkit:
         ax.set_facecolor('black')
         self._draw_panel(ax, panel)
         ax.set_title(title, color='white', fontsize=12)
+        self._draw_role_legend(fig, ax, panel.get('legend') or [])
         safe_region = self._sanitize_filename(soma_region) if soma_region else ""
         region_part = f"_{safe_region}" if safe_region else ""
         save_path = os.path.join(target_dir, f"{self.sample_id}_{neuron_id}{region_part}"
@@ -1468,10 +1488,11 @@ class Visual_toolkit:
             'markers': [(sx, sy, TARGET_MARKER_COLOR,
                          20.0 if resolution[0] < 1.0 else 200.0, 'Target Soma')],
             'edge_segments': [], 'traces': [],
-            'axis_labels': None,
+            'axis_labels': ('Source X (crop pixel index; axis unvalidated)',
+                            'Source Y (crop pixel index; axis unvalidated)'),
             'legend': [('patch', 'gray', 'soma grayscale MIP · 0.65 µm'),
                        ('marker', TARGET_MARKER_COLOR,
-                        'target soma marker (box + cross, not to scale)')],
+                        'soma location (box + cross, not to scale)')],
             'notes': ['Legacy SomaBlock gamma 0.5; no SWC overlay.'],
             'role': 'Soma (high-res MIP · 0.65 µm)',
             'suffix': suffix,
@@ -1544,11 +1565,16 @@ class Visual_toolkit:
         sx = (soma_coords[0] - origin[0]) / resolution[0]
         sy = (soma_coords[1] - origin[1]) / resolution[1]
         
+        role_legend = [('patch', 'gray', 'widefield grayscale base'),
+                       ('patch', 'green', 'widefield green channel · 5 µm')]
+        if segments:
+            role_legend.append(('line', 'red', f'Trace from SWC (soma ±{half_um:g} µm)'))
+        role_legend.append(('marker', TARGET_MARKER_COLOR, 'soma location (box + cross, not to scale)'))
         output_png = self._finalize_plot(
             fig, ax, sx, sy, resolution, neuron_id, suffix, volume_3d.shape[0],
             marker_color=TARGET_MARKER_COLOR, soma_region=soma_region,
             soma_coords=soma_coords, output_dir=output_dir,
-            scale_bar_um=scale_bar_um, extra_title=overlay_note)
+            scale_bar_um=scale_bar_um, extra_title=overlay_note, legend_entries=role_legend)
         return {
             'display': rgb, 'cmap': None,
             'resolution_um': (float(resolution[0]), float(resolution[1])),
@@ -1558,11 +1584,9 @@ class Visual_toolkit:
             'markers': [(sx, sy, TARGET_MARKER_COLOR,
                          20.0 if resolution[0] < 1.0 else 200.0, 'Target Soma')],
             'edge_segments': segments, 'traces': [],
-            'axis_labels': None,
-            'legend': [('patch', 'green', 'widefield green channel · 5 µm'),
-                       ('line', 'red', f'Trace from SWC (soma ±{half_um:g} µm)'),
-                       ('marker', TARGET_MARKER_COLOR,
-                        'target soma marker (box + cross, not to scale)')],
+            'axis_labels': ('Source X (crop pixel index; axis unvalidated)',
+                            'Source Y (crop pixel index; axis unvalidated)'),
+            'legend': role_legend,
             'notes': [f'Legacy WideField display: gain {bg_intensity:g} / threshold {manual_threshold:g}, MIP.'],
             'role': 'WideField context (5 µm)',
             'suffix': suffix,
@@ -1609,7 +1633,7 @@ class Visual_toolkit:
 
     def _finalize_plot(self, fig, ax, sx, sy, resolution, neuron_id, suffix, z_slices,
                        marker_color, soma_region=None, soma_coords=None,
-                       output_dir=None, scale_bar_um=30, extra_title=None):
+                       output_dir=None, scale_bar_um=30, extra_title=None, legend_entries=None):
         h, w = ax.images[0].get_size()
         
         target_dir = output_dir if output_dir else self.output_dir
@@ -1636,7 +1660,14 @@ class Visual_toolkit:
             title = f"{title} | {extra_title}"
 
         ax.set_title(title, color='white', fontsize=12)
-        ax.axis('off')
+        ax.set_xlabel('Source X (crop pixel index; axis unvalidated)', color='white', fontsize=9)
+        ax.set_ylabel('Source Y (crop pixel index; axis unvalidated)', color='white', fontsize=9)
+        ax.tick_params(colors='white', labelsize=8)
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+        self._draw_role_legend(fig, ax, legend_entries or [
+            ('patch', 'gray', 'soma grayscale MIP'),
+            ('marker', marker_color or TARGET_MARKER_COLOR, 'soma location (box + cross, not to scale)')])
         
         # Build filename with soma region (coordinates NOT in filename)
         # Sanitize region name to prevent path issues
@@ -1670,6 +1701,33 @@ class Visual_toolkit:
         return self._save_panel_plot(panel, neuron_id, suffix, soma_region=soma_region,
                                      soma_coords=soma_coords, output_dir=output_dir)
 
+    def _draw_role_legend(self, fig, ax, entries):
+        """Place compact role samples below indexed axes without covering data."""
+        from matplotlib.lines import Line2D
+        from matplotlib.font_manager import FontProperties
+        if not entries:
+            return
+        handles, labels = [], []
+        for entry in entries:
+            kind, color, label = entry[:3]
+            handles.append(Rectangle((0, 0), 1, 1, facecolor=color) if kind == 'patch' else
+                           Line2D([0], [0], color=color, linewidth=2,
+                                  linestyle=(entry[3] if len(entry) > 3 else '-') if kind == 'line' else 'none',
+                                  marker=None if kind == 'line' else 's', markerfacecolor='none'))
+            labels.append(label)
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+        position = ax.get_position()
+        width = position.width * fig.bbox.width
+        columns = min(len(entries), 3)
+        widths = [renderer.get_text_width_height_descent(label, FontProperties(size=9), False)[0] + 50 for label in labels]
+        while columns > 1 and sum(sorted(widths, reverse=True)[:columns]) > width:
+            columns -= 1
+        top = (ax.get_tightbbox(renderer).y0 - 8.0) / fig.bbox.height
+        fig.legend(handles, labels, loc='upper left', bbox_to_anchor=(position.x0, top),
+                   bbox_transform=fig.transFigure, ncol=columns, frameon=False,
+                   labelcolor='white', fontsize=9, borderaxespad=0, handlelength=1.4)
+
     def plot_tri_plot(self, panels, neuron_id, output_dir=None, suffix="TriPlot",
                       soma_region=None, soma_coords=None, dpi=None, header=None,
                       caveats=None, legend=False):
@@ -1702,16 +1760,29 @@ class Visual_toolkit:
                 neuron_id, panel.get('suffix', suffix), soma_region, soma_coords,
                 panel['fov_um'], panel['depth_um'])
             ax.set_title(title, color='white', fontsize=11)
+            ax.set_anchor('N')
         if legend:
             legend_ax = fig.add_subplot(grid[1, :])
             legend_ax.axis('off')
-            self._draw_shared_legend(legend_ax, panels, neuron_id, header=header,
-                                     caveats=caveats)
-        if legend and len(panels) == 1 and any(panel.get('axis_labels') for panel in panels):
-            # Reserve font-derived physical clearance for the single-panel CLI view;
-            # multi-panel and unlabeled legacy figures keep hspace=0.02.
+            required = self._draw_shared_legend(legend_ax, panels, neuron_id, header=header,
+                                              caveats=caveats)
+            bounds = grid.get_subplot_params(fig)
+            available = fig.get_figheight() * fig.dpi * (bounds.top - bounds.bottom)
+            minimum_data_height = 4.0 * max(ax.title.get_fontsize() for ax in fig.axes[:-1]) * fig.dpi / 72.0
+            if required + minimum_data_height >= available:
+                plt.close(fig)
+                raise RuntimeError("Review axes and legend cannot fit in the selected figure height")
+            grid.set_height_ratios((available - required, required))
+            legend_ax.clear()
+            legend_ax.axis('off')
+            self._draw_shared_legend(legend_ax, panels, neuron_id, header=header, caveats=caveats)
+        if legend and any(panel.get('axis_labels') for panel in panels):
+            # Reserve measured font-derived clearance for every labeled review panel.
             data_axes, legend_ax = fig.axes[:-1], fig.axes[-1]
-            for _ in range(3):
+            for _ in range(8):
+                legend_ax.clear()
+                legend_ax.axis('off')
+                self._draw_shared_legend(legend_ax, panels, neuron_id, header=header, caveats=caveats)
                 fig.canvas.draw()
                 renderer = fig.canvas.get_renderer()
                 gap = min(ax.get_tightbbox(renderer).y0 for ax in data_axes) - legend_ax.get_tightbbox(renderer).y1
@@ -1719,9 +1790,9 @@ class Visual_toolkit:
                 texts.extend(legend_ax.texts)
                 if legend_ax.get_legend() is not None:
                     texts.extend(legend_ax.get_legend().get_texts())
-                clearance = max((text.get_window_extent(renderer).height for text in texts
+                clearance = max((text.get_fontsize() * fig.dpi / 72.0 for text in texts
                                  if text.get_visible() and text.get_text()), default=0.0) + 4.0
-                if gap >= clearance:
+                if gap >= clearance or math.isclose(gap, clearance, abs_tol=1e-6):
                     break
                 bottoms, tops, _, _ = grid.get_grid_positions(fig)
                 cell_gap = (bottoms[0] - tops[1]) * fig.bbox.height
@@ -1734,7 +1805,7 @@ class Visual_toolkit:
             else:
                 fig.canvas.draw()
                 renderer = fig.canvas.get_renderer()
-                if min(ax.get_tightbbox(renderer).y0 for ax in data_axes) - legend_ax.get_tightbbox(renderer).y1 < clearance:
+                if min(ax.get_tightbbox(renderer).y0 for ax in data_axes) - legend_ax.get_tightbbox(renderer).y1 < clearance - 1e-6:
                     plt.close(fig)
                     raise RuntimeError("Could not separate labeled review axes from the shared legend")
         safe_region = self._sanitize_filename(soma_region) if soma_region else ""
@@ -1751,6 +1822,7 @@ class Visual_toolkit:
     def _draw_shared_legend(self, ax, panels, neuron_id, header=None, caveats=None):
         """One compact legend for the whole review figure (AGENTS QC style rule)."""
         from matplotlib.lines import Line2D
+        from matplotlib.font_manager import FontProperties
 
         entries = []
         for panel in panels:
@@ -1764,10 +1836,28 @@ class Visual_toolkit:
         for panel in panels[1:]:
             notes.extend(note for note in panel.get('notes') or [] if note not in notes)
         notes.extend(caveats or [])
-        ax.text(0.0, 1.02, header or f"{self.sample_id} | {neuron_id} | review panels: "
-                + " · ".join(f"{i + 1} {role}" for i, role in enumerate(roles)),
-                color='white', fontsize=12, fontweight='bold', va='bottom', ha='left',
+        ax.figure.canvas.draw()
+        renderer = ax.figure.canvas.get_renderer()
+        width = ax.get_window_extent(renderer).width
+        height = max(ax.get_window_extent(renderer).height, 1.0)
+        def wrapped(text, size, weight='normal'):
+            font = FontProperties(size=size, weight=weight)
+            lines, line = [], ''
+            for word in str(text).split():
+                candidate = (line + ' ' + word).strip()
+                if line and renderer.get_text_width_height_descent(candidate, font, False)[0] > width - 4:
+                    lines.append(line)
+                    line = word
+                else:
+                    line = candidate
+            return '\n'.join(lines + ([line] if line else []))
+        heading = wrapped(header or f"{self.sample_id} | {neuron_id} | review panels: "
+                + " · ".join(f"{i + 1} {role}" for i, role in enumerate(roles)), 12, 'bold')
+        heading_artist = ax.text(0.0, 1.0, heading,
+                color='white', fontsize=12, fontweight='bold', va='top', ha='left',
                 transform=ax.transAxes)
+        heading_height = heading_artist.get_window_extent(renderer).height
+        legend_top = 1.0 - (heading_height + 6.0) / height
         handles, labels = [], []
         for entry in entries:
             kind, style, label = entry[0], entry[1], entry[2]
@@ -1783,14 +1873,21 @@ class Visual_toolkit:
                                       markeredgewidth=1.0))
             labels.append(label)
         if handles:
+            columns = min(len(labels), 5)
+            widths = [renderer.get_text_width_height_descent(label, FontProperties(size=10), False)[0] + 64 for label in labels]
+            while columns > 1 and sum(sorted(widths, reverse=True)[:columns]) > width:
+                columns -= 1
             legend = ax.legend(handles, labels, loc='upper left', frameon=False,
-                               ncol=min(len(labels), 5), fontsize=10, labelcolor='white',
+                               ncol=columns, fontsize=10, labelcolor='white',
                                handlelength=1.4, columnspacing=1.8, handletextpad=0.6,
-                               bbox_to_anchor=(0.0, 0.86), borderaxespad=0.0)
+                               bbox_to_anchor=(0.0, legend_top), borderaxespad=0.0)
             for text in legend.get_texts():
                 text.set_color('white')
-        ax.text(0.0, 0.0, "  ".join(notes), color='#dddddd', fontsize=9, va='bottom',
+        legend_height = legend.get_window_extent(renderer).height if handles else 0.0
+        notes_top = 1.0 - (heading_height + legend_height + 12.0) / height
+        notes_artist = ax.text(0.0, notes_top, wrapped("  ".join(notes), 9), color='#dddddd', fontsize=9, va='top',
                 ha='left', transform=ax.transAxes)
+        return heading_height + legend_height + notes_artist.get_window_extent(renderer).height + 24.0
 
     def render_sagittal_context_from_ds(self, neuron_id, soma_xyz, sample_id=None,
                                         output_dir=None, soma_region=None,
@@ -2615,7 +2712,7 @@ def prepare_sagittal_panel(
                        "dashed")
                       for mapping in mappings]
                    + [("marker", _marker_style()["color"],
-                       "target soma marker: box + cross (at candidate A)")]),
+                       "soma location: box + cross (at candidate A)")]),
         "notes": [f"Whole-plane p1–p99.5 gray; {view_note}; {slab_thickness_mm:.2f} mm i slab; "
                   "target square and crosshair are centred on the exact candidate-A position "
                   "(drawn larger for visibility, not to scale); candidate B position remains "
