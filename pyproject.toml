@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vispa"
-version = "1.11.0.dev1"
+version = "1.11.0.dev2"
 description = "VisPa — Visual Projectome Analysis tool for microscopy visualization and review"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = ["numpy", "matplotlib", "Pillow", "PyYAML"]
+dependencies = ["numpy", "matplotlib<3.11.1", "Pillow", "PyYAML"]
 
 [project.optional-dependencies]
 "3d" = [

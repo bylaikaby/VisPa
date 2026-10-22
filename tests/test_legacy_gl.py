@@ -1,6 +1,6 @@
 """Focused checks for the optional isolated legacy OpenGL renderer.
 
-Version: 1.11.0.dev1 (local/unreleased)
+Version: 1.11.0.dev2 (local/unreleased)
 Last updated: 2026-10-22
 Change history: ../CHANGELOG.md
 """

@@ -1,5 +1,5 @@
-# VisualToolkit neutral package defaults; add only local paths and identities you choose.
-# Version: 1.11.0.dev1 (local/unreleased) | Last updated: 2026-10-22
+# VisPa package defaults; public morphology example is available without lab paths.
+# Version: 1.11.0.dev2 (local/unreleased) | Last updated: 2026-10-22
 # Change history: ../../CHANGELOG.md
 version: 1
 base_dir: .
@@ -18,6 +18,9 @@ visual_toolkit:
   default_sample: ''
   default_neuron: ''
   auto_load: false
+  # Blank first-run workspaces offer the one-click public morphology example.
+  # Existing/configured workflows stay selected by default in older configs.
+  startup_mode: public-example
   # Optional: open the current neuron's FNT project from the GUI.
   # executable: absolute path to fnt-tracer.exe; project_root: folder holding
   # <sample>_<neuron>.fnt files (relative paths resolve against base_dir).

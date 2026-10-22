@@ -1,0 +1,191 @@
+"""Focused checks for the bounded, public morphology-only example.
+
+Version: 1.11.0.dev2 (local/unreleased)
+Last updated: 2026-10-22
+Change history: ../CHANGELOG.md
+Status: candidate
+"""
+from __future__ import annotations
+
+import hashlib
+import io
+import json
+import os
+import tempfile
+import unittest
+from pathlib import Path
+import sys
+import queue
+import time
+from unittest import mock
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+from vispa import public_example as example
+
+
+FIXTURE = b"1 1 0 0 0 1 -1\n2 3 1 2 3 0.5 1\n3 3 2 2 4 0.5 2\n"
+
+
+class PublicExampleTests(unittest.TestCase):
+    def test_swc_parser_rejects_invalid_tree_and_html(self):
+        self.assertEqual(len(example.parse_swc(FIXTURE)), 3)
+        for invalid in (
+                b"<html>no swc</html>",
+                b"1 1 0 0 0 1 -1\n1 2 1 0 0 1 1\n",
+                b"1 1 0 0 0 1 -1\n2 3 nan 0 0 1 1\n",
+                b"1 1 0 0 0 1 -1\n2 3 1 0 0 1 9\n",
+                b"1 1 0 0 0 1 -1\n2 3 1 0 0 1 3\n",
+        ):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ValueError):
+                    example.parse_swc(invalid)
+
+    def test_dry_run_has_no_network_or_filesystem_effect(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            output = root / "out"
+            cache = root / "cache"
+            with mock.patch.object(example, "_read_url") as read_url:
+                result = example.run(output_dir=output, cache_dir=cache, dry_run=True)
+            read_url.assert_not_called()
+            self.assertFalse(output.exists())
+            self.assertFalse(cache.exists())
+            self.assertFalse(result["written"])
+            self.assertFalse(result["plan"]["network_access"])
+
+    def test_cached_source_validates_hash_and_render_receipt(self):
+        digest = hashlib.sha256(FIXTURE).hexdigest()
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            cache, output = root / "cache", root / "output"
+            with mock.patch.object(example, "EXPECTED_SHA256", digest), \
+                    mock.patch.object(example, "_read_url", return_value=FIXTURE) as read_url:
+                result = example.run(output_dir=output, cache_dir=cache, dpi=100)
+                self.assertTrue(Path(result["png"]).is_file())
+                self.assertTrue(result["plan"]["network_access"])
+                receipt = json.loads(Path(result["receipt"]).read_text(encoding="utf-8"))
+                self.assertEqual(receipt["source"]["sha256"], digest)
+                self.assertEqual(receipt["source"]["source_date"], None)
+                self.assertEqual(receipt["source"]["coordinate_frame"], "unknown")
+                self.assertEqual(receipt["source"]["coordinate_units"], "unknown")
+                self.assertEqual(receipt["source"]["file"], "221747_1-qroot433.swc")
+                self.assertEqual(receipt["geometry"]["node_count"], 3)
+                self.assertEqual(receipt["processing"]["atlas"], None)
+                self.assertFalse(receipt["processing"]["anatomical_acceptance"])
+                self.assertEqual(receipt["render"]["output_sha256"], result["output_sha256"])
+                self.assertEqual(receipt["render"]["renderer_code_sha256"],
+                                 example._renderer_code_sha256())
+                self.assertEqual(read_url.call_count, 1)
+                with mock.patch.object(example, "_read_url", side_effect=AssertionError("cache miss")):
+                    reused = example.run(output_dir=output, cache_dir=cache, dpi=100)
+                self.assertTrue(reused["reused"])
+                self.assertFalse(reused["written"])
+                self.assertFalse(reused["plan"]["network_access"])
+                self.assertEqual(reused["png"], result["png"])
+                with mock.patch.object(example, "_renderer_code_sha256", return_value="f" * 64):
+                    self.assertFalse(example._matching_existing(
+                        Path(result["png"]), Path(result["receipt"]), digest, 100))
+                with mock.patch.object(example, "_read_url", side_effect=AssertionError("cache miss")):
+                    source_path, rows, cached_hash, fetched = example._load_source(cache)
+                self.assertEqual(cached_hash, digest)
+                self.assertEqual(len(rows), 3)
+                self.assertTrue(source_path.is_file())
+                self.assertFalse(fetched)
+                base_png = Path(result["png"])
+                base_png.write_bytes(b"damaged existing image")
+                with mock.patch.object(example, "_read_url", side_effect=AssertionError("cache miss")):
+                    repaired = example.run(output_dir=output, cache_dir=cache, dpi=100)
+                self.assertFalse(repaired["reused"])
+                self.assertNotEqual(repaired["png"], str(base_png))
+                self.assertEqual(base_png.read_bytes(), b"damaged existing image")
+                (cache / example.RECORD_FILE).write_bytes(b"tampered")
+                with self.assertRaisesRegex(ValueError, "checksum"):
+                    example._load_source(cache)
+
+    def test_invalid_dpi_fails_before_cache_or_output_creation(self):
+        with tempfile.TemporaryDirectory() as folder:
+            output, cache = Path(folder) / "out", Path(folder) / "cache"
+            with self.assertRaisesRegex(ValueError, "dpi"):
+                example.run(output_dir=output, cache_dir=cache, dpi=241)
+            self.assertFalse(output.exists())
+            self.assertFalse(cache.exists())
+
+    def test_config_defaults_and_cli_exposes_versioned_dry_run(self):
+        from vispa._version import __version__
+        import vispa.dataset_config as dataset_config
+        from vispa.cli import _parser
+        from vispa.gui import _parse_launch_args
+
+        with tempfile.TemporaryDirectory() as temp:
+            missing = Path(temp) / "no-config.yaml"
+            with mock.patch.object(dataset_config, "default_config_path", return_value=missing), \
+                    mock.patch.object(dataset_config, "legacy_default_config_path",
+                                       return_value=Path(temp) / "no-legacy.json"), \
+                    mock.patch.dict(os.environ, {"VISPA_CONFIG": "",
+                                                 "VISUAL_TOOLKIT_CONFIG": "",
+                                                 "PROJECTOME_DATASETS": ""}):
+                config = dataset_config.load()
+        self.assertEqual(config["visual_toolkit"]["startup_mode"], "public-example")
+        parser = _parser()
+        # Version appears in both command and subcommand help without loading data.
+        for argv in (["--help"], ["example", "--help"]):
+            output = io.StringIO()
+            with self.subTest(argv=argv), mock.patch("sys.stdout", output):
+                with self.assertRaises(SystemExit) as help_exit:
+                    parser.parse_args(argv)
+                self.assertEqual(help_exit.exception.code, 0)
+                self.assertIn(__version__, output.getvalue())
+        gui_output = io.StringIO()
+        with mock.patch("sys.stdout", gui_output):
+            with self.assertRaises(SystemExit) as gui_help:
+                _parse_launch_args(["--help"])
+        self.assertEqual(gui_help.exception.code, 0)
+        self.assertIn(__version__, gui_output.getvalue())
+
+    def test_gui_public_job_result_is_drained_on_main_poll(self):
+        from vispa.gui import NeuroVisGUI
+
+        class Button:
+            def __init__(self):
+                self.states = []
+
+            def configure(self, **kwargs):
+                self.states.append(kwargs["state"])
+
+        class Root:
+            def __init__(self):
+                self.callbacks = []
+
+            def after(self, delay, callback):
+                self.callbacks.append((delay, callback))
+
+        gui = NeuroVisGUI.__new__(NeuroVisGUI)
+        gui._operation_running = False
+        gui._public_example_button = Button()
+        gui._public_example_queue = queue.Queue()
+        gui._log_queue = queue.Queue()
+        gui.root = Root()
+        gui.preview_label = object()
+        gui._register_outputs = mock.Mock()
+        gui._show_role = mock.Mock()
+        gui.update_status = mock.Mock()
+        gui._append_log = mock.Mock()
+        value = {"png": "preview.png", "receipt": "receipt.json",
+                 "node_count": 14086, "source_sha256": "a" * 64}
+        with mock.patch("vispa.public_example.run", return_value=value):
+            gui._start_public_example()
+            deadline = time.monotonic() + 2
+            while gui._public_example_queue.empty() and time.monotonic() < deadline:
+                time.sleep(0.01)
+        self.assertFalse(gui._public_example_queue.empty())
+        gui._drain_log()
+        self.assertFalse(gui._operation_running)
+        self.assertEqual(gui._public_example_button.states, ["disabled", "normal"])
+        gui._register_outputs.assert_called_once_with(["preview.png"])
+        gui._show_role.assert_called_once_with("PublicNeuron")
+        self.assertEqual(gui.root.callbacks[0][0], 150)
+
+
+if __name__ == "__main__":
+    unittest.main()

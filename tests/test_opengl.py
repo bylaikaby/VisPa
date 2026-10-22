@@ -104,8 +104,9 @@ class LegacyOpenGLPlanningTests(unittest.TestCase):
     def test_path_and_settings_validation(self):
         with self.assertRaisesRegex(ValueError, "sample_id"):
             opengl.plan_configured_view("../251637", "001.swc", config_path=self.config)
-        with self.assertRaisesRegex(ValueError, "filename"):
-            opengl.plan_configured_view("251637", "..\\001.swc", config_path=self.config)
+        for neuron_id in ("../001.swc", "..\\001.swc", "sub/001.swc", "sub\\001.swc"):
+            with self.subTest(neuron_id=neuron_id), self.assertRaisesRegex(ValueError, "filename"):
+                opengl.plan_configured_view("251637", neuron_id, config_path=self.config)
         with self.assertRaisesRegex(ValueError, "must not be the zero vector"):
             opengl.plan_configured_view("251637", "001.swc", config_path=self.config,
                                         overrides={"eye_direction": [0, 0, 0]})

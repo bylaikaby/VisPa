@@ -1,6 +1,6 @@
 """Bounded command line for one local VisPa review render or montage.
 
-Version: 1.11.0.dev1 (local/unreleased)
+Version: 1.11.0.dev2 (local/unreleased)
 Last updated: 2026-10-22
 Change history: CHANGELOG.md
 """
@@ -595,10 +595,19 @@ def _install_path(args):
 
 
 def _parser():
-    parser = argparse.ArgumentParser(prog="vispa")
+    parser = argparse.ArgumentParser(prog="vispa", description=f"VisPa {VERSION} command line")
     parser.add_argument("--version", action="version", version=VERSION)
     commands = parser.add_subparsers(dest="command")
     commands.add_parser("gui", help="open the VisPa review GUI")
+    example = commands.add_parser(
+        "example", help="download and preview one public neuron morphology",
+        description=f"VisPa {VERSION}: render one public macaque SWC morphology only; no atlas or image context")
+    example.add_argument("--dry-run", action="store_true",
+                         help="show the bounded single-neuron plan without network or file access")
+    example.add_argument("--output-dir", help="new PNG and provenance receipt directory")
+    example.add_argument("--cache-dir", help="per-user cache directory for the immutable source SWC")
+    example.add_argument("--dpi", type=int, default=160,
+                         help="figure resolution, integer 100-240 (default: 160)")
     render = commands.add_parser("render", help="render one local array as a review panel")
     render.add_argument("--input", required=True, help="local .npy array in ZYX (or YX) order")
     render.add_argument("--sample", required=True)
@@ -665,6 +674,17 @@ def main(argv=None):
     if args.command == "render":
         try:
             return _render(args)
+        except (OSError, RuntimeError, ValueError, KeyError) as exc:
+            parser.error(str(exc))
+    if args.command == "example":
+        try:
+            from .public_example import run as run_public_example
+            print(json.dumps(run_public_example(output_dir=args.output_dir,
+                                                cache_dir=args.cache_dir,
+                                                dpi=args.dpi,
+                                                dry_run=args.dry_run),
+                             indent=2, sort_keys=True))
+            return 0
         except (OSError, RuntimeError, ValueError, KeyError) as exc:
             parser.error(str(exc))
     if args.command == "montage":

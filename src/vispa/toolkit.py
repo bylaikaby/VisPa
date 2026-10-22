@@ -1,7 +1,7 @@
 """
 vispa.py - Macaque Brain Hybrid-Resolution Visualization Toolkit
 
-Version: 1.11.0.dev1 (local/unreleased)
+Version: 1.11.0.dev2 (local/unreleased)
 Last updated: 2026-10-22
 Change history: ../../CHANGELOG.md
 Status: candidate (visual review pending)
@@ -595,8 +595,7 @@ class VisPa:
         if not sample_id or any(c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-' for c in sample_id):
             raise ValueError("sample_id must be a simple sample identifier")
         
-        from .dataset_config import load
-        configuration = ACTIVE_CONFIG if ACTIVE_CONFIG is not None else load()
+        configuration = ACTIVE_CONFIG if ACTIVE_CONFIG is not None else configure_data_sources()
         defaults = configuration.get('defaults', {})
         user_data = Path(os.environ.get('LOCALAPPDATA') or (Path.home() / '.cache')) / 'VisualToolkit'
         if cache_dir:
@@ -1912,13 +1911,9 @@ DATASET_MANIFEST = None
 
 
 def _sample_paths_from_config(config=None) -> dict[str, dict[str, Any]]:
-    """Read per-sample links from the explicit VisualToolkit config."""
-    from .dataset_config import load as _load_datasets
-    try:
-        config = config if config is not None else _load_datasets()
-    except Exception as exc:  # a broken config must not break plotting
-        print(f"[native_ds_sagittal] dataset config ignored: {exc}")
-        return {}
+    """Read links from an explicit or already activated VisualToolkit config."""
+    if config is None:
+        config = ACTIVE_CONFIG if ACTIVE_CONFIG is not None else {}
     paths: dict[str, dict[str, Any]] = {}
     for sample_id, entry in (config.get("samples") or {}).items():
         paths[sample_id] = {
@@ -1932,7 +1927,27 @@ def _sample_paths_from_config(config=None) -> dict[str, dict[str, Any]]:
 
 SAMPLE_PATHS = {}
 EXPECTED_GEOMETRY = {}
-configure_data_sources()
+
+
+def _has_user_dataset_config() -> bool:
+    """Return whether startup should load an operator-supplied config.
+
+    Importing the renderer for lightweight commands must not parse the bundled
+    YAML template. Preserve the historical startup behavior when an explicit
+    config or an existing per-user YAML/legacy JSON file is present.
+    """
+    if any(os.environ.get(name) for name in
+           ("VISPA_CONFIG", "VISUAL_TOOLKIT_CONFIG", "PROJECTOME_DATASETS")):
+        return True
+    app_data = os.environ.get("APPDATA")
+    base = Path(app_data) if app_data else Path.home() / ".config"
+    config_dir = base / "VisualToolkit"
+    return ((config_dir / "visual_toolkit_config.yaml").is_file()
+            or (config_dir / "visual_toolkit_config.json").is_file())
+
+
+if _has_user_dataset_config():
+    configure_data_sources()
 
 # New output indices after tools/nrrd_to_orient_lps.py's permutation:
 # i = old i; j = old k; k = reversed old j. NRRD sizes (618,493,643)

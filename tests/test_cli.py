@@ -1,6 +1,6 @@
 """CLI contract tests for bounded standalone use.
 
-Version: 1.11.0.dev1 (local/unreleased)
+Version: 1.11.0.dev2 (local/unreleased)
 Last updated: 2026-10-22
 Change history: ../CHANGELOG.md
 """
@@ -32,13 +32,13 @@ else:
     ENV["PYTHONPATH"] = str(ROOT / "src")
 
 
-def run_cli(*args, cwd=None):
+def run_cli(*args, cwd=None, env=None):
     command = [sys.executable]
     if TEST_INSTALLED:
         command.append("-I")
     command.extend(("-m", "vispa", *map(str, args)))
     return subprocess.run(command,
-                          cwd=cwd or Path.cwd(), env=ENV, text=True,
+                          cwd=cwd or Path.cwd(), env=ENV if env is None else env, text=True,
                           capture_output=True, check=False)
 
 
@@ -74,18 +74,24 @@ class CliContractTests(unittest.TestCase):
 
     def test_install_path_entry_is_idempotent_and_removable(self):
         from vispa.cli import merge_user_path, remove_user_path
-        current = r"C:\Windows;C:\Tools\\"
-        unchanged, changed = merge_user_path(current, r"c:\tools")
+        root = Path(tempfile.gettempdir()) / "VisPa path test"
+        tools = str(root / "Tools")
+        tools_in_current = tools + os.sep * 2
+        duplicate = str(root / "tools") if os.name == "nt" else tools
+        current = f"{root / 'Windows'};{tools_in_current}"
+        unchanged, changed = merge_user_path(current, duplicate)
         self.assertFalse(changed)
         self.assertEqual(unchanged, current)
-        added, changed = merge_user_path(
-            current, r"D:\vispa\.venv\Scripts")
+        entry = str(root / "vispa" / ".venv" / "Scripts")
+        added, changed = merge_user_path(current, entry)
         self.assertTrue(changed)
-        self.assertTrue(added.endswith(r"D:\vispa\.venv\Scripts"))
-        removed, changed = remove_user_path(
-            added, r"d:\vispa\.venv\scripts\\")
+        self.assertTrue(added.endswith(entry))
+        removed, changed = remove_user_path(added, entry + os.sep * 2)
         self.assertTrue(changed)
-        self.assertNotIn("vispa", removed)
+        self.assertNotIn(entry, removed)
+        case_variant = str(root / "VISPA" / ".venv" / "Scripts")
+        _, changed = merge_user_path(added, case_variant)
+        self.assertEqual(changed, os.name != "nt")
 
     def test_help_and_version_do_not_import_backend(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -101,18 +107,20 @@ class CliContractTests(unittest.TestCase):
             self.assertEqual(run_cli("--help", cwd=tmp_path).returncode, 0)
             version = run_cli("--version", cwd=tmp_path)
             self.assertEqual(version.returncode, 0)
-            self.assertIn("1.11.0.dev1", version.stdout)
+            self.assertIn("1.11.0.dev2", version.stdout)
 
     def test_settings_command_prints_discoverable_json_without_optional_imports(self):
         with tempfile.TemporaryDirectory() as directory:
             tmp_path = Path(directory)
-            result = run_cli("settings", cwd=tmp_path)
+            isolated_env = ENV.copy()
+            isolated_env["APPDATA"] = str(tmp_path / "empty-appdata")
+            result = run_cli("settings", cwd=tmp_path, env=isolated_env)
             self.assertEqual(result.returncode, 0, result.stderr)
             schema = json.loads(result.stdout)
             self.assertEqual(schema["schema"], "visual-toolkit.review-settings.v1")
             self.assertEqual(schema["settings"]["marker.color"]["default"], "#00e5ee")
             self.assertIn("effect", schema["settings"]["figure.panel_dpi"])
-            grouped = run_cli("settings", "--scope", "all", cwd=tmp_path)
+            grouped = run_cli("settings", "--scope", "all", cwd=tmp_path, env=isolated_env)
             self.assertEqual(grouped.returncode, 0, grouped.stderr)
             groups = json.loads(grouped.stdout)
             self.assertEqual(set(groups["scopes"]), {"review", "brain-view", "montage"})
@@ -142,7 +150,7 @@ assert main(["settings", "--scope", "all"]) == 0
             if TEST_INSTALLED:
                 command.append("-I")
             command.extend(("-c", script, "" if TEST_INSTALLED else str(ROOT / "src")))
-            guarded = subprocess.run(command, cwd=tmp_path, env=ENV,
+            guarded = subprocess.run(command, cwd=tmp_path, env=isolated_env,
                                      text=True, capture_output=True)
             self.assertEqual(guarded.returncode, 0, guarded.stderr)
             self.assertEqual(set(json.loads(guarded.stdout)["scopes"]), {"review", "brain-view", "montage"})
@@ -197,7 +205,7 @@ assert main(["settings", "--scope", "all"]) == 0
             plan = json.loads(result.stdout)
             assert_backend_is_installed(self, plan)
             self.assertEqual(plan["schema"], "visual-toolkit.render.v1")
-            self.assertEqual(plan["package_version"], "1.11.0.dev1")
+            self.assertEqual(plan["package_version"], "1.11.0.dev2")
             self.assertTrue(Path(plan["python_executable"]).is_file())
             self.assertTrue(Path(plan["runtime"]["python_executable"]).is_file())
             self.assertTrue(Path(plan["runtime"]["backend_module"]).is_file())
@@ -275,7 +283,7 @@ assert main(["settings", "--scope", "all"]) == 0
             self.assertEqual({path.name for path in output.iterdir()}, {png.name, receipt_path.name})
             self.assertTrue(os.path.samefile(receipt["output_png"], png))
             self.assertEqual(receipt["schema"], "visual-toolkit.render.v1")
-            self.assertEqual(receipt["package_version"], "1.11.0.dev1")
+            self.assertEqual(receipt["package_version"], "1.11.0.dev2")
             runtime = receipt["runtime"]
             self.assertTrue(Path(runtime["python_prefix"]).exists())
             self.assertEqual(runtime["backend_sha256"],

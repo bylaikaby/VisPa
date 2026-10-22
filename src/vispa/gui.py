@@ -1,7 +1,7 @@
 """
 vispa_gui.py - GUI for NeuroVis Visual Toolkit
 
-Version: 1.11.0.dev1 (local/unreleased)
+Version: 1.11.0.dev2 (local/unreleased)
 Last updated: 2026-10-22
 Change history: ../../CHANGELOG.md
 Status: candidate (visual review pending)
@@ -143,6 +143,7 @@ import shutil
 import subprocess
 from pathlib import Path
 from dataclasses import dataclass
+from ._version import __version__
 
 try:  # preview pane only; the rest of the GUI works without Pillow
     from PIL import Image, ImageTk
@@ -407,7 +408,7 @@ class NeuroVisGUI:
             configuration, sample_id, neuron_id, auto_load)
         self.identity_source = identity_source
         self.root = root
-        self.root.title("VisPa 1.11.0.dev1 · local review")
+        self.root.title(f"VisPa {__version__} · local review")
         # Design sizes below are quoted in 96-dpi pixels. Tk fonts follow the
         # display DPI, so the container geometry must follow the same factor or
         # a 200 % display renders text 1.75x larger than the fixed column.
@@ -462,6 +463,10 @@ class NeuroVisGUI:
         self._ephemeral_images = {}
         self._log_queue = queue.Queue()
         self._log_stream = _LogStream(self._log_queue)
+        self._public_example_queue = queue.Queue()
+        self._public_example_button = None
+        self._startup_mode = configuration.get("visual_toolkit", {}).get(
+            "startup_mode", "configured")
         
         # === 2. Default Output Directory Logic ===
         self.config_path = str(configuration.get("path") or config_path) if (configuration.get("path") or config_path) else None
@@ -645,6 +650,13 @@ class NeuroVisGUI:
             body, "Neuron list", self._open_neuron_catalog, primary=True)
         self.neuron_catalog_open_button.grid(
             row=4, column=0, columnspan=3, sticky='ew', pady=(P(4), P(2)))
+        self._public_example_button = self._flat_button(
+            body, "Public neuron example", self._start_public_example, primary=False)
+        self._public_example_button.grid(
+            row=5, column=0, columnspan=3, sticky='ew', pady=(P(5), P(2)))
+        tk.Label(body, text="Public macaque neuron · morphology only",
+                 bg=C['card'], fg=C['muted'], font=('Segoe UI', 8), anchor='w').grid(
+                     row=6, column=0, columnspan=3, sticky='w', pady=(0, P(2)))
 
         # Review steps: one row per stage, all six visible without scrolling.
         steps_body = self._card(inner, "Step guide")
@@ -839,10 +851,17 @@ class NeuroVisGUI:
         self.preview_holder = tk.Frame(preview_card, bg=C['preview_bg'],
                                        highlightbackground='#0b141c', highlightthickness=1)
         self.preview_holder.pack(fill='both', expand=True, padx=P(14), pady=(0, P(8)))
+        if self._startup_mode == "public-example":
+            empty_preview_text = (
+                "No figure yet\n\nClick Public neuron example for a public SWC morphology preview.\n"
+                "No image context, atlas, or registration is included.")
+        else:
+            empty_preview_text = (
+                "No figure yet\n\nLoad a configured Sample ID / Neuron ID, or click "
+                "Public neuron example for a morphology-only preview.")
         self.preview_label = tk.Label(
             self.preview_holder, bg=C['preview_bg'], fg='#c9d6de', justify='center',
-            font=('Segoe UI', 11),
-            text="No figure yet\n\nSoma Plot · Context Plot · Sagittal · TrioPlot")
+            font=('Segoe UI', 11), text=empty_preview_text)
         self.preview_label.pack(fill='both', expand=True)
         self.preview_holder.bind('<Configure>', self._on_preview_resize)
         tabs = tk.Frame(preview_card, bg=C['card'])
@@ -851,8 +870,10 @@ class NeuroVisGUI:
         tab_grid = tk.Frame(tabs, bg=C['border'], highlightthickness=1,
                             highlightbackground=C['border'])
         tab_grid.pack(side='left')
-        for index, role in enumerate(('Soma', 'Context', 'Sagittal', 'TrioPlot')):
-            button = tk.Button(tab_grid, text=role,
+        for index, (role, label) in enumerate((('Soma', 'Soma'), ('Context', 'Context'),
+                                               ('Sagittal', 'Sagittal'), ('TrioPlot', 'TrioPlot'),
+                                               ('PublicNeuron', 'Public SWC'))):
+            button = tk.Button(tab_grid, text=label,
                                command=lambda r=role: self._show_role(r),
                                relief='flat', bd=0, bg=C['card'], fg=C['text'],
                                activebackground='#e7eef3', activeforeground=C['text'],
@@ -1543,6 +1564,8 @@ class NeuroVisGUI:
                 role = 'Sagittal'
             elif 'TriPlot' in name or 'PairPlot' in name:
                 role = 'TrioPlot'
+            elif name == 'public-macaque-neuron-morphology.png':
+                role = 'PublicNeuron'
             else:
                 continue
             mapping[role] = os.path.abspath(path)
@@ -1576,7 +1599,7 @@ class NeuroVisGUI:
                     pass
         self.preview_files.update(mapping)
         self._refresh_preview_tabs()
-        for role in ('Soma', 'Context', 'Sagittal', 'TrioPlot'):
+        for role in ('PublicNeuron', 'Soma', 'Context', 'Sagittal', 'TrioPlot'):
             if role in mapping:
                 self._show_role(role)
                 break
@@ -2010,7 +2033,47 @@ class NeuroVisGUI:
                 self._append_log(self._log_queue.get_nowait())
         except queue.Empty:
             pass
+        try:
+            while True:
+                state, value = self._public_example_queue.get_nowait()
+                self._operation_running = False
+                if self._public_example_button is not None:
+                    self._public_example_button.configure(state='normal')
+                if state == "ok":
+                    self._register_outputs([value["png"]])
+                    self._show_role("PublicNeuron")
+                    self.update_status(
+                        f"Public morphology preview ready · {value['node_count']:,} SWC nodes; "
+                        "frame and units unspecified; no image context or atlas.")
+                    self._append_log(f"Public SWC source SHA-256: {value['source_sha256']}")
+                    self._append_log(f"Preview saved: {value['png']}")
+                    self._append_log(f"Provenance receipt: {value['receipt']}")
+                else:
+                    self.update_status("Public morphology preview failed.")
+                    self._append_log(f"Public morphology preview failed: {value}")
+                    messagebox.showerror("Public neuron example", str(value))
+        except queue.Empty:
+            pass
         self.root.after(150, self._drain_log)
+
+    def _start_public_example(self):
+        """Fetch and render one public SWC; all Tk work stays in _drain_log."""
+        if self._operation_running:
+            return
+        self._operation_running = True
+        if self._public_example_button is not None:
+            self._public_example_button.configure(state='disabled')
+        self.update_status("Fetching one public neuron morphology…")
+
+        def worker():
+            try:
+                from .public_example import run
+                result = run()
+                self._public_example_queue.put(("ok", result))
+            except Exception as exc:
+                self._public_example_queue.put(("error", f"{type(exc).__name__}: {exc}"))
+
+        threading.Thread(target=worker, name="vispa-public-example", daemon=True).start()
     
     def _numeric_values(self):
         """Parse the numeric form, naming the field in every validation error."""
@@ -2481,7 +2544,7 @@ class NeuroVisGUI:
 def _parse_launch_args(argv=None):
     """Parse and validate launch arguments only; configuration is never read or created."""
     parser = argparse.ArgumentParser(
-        description="Open VisPa for one exact SampleID / NeuronID pair.",
+        description=f"VisPa {__version__}: open one exact SampleID / NeuronID pair.",
         allow_abbrev=False)
     parser.add_argument("--sample", dest="sample_id", help="exact sample ID, including any suffix")
     parser.add_argument("--neuron", dest="neuron_id", help="neuron basename, with or without .swc")

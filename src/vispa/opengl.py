@@ -1,6 +1,6 @@
 """Explicit local-input launcher for the isolated legacy OpenGL viewer.
 
-Version: 1.11.0.dev1 (local/unreleased)
+Version: 1.11.0.dev2 (local/unreleased)
 Last updated: 2026-10-22
 Change history: ../../CHANGELOG.md
 Status: candidate
@@ -159,7 +159,8 @@ def plan_configured_view(sample_id: str, neuron_id: str, portal_region: str = ""
         raise ValueError("sample_id must contain only letters, digits, underscore or hyphen")
     if not isinstance(neuron_id, str) or not neuron_id.lower().endswith(".swc"):
         raise ValueError("neuron_id must be an SWC filename, including its .swc suffix")
-    if Path(neuron_id).name != neuron_id or neuron_id in {".", ".."}:
+    if ("/" in neuron_id or "\\" in neuron_id
+            or Path(neuron_id).name != neuron_id or neuron_id in {".", ".."}):
         raise ValueError("neuron_id must be a filename, not a path")
     from .dataset_config import load
 

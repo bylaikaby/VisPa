@@ -1,6 +1,6 @@
 """Load explicit, portable VisPa dataset configuration.
 
-Version: 1.11.0.dev1 (local/unreleased)
+Version: 1.11.0.dev2 (local/unreleased)
 Last updated: 2026-10-22
 Change history: ../../CHANGELOG.md
 """
@@ -67,7 +67,8 @@ def _empty_config(source: Path, base_dir: Path | None = None, *, origin: str) ->
     base = base_dir or source.parent
     defaults = {"cache_root": user_data / "cache", "output_root": Path.home() / "VisualToolkit" / "output"}
     return {"path": source, "base_dir": base, "defaults": defaults, "samples": {},
-            "visual_toolkit": {"output_root": defaults["output_root"], "settings": {}},
+            "visual_toolkit": {"output_root": defaults["output_root"], "settings": {},
+                               "startup_mode": "configured"},
             "sources": {}, "config_origin": origin}
 
 
@@ -298,6 +299,7 @@ def load(path: str | Path | None = None, base_dir: str | Path | None = None) -> 
                       "default_sample": ui.get("default_sample", ""),
                       "default_neuron": ui.get("default_neuron", ""),
                       "auto_load": ui.get("auto_load", False),
+                      "startup_mode": ui.get("startup_mode", "configured"),
                       "settings": copy.deepcopy(scoped_settings)}
     # Optional external tracing tool. Both paths are resolved here so the GUI
     # never has to reinterpret a relative path against the process cwd.
@@ -317,6 +319,8 @@ def load(path: str | Path | None = None, base_dir: str | Path | None = None) -> 
             raise ValueError(f"visual_toolkit.{key} must be a string")
     if not isinstance(visual_toolkit["auto_load"], bool):
         raise ValueError("visual_toolkit.auto_load must be a boolean")
+    if visual_toolkit["startup_mode"] not in {"configured", "public-example"}:
+        raise ValueError("visual_toolkit.startup_mode must be 'configured' or 'public-example'")
     default_sample, default_neuron = visual_toolkit["default_sample"], visual_toolkit["default_neuron"]
     if bool(default_sample) != bool(default_neuron):
         raise ValueError("visual_toolkit.default_sample and default_neuron must both be set or both be blank")

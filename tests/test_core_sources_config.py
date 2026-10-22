@@ -1,6 +1,6 @@
 """Focused regression checks for the standalone extraction seams.
 
-Version: 1.11.0.dev1 (local/unreleased)
+Version: 1.11.0.dev2 (local/unreleased)
 Last updated: 2026-10-22
 Change history: ../CHANGELOG.md
 """
@@ -27,6 +27,7 @@ if not TEST_INSTALLED:
 class StandaloneImportTests(unittest.TestCase):
     def test_import_does_not_need_iondata_or_mutate_sys_path(self):
         script = '''import builtins, os, sys
+os.environ["APPDATA"] = sys.argv[2]
 os.environ.pop("VISPA_CONFIG", None)
 os.environ.pop("VISUAL_TOOLKIT_CONFIG", None)
 os.environ.pop("PROJECTOME_DATASETS", None)
@@ -61,12 +62,33 @@ if installed:
     purelib = Path(sysconfig.get_paths()["purelib"]).resolve()
     assert Path(vispa.__file__).resolve().is_relative_to(purelib)
     assert Path(toolkit.__file__).resolve().is_relative_to(purelib)
-'''
+        '''
         command = [sys.executable]
         if TEST_INSTALLED:
             command.append("-I")
-        command.extend(("-c", script, str(SRC)))
-        result = subprocess.run(command, cwd=tempfile.gettempdir(), capture_output=True, text=True)
+        with tempfile.TemporaryDirectory() as config_home:
+            command.extend(("-c", script, str(SRC), config_home))
+            result = subprocess.run(command, cwd=tempfile.gettempdir(), capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_existing_user_yaml_is_applied_on_toolkit_import(self):
+        with tempfile.TemporaryDirectory() as appdata:
+            config_dir = Path(appdata) / "VisualToolkit"
+            config_dir.mkdir()
+            (config_dir / "visual_toolkit_config.yaml").write_text(
+                "version: 1\nvisual_toolkit:\n  settings:\n    review:\n      marker.color: '#123456'\n",
+                encoding="utf-8")
+            script = """from pathlib import Path
+from vispa import toolkit
+assert toolkit.ACTIVE_CONFIG['config_origin'] == 'user_yaml'
+assert toolkit.review_settings_snapshot()['marker']['color'] == '#123456'
+assert Path(toolkit.ACTIVE_CONFIG['path']).name == 'visual_toolkit_config.yaml'
+"""
+            env = {key: value for key, value in os.environ.items()
+                   if key not in {"VISPA_CONFIG", "VISUAL_TOOLKIT_CONFIG", "PROJECTOME_DATASETS"}}
+            env.update({"APPDATA": appdata, "PYTHONPATH": str(SRC), "MPLBACKEND": "Agg"})
+            result = subprocess.run([sys.executable, "-c", script], cwd=tempfile.gettempdir(),
+                                    env=env, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_missing_tiff_extra_fails_only_when_tiff_reader_is_used(self):
