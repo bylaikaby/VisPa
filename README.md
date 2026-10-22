@@ -1,6 +1,16 @@
-# VisualToolkit
+# VisPa — Visual Projectome Analysis tool
 
-VisualToolkit renders local macaque microscopy arrays into soma and context review figures. The source tree is packaged independently from projectome; the projectome checkout can connect its cohort scripts and configured lab data through the provider and configuration interfaces described below.
+Primary standalone development workspace: `D:/VisPa`. Package/distribution: `vispa`; commands: `vispa`, `vispa-gui`. Existing `Visual_toolkit` imports/class and `visual-toolkit` commands remain compatibility aliases.
+
+`VISPA_CONFIG`, `VISPA_PYTHON`, `VISPA_WHEELHOUSE` take precedence over their `VISUAL_TOOLKIT_*` counterparts; configuration falls back to `PROJECTOME_DATASETS`. Legacy per-user VisualToolkit config/cache/output discovery and `visual_toolkit` settings key remain supported unchanged. Existing `visual-toolkit.*.v1` schemas retain their wire identity. No existing config/cache/outputs are moved. Use a fresh environment: overlapping `visual-toolkit` distribution ownership is rejected by the installer.
+
+Legacy leaf-module imports resolve to the same primary module objects and settings state; the legacy GL parent remains a state-free namespace. Optional OpenGL remains lazy. `python -m vispa` and `python -m Visual_toolkit` are supported, as are their GUI module launchers. The old class name aliases `VisPa`, without a second implementation.
+
+New standalone run receipts, builds and candidate outputs live under `D:/VisPa/work/`. The living project journal remains `D:/projectome_analysis/docs/project_note.md`. Existing projectome receipts remain historical evidence; external scientific data/cache paths remain explicit configuration.
+
+## Current operator guide
+
+VisPa renders local macaque microscopy arrays into soma and context review figures. The source tree is packaged independently from projectome; the projectome checkout can connect its cohort scripts and configured lab data through the provider and configuration interfaces described below.
 
 This checkout is **1.11.0.dev1, local and unreleased**. It preserves the existing rendering and source-verification algorithms. The DS00 sagittal panel retains its two documented axis hypotheses and its manifest, hash, geometry, and source checks; those hypotheses remain candidates pending independent anatomical validation. No study data, lab configuration, or private source tree is included. `extraction_manifest.json` records the historical extraction snapshot; today's build, installer selection and validation hashes are recorded in the shared project receipt.
 
@@ -9,8 +19,8 @@ This checkout is **1.11.0.dev1, local and unreleased**. It preserves the existin
 1. Clone from GitHub (first time only):
 
    ```powershell
-   gh repo clone bylaikaby/Visual_toolkit D:\Visual_toolkit
-   cd D:\Visual_toolkit
+   gh repo clone bylaikaby/VisPa D:\VisPa
+   cd D:\VisPa
    ```
 
 2. Install from the checkout:
@@ -19,7 +29,7 @@ This checkout is **1.11.0.dev1, local and unreleased**. It preserves the existin
    .\install.cmd -Source
    ```
 
-3. The GUI opens. A **VisualToolkit** shortcut is added to the desktop for later use.
+3. The GUI opens. A **VisPa** shortcut is added to the desktop for later use.
 
 The installer defaults to the code in the current checkout and installs the full `[3d]` stack. If the repo is already cloned, only step 2 is needed. Pass `-Wheel PATH` to install a built wheel explicitly; `-Wheel` and `-Source` cannot be combined.
 
@@ -32,7 +42,7 @@ If the config is not set:
 Offline / no download:
 
 ```powershell
-.\install.cmd -Wheel .\dist\build_20261022_dev1\visual_toolkit-1.11.0.dev1-py3-none-any.whl -Wheelhouse C:\path\to\wheelhouse
+.\install.cmd -Wheel C:\path\to\vispa-1.11.0.dev1-py3-none-any.whl -Wheelhouse C:\path\to\wheelhouse
 ```
 
 Preview only:
@@ -44,8 +54,8 @@ Preview only:
 Uninstall:
 
 ```powershell
-visual-toolkit install-path --remove
-Remove-Item -Recurse "$env:LOCALAPPDATA\VisualToolkit\venv"
+vispa install-path --remove
+Remove-Item -Recurse "$env:LOCALAPPDATA\VisPa\venv"
 ```
 
 ## Using the GUI
@@ -57,29 +67,29 @@ Remove-Item -Recurse "$env:LOCALAPPDATA\VisualToolkit\venv"
 
 ## Manual install
 
-Use Python 3.10 or newer in a dedicated virtual environment; do not install into the projectome analysis interpreter. Create `.venv` with `py -3 -m venv .venv`, install the core with `.\.venv\Scripts\python.exe -m pip install .`, and add the full review/3D stack with `.\.venv\Scripts\python.exe -m pip install ".[3d]"`. The legacy SSH fallback is manual: `.\.venv\Scripts\python.exe -m pip install paramiko`. A wheel cannot embed third-party distributions; for offline setup, build a wheelhouse once with `pip download "visual-toolkit[3d]" -d wheelhouse` and install with `pip install --no-index --find-links wheelhouse "visual-toolkit[3d]"`. Run `visual-toolkit install-path` to expose the commands. `python -m build` creates distributions when the `build` tool is installed; `python -m unittest discover -s tests -v` runs the package checks.
+Use Python 3.10 or newer in a dedicated virtual environment; do not install into the projectome analysis interpreter. Create `.venv` with `py -3 -m venv .venv`, install the core with `.\.venv\Scripts\python.exe -m pip install .`, and add the full review/3D stack with `.\.venv\Scripts\python.exe -m pip install ".[3d]"`. The legacy SSH fallback is manual: `.\.venv\Scripts\python.exe -m pip install paramiko`. A wheel cannot embed third-party distributions; for offline setup, build a wheelhouse once with `pip download "vispa[3d]" -d wheelhouse` and install with `pip install --no-index --find-links wheelhouse "vispa[3d]"`. Run `vispa install-path` to expose the commands. `python -m build` creates distributions when the `build` tool is installed; `python -m unittest discover -s tests -v` runs the package checks.
 
 The projectome main environment remains Python 3.10. On this machine, the standalone worker uses a full Windows x64 CPython 3.13.13 virtual environment at `.venv`, created from the neutral Miniconda base; `pyvenv.cfg` sets `include-system-site-packages = false`. Install its exact core plus TIFF, NIfTI and YAML dependency set from `requirements-runtime-win-py313.lock` with `& '.\.venv\Scripts\python.exe' -m pip install --require-hashes -r requirements-runtime-win-py313.lock`. To add the legacy OpenGL viewer, install both locks together by adding `-r requirements-legacy-gl-win-py313.lock` to that command. SSH dependencies are outside these locks. `pyproject.toml` keeps general package requirements, and this verification does not establish broader minimum or maximum supported versions.
 
-The headless operator is `visual-toolkit render`. It accepts one local `.npy` array in ZYX or YX order, a declared soma coordinate, origin, voxel spacing, role, and output directory. The three coordinate triples use XYZ micrometres. TIFF, NIfTI, SSH, and YAML extras remain available to backend and GUI workflows. The first run should use `--dry-run`, which resolves the inputs, settings, output PNG and receipt without creating directories, reading image pixels, or accessing a source. A real run writes the PNG and its JSON receipt and refuses to overwrite either.
+The headless operator is `vispa render`. It accepts one local `.npy` array in ZYX or YX order, a declared soma coordinate, origin, voxel spacing, role, and output directory. The three coordinate triples use XYZ micrometres. TIFF, NIfTI, SSH, and YAML extras remain available to backend and GUI workflows. The first run should use `--dry-run`, which resolves the inputs, settings, output PNG and receipt without creating directories, reading image pixels, or accessing a source. A real run writes the PNG and its JSON receipt and refuses to overwrite either.
 
 ```text
-visual-toolkit render --input cube.npy --sample sample-01 --neuron 0007 --soma 120 240 30 --origin 0 0 0 --resolution 0.65 0.65 3 --coordinate-frame sample-native-XYZ --role soma --output-dir review --dry-run
+vispa render --input cube.npy --sample sample-01 --neuron 0007 --soma 120 240 30 --origin 0 0 0 --resolution 0.65 0.65 3 --coordinate-frame sample-native-XYZ --role soma --output-dir review --dry-run
 ```
 
-Use `--role context` for the 5 µm style. `--set PATH=VALUE` overrides review settings; scalar values and numeric sequences are supported, such as `--set figure.panel_dpi=400` or `--set soma_window.cubes_xy_steps=1.5,1.25,1`. Unknown keys, out-of-range values and invalid combinations fail before changing global settings. Run `visual-toolkit settings` to print each setting's default, current value, valid range and effect as JSON. Python callers can use `review_settings_schema()` and pass a mapping or a list of `PATH=VALUE` strings to `apply_setting_overrides()`. The single-panel review figure includes the image and target marker legend and labels the displayed plane as native X/Y. The cyan target box and cross mark the supplied coordinate; they do not validate anatomy, orientation, or laterality. The labeled single-panel CLI review reserves font-measured clearance between its axes and shared legend; multi-panel and unlabeled figures retain the legacy layout.
+Use `--role context` for the 5 µm style. `--set PATH=VALUE` overrides review settings; scalar values and numeric sequences are supported, such as `--set figure.panel_dpi=400` or `--set soma_window.cubes_xy_steps=1.5,1.25,1`. Unknown keys, out-of-range values and invalid combinations fail before changing global settings. Run `vispa settings` to print each setting's default, current value, valid range and effect as JSON. Python callers can use `review_settings_schema()` and pass a mapping or a list of `PATH=VALUE` strings to `apply_setting_overrides()`. The single-panel review figure includes the image and target marker legend and labels the displayed plane as native X/Y. The cyan target box and cross mark the supplied coordinate; they do not validate anatomy, orientation, or laterality. The labeled single-panel CLI review reserves font-measured clearance between its axes and shared legend; multi-panel and unlabeled figures retain the legacy layout.
 
-`visual-toolkit gui` starts the optional Tk interface. `visual-toolkit --help`, `visual-toolkit --version`, and `python -m Visual_toolkit --help` do not load image libraries, open windows, or acquire data. Package import does not change `sys.path` or import `IONData`.
+`vispa gui` starts the optional Tk interface. `vispa --help`, `vispa --version`, and `python -m vispa --help` do not load image libraries, open windows, or acquire data. Package import does not change `sys.path` or import `IONData`.
 
 ## One-volume DS00 montage
 
-`visual-toolkit montage` renders one explicitly named 3D NIfTI into the preserved five DS00 views. It does not discover cohorts, read workbooks, choose files, or apply a transform. The affine must yield LPS voxel axis codes, as in the source montage. NIfTI affines map voxel indices into RAS+ world coordinates; each panel labels increasing projected anatomical directions in RAS+ millimetres. The header must declare millimetres, or the operator must explicitly declare `--units mm` when the header units are unknown; known non-mm units are rejected. The output includes a compact intensity-image legend. The `[3d]` extra provides the montage dependencies.
+`vispa montage` renders one explicitly named 3D NIfTI into the preserved five DS00 views. It does not discover cohorts, read workbooks, choose files, or apply a transform. The affine must yield LPS voxel axis codes, as in the source montage. NIfTI affines map voxel indices into RAS+ world coordinates; each panel labels increasing projected anatomical directions in RAS+ millimetres. The header must declare millimetres, or the operator must explicitly declare `--units mm` when the header units are unknown; known non-mm units are rejected. The output includes a compact intensity-image legend. The `[3d]` extra provides the montage dependencies.
 
 ```powershell
-& '.\.venv\Scripts\visual-toolkit.exe' montage --input 'D:\data\sample.nii.gz' --output 'D:\review\sample-5view.png' --units mm --max-voxels 64000000 --set display_gamma=0.88 --dry-run
+& '.\.venv\Scripts\vispa.exe' montage --input 'D:\data\sample.nii.gz' --output 'D:\review\sample-5view.png' --units mm --max-voxels 64000000 --set display_gamma=0.88 --dry-run
 ```
 
-Review the resolved header, affine, setting values, output path, and receipt path. Remove `--dry-run` to write a new PNG and adjacent JSON receipt. The command requires the explicit `--units mm` declaration, refuses existing outputs and input overwrite; it hashes the source before and after rendering and removes partial outputs if rendering fails. The default bound is 64 million voxels; `--max-voxels` can change that bound explicitly. `--set KEY=JSON_VALUE` is repeatable and only accepts the settings below. The Python mapping `Visual_toolkit.volume_montage.SETTING_SPECS` also provides each parameter's default, effect, unit, and validated range.
+Review the resolved header, affine, setting values, output path, and receipt path. Remove `--dry-run` to write a new PNG and adjacent JSON receipt. The command requires the explicit `--units mm` declaration, refuses existing outputs and input overwrite; it hashes the source before and after rendering and removes partial outputs if rendering fails. The default bound is 64 million voxels; `--max-voxels` can change that bound explicitly. `--set KEY=JSON_VALUE` is repeatable and only accepts the settings below. The Python mapping `vispa.volume_montage.SETTING_SPECS` also provides each parameter's default, effect, unit, and validated range.
 
 | Setting | Default | Unit / valid range | Effect |
 |---|---:|---|---|
@@ -123,7 +133,7 @@ data, or apply registration/mirroring. Preview the resolved paths and display se
 before launching a window:
 
 ```powershell
-& '.\.venv\Scripts\python.exe' -I -m Visual_toolkit brain-view --sample 251637 --neuron 001.swc --config 'C:\data\visual_toolkit_config.yaml' --dry-run
+& '.\.venv\Scripts\python.exe' -I -m vispa brain-view --sample 251637 --neuron 001.swc --config 'C:\data\visual_toolkit_config.yaml' --dry-run
 ```
 
 Remove `--dry-run` for an interactive review, or add `--snapshot 'D:\review\view.png'`
@@ -152,13 +162,13 @@ package remains installable without the `[3d]` OpenGL dependencies.
 
 ## Shared settings interface
 
-`visual-toolkit settings` retains the review-only JSON schema by default. Use
-`visual-toolkit settings --scope review|brain-view|montage|all` to discover the
+`vispa settings` retains the review-only JSON schema by default. Use
+`vispa settings --scope review|brain-view|montage|all` to discover the
 three existing parameter groups; `all` is grouped JSON and loads no optional
-feature dependencies. The root Python API is `Visual_toolkit.settings_schema(scope="all")`,
+feature dependencies. The root Python API is `vispa.settings_schema(scope="all")`,
 `resolve_settings(scope, overrides=None, base=None, config=None)`, and
 `apply_settings(scope, overrides, settings=None, config=None)`. The same APIs
-are available through the compatibility `Visual_toolkit` module alias. Values can be mappings or
+are available through the compatibility `vispa` module alias. Values can be mappings or
 repeated `KEY=VALUE` strings; JSON values such as arrays/numbers are decoded,
 while review's historical comma sequences, hex colors, and `auto` remain accepted.
 For the Context panel, `context.swc_overlay_depth_um` sets the total soma-centred
@@ -198,24 +208,24 @@ Brain-view adds repeatable `--set KEY=VALUE`; the existing specific flags take
 precedence if the same key appears in both forms. Example:
 
 ```powershell
-visual-toolkit brain-view --sample 251637 --neuron 001.swc --config 'D:\config.json' --dry-run --set camera_distance_scale=0.5 --camera-distance-scale 0.6
+vispa brain-view --sample 251637 --neuron 001.swc --config 'D:\config.json' --dry-run --set camera_distance_scale=0.5 --camera-distance-scale 0.6
 ```
 
-The resolved camera scale is `0.6`. Run `visual-toolkit settings --scope brain-view`
+The resolved camera scale is `0.6`. Run `vispa settings --scope brain-view`
 for defaults, units, display effects, valid ranges and the `eye_direction`/`up`
 vector relationship; add `--config PATH` to include configured current values.
 
 ## Sources and configuration
 
-No specimen, share, URL, SSH host, or project directory is configured by default. An absent config provides per-user cache and output folders only. Set `VISUAL_TOOLKIT_CONFIG` or pass `--config PATH`; the older `PROJECTOME_DATASETS` environment variable remains accepted. JSON works with the standard library; YAML is included in the core install. Relative paths resolve from the config file's folder, or from the optional top-level `base_dir`.
+No specimen, share, URL, SSH host, or project directory is configured by default. An absent config provides per-user cache and output folders only. Set `VISPA_CONFIG` or pass `--config PATH`; the older `PROJECTOME_DATASETS` environment variable remains accepted. JSON works with the standard library; YAML is included in the core install. Relative paths resolve from the config file's folder, or from the optional top-level `base_dir`.
 
 Create the per-user YAML without overwriting anything already present:
 
 ```powershell
-visual-toolkit config-init --dry-run
-visual-toolkit config-init
-visual-toolkit config-init --output 'D:\review\visual_toolkit_config.yaml'
-visual-toolkit config-init --from-config 'D:\old\visual_toolkit_config.json' --output 'D:\review\visual_toolkit_config.yaml'
+vispa config-init --dry-run
+vispa config-init
+vispa config-init --output 'D:\review\visual_toolkit_config.yaml'
+vispa config-init --from-config 'D:\old\visual_toolkit_config.json' --output 'D:\review\visual_toolkit_config.yaml'
 ```
 
 `--output` must end in `.yaml` or `.yml`; an explicit destination is never
@@ -291,17 +301,17 @@ heterogeneous or irregular-pitch grid mapping.
 
 `dataset_config.load(path=None, base_dir=None)` returns resolved `defaults`, `samples`, `visual_toolkit`, and `sources`. Backend cache/output roots use `defaults.cache_root` and `defaults.output_root`; `visual_toolkit.output_root` is the GUI review-output root. `dataset_config.default_config_path()` and `default_output_root()` provide per-user locations without creating them. A project adapter may call `toolkit.configure_data_sources(path)` after selecting its config; the selected config then applies to subsequent toolkit instances.
 
-The GUI's **Neuron list** button opens a compact scrollable browser and reads only the configured dated CSV snapshot. Configure `sources.neuron_catalog.path`, its `source_date`, and the exact sample, neuron ID, portal region, and optional monkey columns. The list includes every matching sample row in that snapshot (not only the selected 462-neuron workbook), preserves zero-padded IDs and exact sample suffixes, and labels blank portal regions as `Unassigned`. Its visible provenance includes the resolved source path, source date, row count, and SHA-256. Selecting a row changes only the Neuron ID field; it does not load coordinates or start a render. The public `Visual_toolkit.sources.list_neurons(sample_id, config=None)` function returns a provenance object with `rows` and raises on missing source configuration, missing columns, duplicate IDs, or unsafe neuron basenames. It makes no network calls.
+The GUI's **Neuron list** button opens a compact scrollable browser and reads only the configured dated CSV snapshot. Configure `sources.neuron_catalog.path`, its `source_date`, and the exact sample, neuron ID, portal region, and optional monkey columns. The list includes every matching sample row in that snapshot (not only the selected 462-neuron workbook), preserves zero-padded IDs and exact sample suffixes, and labels blank portal regions as `Unassigned`. Its visible provenance includes the resolved source path, source date, row count, and SHA-256. Selecting a row changes only the Neuron ID field; it does not load coordinates or start a render. The public `vispa.sources.list_neurons(sample_id, config=None)` function returns a provenance object with `rows` and raises on missing source configuration, missing columns, duplicate IDs, or unsafe neuron basenames. It makes no network calls.
 
 The optional **3D brain view** action uses `sources.brain_view.mesh_path` and `processed_swc_root`, with declared `coordinate_frame` / `coordinate_units` and optional `settings`; `visual_toolkit.worker_python` selects its isolated worker when set. A generic config does not receive default anatomical frame or unit declarations: the worker preflight requires explicit values when 3D view is requested. The default projectome config points to the preserved root.obj and processed-SWC tree and declares their current stored convention. The handoff passes the exact current sample and neuron ID plus the portal snapshot's region when available. It never substitutes a raw SWC or downloads a model. The GUI starts the worker in a separate process, leaving the host Python imports isolated.
 
-`Visual_toolkit.sources.IONData()` reads the configured local SWC cache first. A project can register a fallback implementing `getRawNeuronTreeByID(sample_id, neuron_id)` using `set_iondata_provider_factory(factory)`. Without a registered factory, setting `sources.http_host` and `sources.raw_swc_base` enables the built-in portal fetch: it reads the sample's `project_id` from the portal and downloads `<project>/<sample>/swc_raw/<neuron>` into `sources.legacy_raw_swc_root`. The returned tree protocol exposes `root.x/y/z`, `root.xyz`, `points`, and iterable `edges` whose `.data` contains points with `.x/y/z` attributes. The local parser rejects malformed, disconnected, cyclic, and missing-parent trees.
+`vispa.sources.IONData()` reads the configured local SWC cache first. A project can register a fallback implementing `getRawNeuronTreeByID(sample_id, neuron_id)` using `set_iondata_provider_factory(factory)`. Without a registered factory, setting `sources.http_host` and `sources.raw_swc_base` enables the built-in portal fetch: it reads the sample's `project_id` from the portal and downloads `<project>/<sample>/swc_raw/<neuron>` into `sources.legacy_raw_swc_root`. The returned tree protocol exposes `root.x/y/z`, `root.xyz`, `points`, and iterable `edges` whose `.data` contains points with `.x/y/z` attributes. The local parser rejects malformed, disconnected, cyclic, and missing-parent trees.
 
 The processed-DS sagittal implementation requires explicit `sources.dataset_manifest` and `defaults.ds00_root`, a configured per-sample image path and checksum, and local SWC input or cache. It records source identity and geometry. Its A/B mapping choices remain unresolved; successful loading or rendering is not anatomical acceptance.
 
 ## API and projectome integration
 
-The public Python import remains `Visual_toolkit` for compatibility. `Visual_toolkit.Visual_toolkit`, `REVIEW_SETTINGS`, and the plotting helpers are exposed lazily from `Visual_toolkit.toolkit`. Core rendering accepts in-memory arrays, so a consumer can integrate the package without adopting the standalone acquisition providers or source layout.
+The primary Python import is `vispa`. `vispa.VisPa`, `REVIEW_SETTINGS`, and the plotting helpers are exposed lazily from `vispa.toolkit`. Core rendering accepts in-memory arrays, so a consumer can integrate the package without adopting the standalone acquisition providers or source layout.
 
 Projectome owns its cohort runners, montage adapter, source manifest, and lab-specific configuration. It can depend on this distribution and keep a thin compatibility facade that maps its existing `Visual_toolkit` imports, injects the `IONData` provider, and supplies explicit data roots. The independent package contains only the generic single-volume DS00 renderer, not the cohort montage adapter or its workbook/path/selection logic. It carries no cohort YAML or source data; `extraction_manifest.json` preserves historical source path and hash provenance.
 
@@ -314,12 +324,20 @@ See [CHANGELOG.md](CHANGELOG.md) for the preserved toolkit history and extractio
 
 ### Single-neuron resource and FNT preflight
 
-Run `visual-toolkit config-check --config settings.yaml --sample 251637 --neuron 003.swc --dry-run` for a read-only JSON inventory (file hashes, source dates unknown as null, coordinate declarations, cache references and cube route/geometry). Add `--fnt` to require both the configured executable and the exact `<sample>_<neuron>.fnt` or `.decimate.fnt`; this mode returns failure when either is unavailable and never starts the binary. Directory references are not recursively hashed; the inventory alone does not establish complete offline panel coverage or scientific acceptance.
+Run `vispa config-check --config settings.yaml --sample 251637 --neuron 003.swc --dry-run` for a read-only JSON inventory (file hashes, source dates unknown as null, coordinate declarations, cache references and cube route/geometry). Add `--fnt` to require both the configured executable and the exact `<sample>_<neuron>.fnt` or `.decimate.fnt`; this mode returns failure when either is unavailable and never starts the binary. Directory references are not recursively hashed; the inventory alone does not establish complete offline panel coverage or scientific acceptance.
 
 In the GUI, **FNT setup…** exposes **FNT executable** and **Project folder**, each with **Browse…**; **Save paths** persists absolute paths in the active config through the existing validated writer. A config changed while the dialog was open must be reopened before saving. **fnt-tracer** requires the matching project. These two paths default to null in neutral configs and do not change scientific rendering parameters.
 
 Combined review figures derive text wrapping, legend/footer height and labeled-axis separation from the selected font metrics and available axes width; panels retain full image extents and original aspect ratios, anchored at the top. These are automatic layout constraints rather than separate scientific parameters. Tune `figure.review_figsize` and `figure.review_dpi` through the existing settings interface.
 
-Soma inline-label presentation: `--set marker.label_mode=none` (default, role legend only), `short` (S), or `numbered` (1 with a thin leader). Cyan box/cross coordinates are identical in all modes. Existing label font size and offset remain tunable; `visual-toolkit settings --scope review` lists the enum and effects.
+Soma inline-label presentation: `--set marker.label_mode=none` (default, role legend only), `short` (S), or `numbered` (1 with a thin leader). Cyan box/cross coordinates are identical in all modes. Existing label font size and offset remain tunable; `vispa settings --scope review` lists the enum and effects.
 
 GUI Render now uses the same combined legend layout as the bounded runner. Soma/Context use explicit crop-pixel index axes, all standalone PNG tabs carry role legends outside the image, and GUI cache keys include gui.py/toolkit.py hashes so local code changes invalidate earlier figure strips even when the package version stays unchanged.
+
+## Legacy compatibility
+
+`import Visual_toolkit`, `Visual_toolkit.Visual_toolkit`, `python -m Visual_toolkit`, `python -m Visual_toolkit.gui`, `visual-toolkit` and `visual-toolkit-gui` remain aliases. Qualified legacy leaf modules share primary module objects; the legacy GL parent is a state-free namespace.
+
+Existing `visual-toolkit.*.v1` receipt schemas, the `visual_toolkit` settings key, `visual_toolkit_config.yaml/json` filenames and per-user `VisualToolkit` configuration/cache/output folders remain unchanged. `VISUAL_TOOLKIT_CONFIG/PYTHON/WHEELHOUSE` remain fallbacks behind corresponding `VISPA_*` values. Existing installations, data and historical manifests are not moved or rewritten. The GitHub repository is `bylaikaby/VisPa`; clone it into `D:/VisPa` as above.
+
+The offline wheel command above uses an explicit placeholder path; substitute the exact built wheel from the current receipt under `work/vispa_rename_20261022/run_receipt.json`. This repository receipt is the current rename verification entry point.

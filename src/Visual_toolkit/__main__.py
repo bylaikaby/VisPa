@@ -1,9 +1,8 @@
-"""Safe command-line entry point; data acquisition requires explicit configuration.
+"""Legacy import compatibility for VisPa.
 
-Version: 1.10.0.dev0 (local/unreleased)
-Last updated: 2026-10-18
+Version: 1.11.0.dev1 (local/unreleased)
+Last updated: 2026-10-22
 Change history: ../../CHANGELOG.md
 """
-from .cli import main
-
-raise SystemExit(main())
+from vispa.cli import main
+if __name__ == "__main__": raise SystemExit(main())

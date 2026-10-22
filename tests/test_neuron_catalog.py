@@ -19,8 +19,8 @@ SRC = ROOT / "src"
 if os.environ.get("VISUAL_TOOLKIT_TEST_INSTALLED") != "1":
     sys.path.insert(0, str(SRC))
 
-from Visual_toolkit.dataset_config import load
-from Visual_toolkit.sources import (
+from vispa.dataset_config import load
+from vispa.sources import (
     catalog_matches_sample, catalog_selection_id, catalog_snapshot_unchanged,
     list_neurons,
 )
@@ -132,7 +132,7 @@ class NeuronCatalogTests(unittest.TestCase):
             list_neurons(252527, {"sources": {}})
 
     def test_gui_selection_only_sets_neuron_id(self):
-        from Visual_toolkit.gui import NeuroVisGUI
+        from vispa.gui import NeuroVisGUI
 
         class Variable:
             def __init__(self, value):
@@ -163,14 +163,14 @@ class NeuronCatalogTests(unittest.TestCase):
         gui.neuron_catalog_table = Table()
         gui.load_and_autofill = mock.Mock()
         gui.run_selected = mock.Mock()
-        with mock.patch("Visual_toolkit.sources.catalog_snapshot_unchanged", return_value=True):
+        with mock.patch("vispa.sources.catalog_snapshot_unchanged", return_value=True):
             gui._on_neuron_catalog_selected()
         self.assertEqual(gui.neuron_id.get(), "001.swc")
         gui.load_and_autofill.assert_not_called()
         gui.run_selected.assert_not_called()
 
     def test_gui_discards_stale_sample_result_without_populating_dialog(self):
-        from Visual_toolkit.gui import NeuroVisGUI
+        from vispa.gui import NeuroVisGUI
 
         class Variable:
             def __init__(self, value):
@@ -214,7 +214,7 @@ class NeuronCatalogTests(unittest.TestCase):
         gui.update_status.assert_called_once()
 
     def test_gui_ignores_pending_result_after_dialog_close(self):
-        from Visual_toolkit.gui import NeuroVisGUI
+        from vispa.gui import NeuroVisGUI
 
         class Window:
             def __init__(self):

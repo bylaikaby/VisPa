@@ -1,7 +1,12 @@
-"""Single package version source.
+"""Legacy import compatibility for VisPa.
 
 Version: 1.11.0.dev1 (local/unreleased)
 Last updated: 2026-10-22
 Change history: ../../CHANGELOG.md
 """
-__version__ = "1.11.0.dev1"
+import importlib,sys
+if __name__ == "__main__":
+    import runpy
+    runpy.run_module('vispa._version',run_name="__main__")
+else:
+    sys.modules[__name__] = importlib.import_module('vispa._version')

@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "visual-toolkit"
+name = "vispa"
 version = "1.11.0.dev1"
-description = "Standalone macaque microscopy visualization and review tools"
+description = "VisPa — Visual Projectome Analysis tool for microscopy visualization and review"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = ["numpy", "matplotlib", "Pillow", "PyYAML"]
@@ -29,10 +29,12 @@ dependencies = ["numpy", "matplotlib", "Pillow", "PyYAML"]
 ]
 
 [project.scripts]
-visual-toolkit = "Visual_toolkit.cli:main"
+vispa = "vispa.cli:main"
+visual-toolkit = "vispa.cli:main"
 
 [project.gui-scripts]
-visual-toolkit-gui = "Visual_toolkit.gui:main"
+vispa-gui = "vispa.gui:main"
+visual-toolkit-gui = "vispa.gui:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -41,5 +43,5 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-Visual_toolkit = ["default_config.yaml"]
+vispa = ["default_config.yaml"]
 

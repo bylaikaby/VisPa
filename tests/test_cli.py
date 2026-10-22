@@ -24,7 +24,7 @@ TEST_INSTALLED = os.environ.get("VISUAL_TOOLKIT_TEST_INSTALLED") == "1"
 if not TEST_INSTALLED:
     sys.path.insert(0, str(ROOT / "src"))
 ENV = {key: value for key, value in os.environ.items()
-       if key not in {"PYTHONPATH", "VISUAL_TOOLKIT_CONFIG", "PROJECTOME_DATASETS"}}
+       if key not in {"PYTHONPATH", "VISPA_CONFIG", "VISUAL_TOOLKIT_CONFIG", "PROJECTOME_DATASETS"}}
 ENV.update({"MPLBACKEND": "Agg", "PYTHONDONTWRITEBYTECODE": "1"})
 if TEST_INSTALLED:
     ENV["VISUAL_TOOLKIT_TEST_INSTALLED"] = "1"
@@ -36,7 +36,7 @@ def run_cli(*args, cwd=None):
     command = [sys.executable]
     if TEST_INSTALLED:
         command.append("-I")
-    command.extend(("-m", "Visual_toolkit", *map(str, args)))
+    command.extend(("-m", "vispa", *map(str, args)))
     return subprocess.run(command,
                           cwd=cwd or Path.cwd(), env=ENV, text=True,
                           capture_output=True, check=False)
@@ -67,25 +67,30 @@ def same_planned_path(actual, expected, existing_parent):
 
 
 class CliContractTests(unittest.TestCase):
+    def setUp(self):
+        isolated = mock.patch.dict(os.environ, {"VISPA_CONFIG": ""})
+        isolated.start()
+        self.addCleanup(isolated.stop)
+
     def test_install_path_entry_is_idempotent_and_removable(self):
-        from Visual_toolkit.cli import merge_user_path, remove_user_path
+        from vispa.cli import merge_user_path, remove_user_path
         current = r"C:\Windows;C:\Tools\\"
         unchanged, changed = merge_user_path(current, r"c:\tools")
         self.assertFalse(changed)
         self.assertEqual(unchanged, current)
         added, changed = merge_user_path(
-            current, r"D:\Visual_toolkit\.venv\Scripts")
+            current, r"D:\vispa\.venv\Scripts")
         self.assertTrue(changed)
-        self.assertTrue(added.endswith(r"D:\Visual_toolkit\.venv\Scripts"))
+        self.assertTrue(added.endswith(r"D:\vispa\.venv\Scripts"))
         removed, changed = remove_user_path(
-            added, r"d:\visual_toolkit\.venv\scripts\\")
+            added, r"d:\vispa\.venv\scripts\\")
         self.assertTrue(changed)
-        self.assertNotIn("Visual_toolkit", removed)
+        self.assertNotIn("vispa", removed)
 
     def test_help_and_version_do_not_import_backend(self):
         with tempfile.TemporaryDirectory() as directory:
             tmp_path = Path(directory)
-            script = "import sys; import Visual_toolkit; assert 'Visual_toolkit.toolkit' not in sys.modules"
+            script = "import sys; import vispa; assert 'vispa.toolkit' not in sys.modules"
             command = [sys.executable]
             if TEST_INSTALLED:
                 command.append("-I")
@@ -127,10 +132,10 @@ builtins.__import__ = guarded
 if not sys.argv[1]:
     import sysconfig
     from pathlib import Path
-    import Visual_toolkit.settings as settings_module
+    import vispa.settings as settings_module
     package_root = Path(sysconfig.get_paths()["purelib"]).resolve()
     assert Path(settings_module.__file__).resolve().is_relative_to(package_root)
-from Visual_toolkit.cli import main
+from vispa.cli import main
 assert main(["settings", "--scope", "all"]) == 0
 """
             command = [sys.executable]
@@ -298,16 +303,16 @@ assert main(["settings", "--scope", "all"]) == 0
             self.assertIn("pixel index", receipt["render_labels"]["y_axis"])
 
     def test_configured_render_restores_global_and_cached_review_defaults_on_success_and_failure(self):
-        from Visual_toolkit import toolkit
-        from Visual_toolkit.cli import main
+        from vispa import toolkit
+        from vispa.cli import main
 
         original_settings = toolkit.review_settings_snapshot()
         original_settings_ref = toolkit.REVIEW_SETTINGS
         def state():
             return (toolkit.review_settings_snapshot(), toolkit.TARGET_MARKER_COLOR,
                     toolkit.WIDEFIELD_DEFAULT_PARAMETERS, toolkit.SCALE_BAR_CANDIDATES_UM,
-                    toolkit.Visual_toolkit.PANEL_FIGSIZE, toolkit.Visual_toolkit.PANEL_DPI,
-                    toolkit.Visual_toolkit.TRIO_FIGSIZE, toolkit.Visual_toolkit.TRIO_DPI)
+                    toolkit.VisPa.PANEL_FIGSIZE, toolkit.VisPa.PANEL_DPI,
+                    toolkit.VisPa.TRIO_FIGSIZE, toolkit.VisPa.TRIO_DPI)
         original_state = state()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -325,7 +330,7 @@ assert main(["settings", "--scope", "all"]) == 0
                     self.assertIs(toolkit.REVIEW_SETTINGS, original_settings_ref)
                     self.assertEqual(state(), original_state)
 
-                with mock.patch.object(toolkit, "Visual_toolkit", side_effect=RuntimeError("render failed")):
+                with mock.patch.object(toolkit, "VisPa", side_effect=RuntimeError("render failed")):
                     with self.assertRaises(SystemExit):
                         main(list(map(str, render_args(source, root / "failure", "--config", config))))
                 self.assertEqual(state(), original_state)
@@ -341,7 +346,7 @@ assert main(["settings", "--scope", "all"]) == 0
 
 class FNTResourcePreflightTests(unittest.TestCase):
     def test_requires_matching_project_and_never_starts_binary(self):
-        from Visual_toolkit.cli import fnt_plan
+        from vispa.cli import fnt_plan
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             exe = root / 'fnt-tracer.exe'

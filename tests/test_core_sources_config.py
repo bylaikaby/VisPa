@@ -27,6 +27,7 @@ if not TEST_INSTALLED:
 class StandaloneImportTests(unittest.TestCase):
     def test_import_does_not_need_iondata_or_mutate_sys_path(self):
         script = '''import builtins, os, sys
+os.environ.pop("VISPA_CONFIG", None)
 os.environ.pop("VISUAL_TOOLKIT_CONFIG", None)
 os.environ.pop("PROJECTOME_DATASETS", None)
 installed = os.environ.get("VISUAL_TOOLKIT_TEST_INSTALLED") == "1"
@@ -47,8 +48,8 @@ def guarded(name, *args, **kwargs):
         raise AssertionError("unexpected non-core import: " + name)
     return original(name, *args, **kwargs)
 builtins.__import__ = guarded
-import Visual_toolkit
-import Visual_toolkit.toolkit as toolkit
+import vispa
+import vispa.toolkit as toolkit
 toolkit._sample_paths_from_config()
 assert before == sys.path, (before, sys.path)
 assert not attempted, attempted
@@ -58,7 +59,7 @@ if installed:
     import sysconfig
     from pathlib import Path
     purelib = Path(sysconfig.get_paths()["purelib"]).resolve()
-    assert Path(Visual_toolkit.__file__).resolve().is_relative_to(purelib)
+    assert Path(vispa.__file__).resolve().is_relative_to(purelib)
     assert Path(toolkit.__file__).resolve().is_relative_to(purelib)
 '''
         command = [sys.executable]
@@ -69,15 +70,15 @@ if installed:
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_missing_tiff_extra_fails_only_when_tiff_reader_is_used(self):
-        from Visual_toolkit import toolkit
+        from vispa import toolkit
         with mock.patch.dict(sys.modules, {"tifffile": None}):
-            with self.assertRaisesRegex(RuntimeError, r"visual-toolkit\[tiff\]"):
+            with self.assertRaisesRegex(RuntimeError, r"vispa\[tiff\]"):
                 toolkit._read_highres_cube("not-read.tif")
 
 
 class ReviewSettingsTests(unittest.TestCase):
     def test_schema_exposes_defaults_current_ranges_and_effects(self):
-        from Visual_toolkit import review_settings_schema, toolkit
+        from vispa import review_settings_schema, toolkit
         schema = review_settings_schema()
         marker = schema["settings"]["marker.color"]
         self.assertEqual(marker["default"], "#00e5ee")
@@ -87,7 +88,7 @@ class ReviewSettingsTests(unittest.TestCase):
         self.assertTrue(schema["settings"]["marker.color"]["effect"])
 
     def test_mapping_and_path_value_updates_sync_global_render_defaults(self):
-        from Visual_toolkit import apply_setting_overrides, toolkit
+        from vispa import apply_setting_overrides, toolkit
         original = toolkit.review_settings_snapshot()
         try:
             changed = apply_setting_overrides({
@@ -109,23 +110,23 @@ class ReviewSettingsTests(unittest.TestCase):
             self.assertIsInstance(toolkit.REVIEW_SETTINGS["context"]["width_um"], int)
             self.assertEqual(toolkit.REVIEW_SETTINGS["marker"]["label_fontsize"], 5.0)
             self.assertEqual(toolkit.SCALE_BAR_CANDIDATES_UM, (100.0, 200.0, 500.0))
-            self.assertEqual(toolkit.Visual_toolkit.PANEL_FIGSIZE, (50.0, 30.0))
-            self.assertEqual(toolkit.Visual_toolkit.PANEL_DPI, 20)
-            self.assertEqual(toolkit.Visual_toolkit.TRIO_FIGSIZE, (8.0, 4.0))
-            self.assertEqual(toolkit.Visual_toolkit.TRIO_DPI, 90)
+            self.assertEqual(toolkit.VisPa.PANEL_FIGSIZE, (50.0, 30.0))
+            self.assertEqual(toolkit.VisPa.PANEL_DPI, 20)
+            self.assertEqual(toolkit.VisPa.TRIO_FIGSIZE, (8.0, 4.0))
+            self.assertEqual(toolkit.VisPa.TRIO_DPI, 90)
             before_globals = (toolkit.REVIEW_SETTINGS["marker"]["color"],
-                              toolkit.TARGET_MARKER_COLOR, toolkit.Visual_toolkit.PANEL_DPI)
+                              toolkit.TARGET_MARKER_COLOR, toolkit.VisPa.PANEL_DPI)
             custom = toolkit.review_settings_snapshot()
             toolkit.apply_setting_overrides(["marker.color=#123456", "figure.panel_dpi=150"], settings=custom)
             self.assertEqual(custom["marker"]["color"], "#123456")
             self.assertEqual((toolkit.REVIEW_SETTINGS["marker"]["color"],
-                              toolkit.TARGET_MARKER_COLOR, toolkit.Visual_toolkit.PANEL_DPI), before_globals)
+                              toolkit.TARGET_MARKER_COLOR, toolkit.VisPa.PANEL_DPI), before_globals)
         finally:
             toolkit.REVIEW_SETTINGS.clear()
             toolkit.REVIEW_SETTINGS.update(original)
 
     def test_context_overlay_depth_is_discoverable_and_validated(self):
-        from Visual_toolkit import apply_setting_overrides, review_settings_schema, toolkit
+        from vispa import apply_setting_overrides, review_settings_schema, toolkit
         schema = review_settings_schema()
         spec = schema["settings"]["context.swc_overlay_depth_um"]
         self.assertEqual(spec["default"], 100.0)
@@ -143,7 +144,7 @@ class ReviewSettingsTests(unittest.TestCase):
             toolkit._sync_review_setting_constants()
 
     def test_shared_settings_api_is_atomic_and_available_through_toolkit_facade(self):
-        from Visual_toolkit import apply_settings, resolve_settings, settings_schema, toolkit
+        from vispa import apply_settings, resolve_settings, settings_schema, toolkit
         self.assertIs(toolkit.resolve_settings, resolve_settings)
         schema = settings_schema("all")
         self.assertEqual(set(schema["scopes"]), {"review", "brain-view", "montage"})
@@ -173,7 +174,7 @@ class ReviewSettingsTests(unittest.TestCase):
         self.assertEqual(partial_delta["figure.panel_figsize"], [7.0, 5.0])
         self.assertEqual(apply_settings("review", {"figure.panel_figsize": [7, 5]}, settings=partial), {})
 
-        from Visual_toolkit import toolkit
+        from vispa import toolkit
         original_global = toolkit.review_settings_snapshot()
         try:
             self.assertEqual(apply_settings("review", {
@@ -188,7 +189,7 @@ class ReviewSettingsTests(unittest.TestCase):
     def test_public_settings_api_changes_real_png_dimensions_and_marker_pixels(self):
         import numpy as np
         from PIL import Image
-        from Visual_toolkit import apply_setting_overrides, toolkit
+        from vispa import apply_setting_overrides, toolkit
         original = toolkit.review_settings_snapshot()
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -203,7 +204,7 @@ class ReviewSettingsTests(unittest.TestCase):
                     "figure.review_figsize": [5, 3],
                     "figure.review_dpi": 40,
                 })
-                tool = toolkit.Visual_toolkit("SYNTH", cache_dir=root / "cache")
+                tool = toolkit.VisPa("SYNTH", cache_dir=root / "cache")
                 try:
                     panel = tool.plot_soma_block(
                         np.arange(75, dtype=np.uint8).reshape(3, 5, 5),
@@ -249,12 +250,12 @@ class ReviewSettingsTests(unittest.TestCase):
     def test_labeled_review_axes_and_wrapped_legend_clear_at_different_aspects(self):
         import numpy as np
         import matplotlib.pyplot as plt
-        from Visual_toolkit import toolkit
+        from vispa import toolkit
         original = toolkit.review_settings_snapshot()
         figures = []
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            tool = toolkit.Visual_toolkit("SYNTH", cache_dir=root / "cache")
+            tool = toolkit.VisPa("SYNTH", cache_dir=root / "cache")
             tool.TRIO_FIGSIZE = (12, 8)
             try:
                 panel = tool.plot_soma_block(
@@ -344,10 +345,10 @@ class ReviewSettingsTests(unittest.TestCase):
                     plt.close(figure)
 
     def test_invalid_batch_is_atomic_for_custom_and_global_settings(self):
-        from Visual_toolkit import toolkit
+        from vispa import toolkit
         original = toolkit.review_settings_snapshot()
         constants = (toolkit.TARGET_MARKER_COLOR, toolkit.WIDEFIELD_DEFAULT_PARAMETERS,
-                     toolkit.SCALE_BAR_CANDIDATES_UM, toolkit.Visual_toolkit.PANEL_DPI)
+                     toolkit.SCALE_BAR_CANDIDATES_UM, toolkit.VisPa.PANEL_DPI)
         custom = toolkit.review_settings_snapshot()
         with self.assertRaises(ValueError):
             toolkit.apply_setting_overrides(["marker.color=#123456", "figure.panel_figsize=0,3"], settings=custom)
@@ -356,7 +357,7 @@ class ReviewSettingsTests(unittest.TestCase):
             toolkit.apply_setting_overrides(["marker.color=#123456", "figure.panel_dpi=0"])
         self.assertEqual(toolkit.REVIEW_SETTINGS, original)
         self.assertEqual((toolkit.TARGET_MARKER_COLOR, toolkit.WIDEFIELD_DEFAULT_PARAMETERS,
-                          toolkit.SCALE_BAR_CANDIDATES_UM, toolkit.Visual_toolkit.PANEL_DPI), constants)
+                          toolkit.SCALE_BAR_CANDIDATES_UM, toolkit.VisPa.PANEL_DPI), constants)
 
 
 class ConfigTests(unittest.TestCase):
@@ -393,7 +394,7 @@ class ConfigTests(unittest.TestCase):
         return bytes(header)
 
     def test_config_rejects_falsy_nonmapping_sections_and_half_gui_defaults(self):
-        from Visual_toolkit.dataset_config import load
+        from vispa.dataset_config import load
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             for key, value in (("defaults", []), ("samples", []), ("sources", [])):
@@ -408,14 +409,14 @@ class ConfigTests(unittest.TestCase):
                 load(path)
 
     def test_generic_geometry_descriptor_is_validated_and_published_from_config(self):
-        from Visual_toolkit import toolkit
+        from vispa import toolkit
         geometry = {"shape_ijk": [10, 20, 30], "spacing_mm_ijk": [0.005, 0.005, 0.005],
                     "affine_diag": [-0.005, -0.005, 0.005]}
         with tempfile.TemporaryDirectory() as temp:
             config_path = Path(temp) / "geometry.json"
             config_path.write_text(json.dumps({"version": 1, "samples": {
                 "SYNTH": {"ds00_expected_geometry": geometry}}}), encoding="utf-8")
-            from Visual_toolkit.dataset_config import load
+            from vispa.dataset_config import load
             config = load(config_path)
             self.assertEqual(config["samples"]["SYNTH"]["ds00_expected_geometry"]["shape_ijk"], (10, 20, 30))
             with mock.patch.multiple(
@@ -460,8 +461,8 @@ class ConfigTests(unittest.TestCase):
                 load(config_path)
 
     def test_generic_corrected_source_policy_validates_and_records_provenance(self):
-        from Visual_toolkit import toolkit
-        from Visual_toolkit.dataset_config import load
+        from vispa import toolkit
+        from vispa.dataset_config import load
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             corrected = root / "low_res"
@@ -479,7 +480,7 @@ class ConfigTests(unittest.TestCase):
                 "resample_5um_policy": policy}}}), encoding="utf-8")
             config = load(path)
             with mock.patch.object(toolkit, "ACTIVE_CONFIG", config):
-                tool = toolkit.Visual_toolkit("SYNTH", cache_dir=root / "cache",
+                tool = toolkit.VisPa("SYNTH", cache_dir=root / "cache",
                                               low_res_dir=corrected)
                 try:
                     self.assertEqual(tool.low_res_correction["validation_policy"], policy)
@@ -505,7 +506,7 @@ class ConfigTests(unittest.TestCase):
                     with self.subTest(record_field=name):
                         (corrected / "shift_record.json").write_text(json.dumps(invalid), encoding="utf-8")
                         with self.assertRaises(ValueError):
-                            toolkit.Visual_toolkit("SYNTH", cache_dir=root / f"cache-{name}",
+                            toolkit.VisPa("SYNTH", cache_dir=root / f"cache-{name}",
                                                    low_res_dir=corrected)
             missing_policy = {"version": 1, "samples": {"SYNTH": {
                 "resample_5um": str(corrected), "resample_5um_corrected": True}}}
@@ -520,7 +521,7 @@ class ConfigTests(unittest.TestCase):
                 load(path)
 
     def test_invalid_in_memory_config_does_not_partially_apply_settings_or_sources(self):
-        from Visual_toolkit import toolkit
+        from vispa import toolkit
         before_active = toolkit.ACTIVE_CONFIG
         before_geometry = dict(toolkit.EXPECTED_GEOMETRY)
         before_low_res = dict(toolkit.LOW_RES_SHARE_BY_SAMPLE)
@@ -568,16 +569,16 @@ class ConfigTests(unittest.TestCase):
             toolkit._sync_review_setting_constants()
 
     def test_corrected_marker_cannot_bypass_policy_through_mutable_active_config(self):
-        from Visual_toolkit import toolkit
+        from vispa import toolkit
         with tempfile.TemporaryDirectory() as temp:
             config = {"defaults": {}, "samples": {
                 "SYNTH": {"resample_5um_corrected": True}}, "sources": {}}
             with mock.patch.object(toolkit, "ACTIVE_CONFIG", config):
                 with self.assertRaisesRegex(ValueError, "requires a complete resample_5um_policy"):
-                    toolkit.Visual_toolkit("SYNTH", cache_dir=Path(temp) / "cache")
+                    toolkit.VisPa("SYNTH", cache_dir=Path(temp) / "cache")
 
     def test_gui_defaults_are_configured_or_blank_and_explicit_pair_wins(self):
-        from Visual_toolkit.gui import resolve_gui_launch_defaults
+        from vispa.gui import resolve_gui_launch_defaults
         identity, source, auto = resolve_gui_launch_defaults({"visual_toolkit": {}})
         self.assertEqual((identity, source, auto), (("", ""), "none", False))
         config = {"visual_toolkit": {"default_sample": "252527", "default_neuron": "048.swc",
@@ -591,7 +592,7 @@ class ConfigTests(unittest.TestCase):
                 "default_sample": "", "default_neuron": "048.swc"}})
 
     def test_null_visual_toolkit_section_keeps_legacy_empty_defaults(self):
-        from Visual_toolkit.dataset_config import load
+        from vispa.dataset_config import load
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "null-ui.json"
             path.write_text(json.dumps({"version": 1, "visual_toolkit": None}), encoding="utf-8")
@@ -602,7 +603,7 @@ class ConfigTests(unittest.TestCase):
                              Path.home() / "VisualToolkit" / "output").is_absolute())
 
     def test_fnt_tracer_paths_resolve_and_reject_unknown_keys(self):
-        from Visual_toolkit.dataset_config import load
+        from vispa.dataset_config import load
         with tempfile.TemporaryDirectory() as temp:
             folder = Path(temp) / "configs"
             folder.mkdir()
@@ -625,7 +626,7 @@ class ConfigTests(unittest.TestCase):
                 load(config_path)
 
     def test_portal_provider_fetches_and_caches_missing_swc(self):
-        from Visual_toolkit import sources
+        from vispa import sources
         with tempfile.TemporaryDirectory() as temp:
             config = {"sources": {
                 "http_host": "http://portal.invalid",
@@ -655,7 +656,7 @@ class ConfigTests(unittest.TestCase):
 
     def test_save_toggle_selects_preview_or_output_folder(self):
         from types import SimpleNamespace
-        from Visual_toolkit.gui import NeuroVisGUI
+        from vispa.gui import NeuroVisGUI
         gui = NeuroVisGUI.__new__(NeuroVisGUI)
         gui._preview_target_dir = lambda request: "preview"
         preview_request = SimpleNamespace(save_outputs=False, output_dir="out")
@@ -676,7 +677,7 @@ class ConfigTests(unittest.TestCase):
                             "http_base_url": "https://example.invalid/base",
                             "ssh_remote_base": "/srv/data/raw"},
             }), encoding="utf-8")
-            from Visual_toolkit.dataset_config import load
+            from vispa.dataset_config import load
             config = load(config_path)
             self.assertEqual(config["samples"]["0007"]["resample_5um"], (Path(temp) / "images" / "sample_a").resolve())
             self.assertEqual(config["samples"]["0007"]["swc_cache"], (Path(temp) / "swc" / "0007").resolve())
@@ -685,7 +686,7 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(config["sources"]["ssh_remote_base"], "/srv/data/raw")
 
     def test_relative_swc_cache_without_swc_root_stays_config_relative(self):
-        from Visual_toolkit.dataset_config import load
+        from vispa.dataset_config import load
         with tempfile.TemporaryDirectory() as temp:
             folder = Path(temp) / "configs"
             folder.mkdir()
@@ -700,7 +701,7 @@ class ConfigTests(unittest.TestCase):
             self.assertFalse(Path(config["defaults"]["cache_root"]).is_relative_to(folder))
 
     def test_config_init_requires_yaml_output_and_migrates_only_the_implicit_target(self):
-        from Visual_toolkit.dataset_config import initialize_default_config, load
+        from vispa.dataset_config import initialize_default_config, load
         with tempfile.TemporaryDirectory() as temp:
             appdata = Path(temp) / "appdata"
             legacy_dir = appdata / "VisualToolkit"
@@ -710,7 +711,7 @@ class ConfigTests(unittest.TestCase):
                 "0007": {"swc_cache": "0007"}}}), encoding="utf-8")
             legacy_bytes = legacy.read_bytes()
             target = legacy_dir / "visual_toolkit_config.yaml"
-            env = {"APPDATA": str(appdata), "VISUAL_TOOLKIT_CONFIG": "",
+            env = {"APPDATA": str(appdata), "VISPA_CONFIG": "", "VISUAL_TOOLKIT_CONFIG": "",
                    "PROJECTOME_DATASETS": ""}
             with mock.patch.dict(os.environ, env):
                 with self.assertRaisesRegex(ValueError, r"must end with \.yaml"):
@@ -735,8 +736,8 @@ class ConfigTests(unittest.TestCase):
 
     def test_config_init_materializes_validated_effective_settings_for_all_scopes(self):
         import yaml
-        from Visual_toolkit.dataset_config import initialize_default_config, load
-        from Visual_toolkit.settings import SCOPES, resolve_settings, settings_schema
+        from vispa.dataset_config import initialize_default_config, load
+        from vispa.settings import SCOPES, resolve_settings, settings_schema
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             source = root / "source.json"
@@ -778,7 +779,7 @@ class ConfigTests(unittest.TestCase):
             self.assertFalse((root / "bad.yaml").exists())
 
     def test_loaded_settings_are_validated_for_every_scope(self):
-        from Visual_toolkit.dataset_config import load
+        from vispa.dataset_config import load
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             cases = {
@@ -801,16 +802,16 @@ class ConfigTests(unittest.TestCase):
             # preflight rejects invalid values when a 3D view is requested.
             self.assertEqual(load(legacy)["sources"]["brain_view"]["settings"],
                              {"line_width": -1})
-            from Visual_toolkit.opengl import resolve_settings as resolve_brain_view
+            from vispa.opengl import resolve_settings as resolve_brain_view
             with self.assertRaisesRegex(ValueError, "line_width"):
                 resolve_brain_view({"line_width": -1})
 
     def test_gui_validates_arguments_before_creating_configuration(self):
-        from Visual_toolkit import gui
+        from vispa import gui
         with tempfile.TemporaryDirectory() as temp:
             appdata = Path(temp)
             target = appdata / "VisualToolkit" / "visual_toolkit_config.yaml"
-            env = {"APPDATA": str(appdata), "VISUAL_TOOLKIT_CONFIG": "",
+            env = {"APPDATA": str(appdata), "VISPA_CONFIG": "", "VISUAL_TOOLKIT_CONFIG": "",
                    "PROJECTOME_DATASETS": ""}
             with mock.patch.dict(os.environ, env):
                 invalid = (["--sam", "252527"], ["--bogus"],
@@ -840,8 +841,8 @@ class ConfigTests(unittest.TestCase):
                 self.assertTrue(root.looped)
 
     def test_scoped_config_settings_preserve_layers_and_validate_loaded_mappings(self):
-        from Visual_toolkit.dataset_config import load
-        from Visual_toolkit.settings import resolve_settings, settings_schema
+        from vispa.dataset_config import load
+        from vispa.settings import resolve_settings, settings_schema
         with tempfile.TemporaryDirectory() as temp:
             config_path = Path(temp) / "visual.json"
             config_path.write_text(json.dumps({
@@ -870,7 +871,7 @@ class ConfigTests(unittest.TestCase):
             resolve_settings("review", config={"visual_toolkit": {"settings": {"mesh": {}}}})
 
     def test_gui_config_editor_preserves_json_yaml_and_rejects_invalid_settings_atomically(self):
-        from Visual_toolkit import gui
+        from vispa import gui
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             editor = object.__new__(gui.NeuroVisGUI)
@@ -893,10 +894,10 @@ class ConfigTests(unittest.TestCase):
             self.assertTrue((root / "config_backups").is_dir())
 
     def test_backend_roots_resolve_without_extra_sample_directory(self):
-        from Visual_toolkit.toolkit import Visual_toolkit
+        from vispa.toolkit import VisPa
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            tool = Visual_toolkit("0007", cache_root=root / "resource" / "cubes",
+            tool = VisPa("0007", cache_root=root / "resource" / "cubes",
                                   output_root=root / "resource" / "segmented_cubes")
             try:
                 self.assertEqual(Path(tool.cache_http_dir), root / "resource" / "cubes" / "0007" / "high_res_http")
@@ -905,10 +906,10 @@ class ConfigTests(unittest.TestCase):
                 tool.close()
 
     def test_legacy_cache_dir_keeps_historical_output_location(self):
-        from Visual_toolkit.toolkit import Visual_toolkit
+        from vispa.toolkit import VisPa
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            tool = Visual_toolkit("0007", cache_dir=root)
+            tool = VisPa("0007", cache_dir=root)
             try:
                 self.assertEqual(Path(tool.output_dir), root / "output")
                 self.assertEqual(Path(tool.cache_http_dir), root / "cubes" / "0007" / "high_res_http")
@@ -916,7 +917,7 @@ class ConfigTests(unittest.TestCase):
                 tool.close()
 
     def test_ssh_source_is_scoped_to_declared_sample_unless_overridden(self):
-        from Visual_toolkit import toolkit
+        from vispa import toolkit
         with tempfile.TemporaryDirectory() as temp:
             toolkit.configure_data_sources(config={
                 "defaults": {"cache_root": Path(temp) / "cache", "output_root": Path(temp) / "output"},
@@ -927,9 +928,9 @@ class ConfigTests(unittest.TestCase):
                 },
             })
             try:
-                other = toolkit.Visual_toolkit("252718")
-                selected = toolkit.Visual_toolkit("251637")
-                override = toolkit.Visual_toolkit("252718", low_res_ssh_base="/remote/explicit")
+                other = toolkit.VisPa("252718")
+                selected = toolkit.VisPa("251637")
+                override = toolkit.VisPa("252718", low_res_ssh_base="/remote/explicit")
                 try:
                     self.assertIsNone(other.low_res_ssh_base)
                     self.assertEqual(selected.low_res_ssh_base, "/remote/251637")
@@ -942,7 +943,7 @@ class ConfigTests(unittest.TestCase):
 
     def test_corrupt_cached_tiff_is_replaced_after_tiff_header_error(self):
         import tifffile
-        from Visual_toolkit import context_resources as resources
+        from vispa import context_resources as resources
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             cache = root / "high_res_http" / "3" / "1_2_3.tif"
@@ -963,8 +964,13 @@ class ConfigTests(unittest.TestCase):
 
 
 class SWCProviderTests(unittest.TestCase):
+    def setUp(self):
+        isolated = mock.patch.dict(os.environ, {"VISPA_CONFIG": ""})
+        isolated.start()
+        self.addCleanup(isolated.stop)
+
     def test_three_node_tree_emits_each_parent_child_link_once(self):
-        from Visual_toolkit.sources import read_swc
+        from vispa.sources import read_swc
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "tree.swc"
             path.write_text("1 1 1 2 3 1 -1\n2 3 2 3 4 0.5 1\n3 3 3 4 5 0.5 2\n", encoding="utf-8")
@@ -975,7 +981,7 @@ class SWCProviderTests(unittest.TestCase):
             self.assertEqual([[p.id for p in edge.data] for edge in tree.edges], [[1, 2], [2, 3]])
 
     def test_missing_parent_cycle_and_disconnected_rows_fail(self):
-        from Visual_toolkit.sources import read_swc
+        from vispa.sources import read_swc
         cases = {
             "missing": "1 1 0 0 0 1 -1\n2 3 1 1 1 1 99\n",
             "cycle": "1 1 0 0 0 1 -1\n2 3 1 1 1 1 3\n3 3 2 2 2 1 2\n",
@@ -989,7 +995,7 @@ class SWCProviderTests(unittest.TestCase):
                     read_swc(path)
 
     def test_provider_uses_registered_fallback_when_local_entry_is_absent(self):
-        from Visual_toolkit import sources
+        from vispa import sources
         marker = object()
         class Remote:
             def getRawNeuronTreeByID(self, sample, neuron):
@@ -1001,7 +1007,7 @@ class SWCProviderTests(unittest.TestCase):
             sources.set_iondata_provider_factory(None)
 
     def test_local_swc_cache_precedes_registered_fallback(self):
-        from Visual_toolkit import sources
+        from vispa import sources
         with tempfile.TemporaryDirectory() as temp:
             folder = Path(temp) / "swc" / "0007"
             folder.mkdir(parents=True)
@@ -1030,7 +1036,7 @@ class SWCProviderTests(unittest.TestCase):
                     os.environ["VISUAL_TOOLKIT_CONFIG"] = prior
 
     def test_legacy_local_swc_root_is_tried_after_configured_cache_miss(self):
-        from Visual_toolkit import sources
+        from vispa import sources
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             legacy = root / "legacy" / "0007"
@@ -1051,8 +1057,8 @@ if __name__ == "__main__":
 class MarkerLabelPresentationTests(unittest.TestCase):
     def test_label_modes_preserve_marker_position_and_default_hide_inline_text(self):
         import matplotlib.pyplot as plt
-        from Visual_toolkit import toolkit
-        tool = object.__new__(toolkit.Visual_toolkit)
+        from vispa import toolkit
+        tool = object.__new__(toolkit.VisPa)
         for mode, expected in ((None, ''), ('none', ''), ('short', 'S'), ('numbered', '1')):
             fig, ax = plt.subplots()
             try:
@@ -1070,9 +1076,9 @@ class MarkerLabelPresentationTests(unittest.TestCase):
     def test_standalone_role_legends_clear_index_labels_and_preserve_image_extent(self):
         import matplotlib.pyplot as plt
         import numpy as np
-        from Visual_toolkit import toolkit
+        from vispa import toolkit
         with tempfile.TemporaryDirectory() as directory:
-            tool = toolkit.Visual_toolkit('SYNTH', cache_dir=directory)
+            tool = toolkit.VisPa('SYNTH', cache_dir=directory)
             volume = np.arange(3 * 120 * 120).reshape(3, 120, 120)
             real_close = plt.close
             try:

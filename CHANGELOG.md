@@ -1,3 +1,8 @@
+# VisPa change log
+
+## 1.11.0.dev1 — 2026-10-22 (local/unreleased)
+- Rename standalone package/distribution/commands to VisPa (`vispa`), preserving legacy imports/class/commands, existing v1 protocol schemas and configuration/cache discovery. Legacy qualified imports share primary module objects; optional GL remains lazy. New VISPA_* environment names take precedence over old aliases. Installer uses a fresh VisPa location and rejects overlapping legacy distribution ownership. Current operator documentation and visible branding use VisPa while legacy user config/cache paths remain unchanged. Renderer settings propagation resolves the primary VisPa class; new/legacy environment overrides are isolated in test fixtures. Validated by92/92 installed-wheel tests and27/27 project-adapter tests. Scientific and full GUI acceptance remain pending.
+
 # VisualToolkit change log
 
 One consolidated history for the standalone package. `README.md` is the operator

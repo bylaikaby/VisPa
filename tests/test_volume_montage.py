@@ -2,7 +2,7 @@
 
 Version: 1.10.0.dev0 (local/unreleased)
 Last updated: 2026-10-18
-Change history: Visual_toolkit/CHANGELOG.md
+Change history: vispa/CHANGELOG.md
 Status: candidate
 """
 
@@ -25,8 +25,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if os.environ.get("VISUAL_TOOLKIT_TEST_INSTALLED") != "1":
     sys.path.insert(0, str(ROOT / "src"))
 
-from Visual_toolkit import volume_montage as montage
-from Visual_toolkit import cli
+from vispa import volume_montage as montage
+from vispa import cli
 
 
 def _synthetic_lps_nifti(path: Path) -> None:

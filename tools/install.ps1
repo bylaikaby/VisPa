@@ -1,20 +1,20 @@
 <#
 .SYNOPSIS
-Install VisualToolkit into a dedicated virtual environment.
+Install VisPa into a dedicated virtual environment.
 
 Version: 1.11.0.dev1 (local/unreleased)
 Last updated: 2026-10-22
 Change history: ../CHANGELOG.md
 
 .EXAMPLE
-.\tools\install.ps1 -Wheel .\dist\visual_toolkit-1.11.0.dev1-py3-none-any.whl -Wheelhouse C:\path\to\wheelhouse -Config C:\data\visual_toolkit_config.yaml
+.\tools\install.ps1 -Wheel .\dist\vispa-1.11.0.dev1-py3-none-any.whl -Wheelhouse C:\path\to\wheelhouse -Config C:\data\visual_toolkit_config.yaml
 
 .EXAMPLE
 .\tools\install.ps1 -DryRun
 #>
 [CmdletBinding()]
 param(
-    [string]$InstallDir = (Join-Path $env:LOCALAPPDATA 'VisualToolkit\venv'),
+    [string]$InstallDir = (Join-Path $env:LOCALAPPDATA 'VisPa\venv'),
     [string]$Python = 'py',
     [string]$Wheel = '',
     [string]$Wheelhouse = '',
@@ -28,9 +28,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
+if (-not $Config -and $env:VISPA_CONFIG) { $Config = $env:VISPA_CONFIG }
 if (-not $Config -and $env:VISUAL_TOOLKIT_CONFIG) {
     $Config = $env:VISUAL_TOOLKIT_CONFIG
 }
+if (-not $Wheelhouse -and $env:VISPA_WHEELHOUSE) { $Wheelhouse = $env:VISPA_WHEELHOUSE }
 if (-not $Wheelhouse -and $env:VISUAL_TOOLKIT_WHEELHOUSE) {
     $Wheelhouse = $env:VISUAL_TOOLKIT_WHEELHOUSE
 }
@@ -69,6 +71,12 @@ if (-not (Test-Path -LiteralPath $venvPython)) {
     }
 }
 
+# Legacy and primary distributions share compatibility filenames; never overlap owners.
+& $venvPython -c "import importlib.metadata as m,sys; sys.exit(2 if any(d.metadata['Name'].lower().replace('_','-')=='visual-toolkit' for d in m.distributions()) else 0)"
+if ($LASTEXITCODE -eq 2) {
+    throw 'Target contains visual-toolkit distribution. Choose a fresh VisPa InstallDir; existing installation is preserved.'
+}
+if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect target distribution ownership.' }
 $pipArgs = @('-m', 'pip', 'install', '--disable-pip-version-check', '--upgrade')
 if ($Wheelhouse) {
     $pipArgs += @(
@@ -80,9 +88,9 @@ if ($Wheelhouse) {
 $spec = if ($sourceMode) {
     '.[3d]'
 } elseif ($Wheel) {
-    "visual-toolkit[3d] @ file:///$($Wheel.Replace('\', '/'))"
+    "vispa[3d] @ file:///$($Wheel.Replace('\', '/'))"
 } else {
-    'visual-toolkit[3d]'
+    'vispa[3d]'
 }
 $pipArgs += $spec
 if ($sourceMode) {
@@ -103,22 +111,22 @@ if ($sourceMode) {
 if (-not $NoPath) {
     $pathArgs = @('install-path')
     if ($Config) { $pathArgs += @('--config', $Config) }
-    & (Join-Path $InstallDir 'Scripts\visual-toolkit.exe') @pathArgs
+    & (Join-Path $InstallDir 'Scripts\vispa.exe') @pathArgs
     if ($LASTEXITCODE -ne 0) {
         throw "Registering the user PATH failed with exit code $LASTEXITCODE."
     }
 }
-$gui = Join-Path $InstallDir 'Scripts\visual-toolkit-gui.exe'
+$gui = Join-Path $InstallDir 'Scripts\vispa-gui.exe'
 if (-not $NoShortcut) {
     try {
         $desktop = [Environment]::GetFolderPath('Desktop')
-        $shortcutPath = Join-Path $desktop 'VisualToolkit.lnk'
+        $shortcutPath = Join-Path $desktop 'VisPa.lnk'
         $shell = New-Object -ComObject WScript.Shell
         $shortcut = $shell.CreateShortcut($shortcutPath)
         $shortcut.TargetPath = $gui
         if ($Config) { $shortcut.Arguments = "--config `"$Config`"" }
         $shortcut.WorkingDirectory = Split-Path $gui
-        $shortcut.Description = 'VisualToolkit review GUI'
+        $shortcut.Description = 'VisPa review GUI'
         $shortcut.Save()
         Write-Host "Desktop shortcut: $shortcutPath"
     } catch {
@@ -130,6 +138,6 @@ if (-not $NoLaunch) {
     if ($Config) { $guiArgs += @('--config', $Config) }
     Start-Process -FilePath $gui -ArgumentList $guiArgs
 }
-Write-Host "Installed VisualToolkit."
+Write-Host "Installed VisPa."
 Write-Host "GUI: $gui"
 if ($Config) { Write-Host "Config: $Config" }

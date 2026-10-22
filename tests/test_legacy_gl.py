@@ -37,13 +37,13 @@ def run_isolated_child(source: str) -> None:
 
 class LegacyGLIsolationTests(unittest.TestCase):
     def test_optional_package_import_is_lazy(self):
-        package = importlib.import_module("Visual_toolkit.legacy_gl")
+        package = importlib.import_module("vispa.legacy_gl")
         self.assertTrue(package.__doc__)
-        self.assertNotIn("Visual_toolkit.legacy_gl.RenderGL", sys.modules)
+        self.assertNotIn("vispa.legacy_gl.RenderGL", sys.modules)
         self.assertNotIn("OpenGL", sys.modules)
 
     def test_extracted_modules_have_no_project_or_network_provider(self):
-        package_dir = SRC / "Visual_toolkit" / "legacy_gl"
+        package_dir = SRC / "vispa" / "legacy_gl"
         for name in ("RenderGL.py", "GeometryAdapter.py", "SwcLoader.py", "Node.py", "glutils.py", "Arcball.py"):
             with self.subTest(name=name):
                 text = (package_dir / name).read_text(encoding="utf-8")
@@ -75,7 +75,7 @@ class LegacyGLIsolationTests(unittest.TestCase):
             geometry.create_sphere = create_sphere
             vispy.geometry = geometry
             sys.modules.update({"glm": glm, "vispy": vispy, "vispy.geometry": geometry})
-            from Visual_toolkit.legacy_gl.GeometryAdapter import GeometryAdapter
+            from vispa.legacy_gl.GeometryAdapter import GeometryAdapter
             adapter = GeometryAdapter()
             with tempfile.TemporaryDirectory() as temp_dir:
                 swc = Path(temp_dir) / "003.processed.swc"
@@ -120,7 +120,7 @@ class LegacyGLIsolationTests(unittest.TestCase):
                     raise AssertionError("unexpected project/network import: " + name)
                 return original_import(name, *args, **kwargs)
             builtins.__import__ = guarded
-            from Visual_toolkit.legacy_gl.RenderGL import RenderGL
+            from vispa.legacy_gl.RenderGL import RenderGL
             assert hasattr(RenderGL, "render_once") and hasattr(RenderGL, "run") and hasattr(RenderGL, "savepng")
             try:
                 RenderGL()

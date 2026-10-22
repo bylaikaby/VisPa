@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if os.environ.get("VISUAL_TOOLKIT_TEST_INSTALLED") != "1":
     sys.path.insert(0, str(ROOT / "src"))
 
-from Visual_toolkit import opengl
+from vispa import opengl
 
 
 class LegacyOpenGLPlanningTests(unittest.TestCase):
@@ -64,11 +64,11 @@ class LegacyOpenGLPlanningTests(unittest.TestCase):
         self.assertGreater(plan["camera"]["clipping"]["far"], plan["camera"]["clipping"]["near"])
         self.assertEqual(plan["processed_swc"]["sha256"], opengl._sha256(self.swc))
         self.assertFalse(Path(plan["session_receipt"]).exists())
-        self.assertFalse({"Visual_toolkit.legacy_gl", "Visual_toolkit.legacy_gl.RenderGL"}
+        self.assertFalse({"vispa.legacy_gl", "vispa.legacy_gl.RenderGL"}
                          & (set(sys.modules) - before_modules))
 
     def test_shared_brain_view_schema_has_complete_constraints_without_gl_import(self):
-        from Visual_toolkit.settings import settings_schema
+        from vispa.settings import settings_schema
         before = set(sys.modules)
         schema = settings_schema("brain-view")
         self.assertEqual(set(schema["settings"]), set(opengl.DEFAULT_SETTINGS))
@@ -98,7 +98,7 @@ class LegacyOpenGLPlanningTests(unittest.TestCase):
         self._write_config(frame="declared", units=None)
         with self.assertRaisesRegex(ValueError, "coordinate_units must be explicitly declared"):
             opengl.plan_configured_view("251637", "001.swc", config_path=self.config)
-        self.assertFalse({"Visual_toolkit.legacy_gl", "Visual_toolkit.legacy_gl.RenderGL"}
+        self.assertFalse({"vispa.legacy_gl", "vispa.legacy_gl.RenderGL"}
                          & (set(sys.modules) - before_modules))
 
     def test_path_and_settings_validation(self):
@@ -117,7 +117,7 @@ class LegacyOpenGLPlanningTests(unittest.TestCase):
                            ("window_size", [800, None])):
             with self.subTest(key=key, value=value), self.assertRaisesRegex(ValueError, key):
                 opengl.resolve_settings(overrides={key: value})
-        from Visual_toolkit.settings import apply_settings, resolve_settings
+        from vispa.settings import apply_settings, resolve_settings
         for operation in (lambda: resolve_settings("all"),
                           lambda: apply_settings("all", {})):
             with self.assertRaisesRegex(ValueError, "review, brain-view, montage"):
@@ -142,7 +142,7 @@ class LegacyOpenGLPlanningTests(unittest.TestCase):
         self.assertEqual(payload["settings"]["line_width"], 3.5)
         self.assertEqual(payload["settings_config_path"], str(self.config.resolve()))
         self.assertFalse(Path(payload["session_receipt"]).exists())
-        self.assertNotIn("Visual_toolkit.legacy_gl.RenderGL", sys.modules)
+        self.assertNotIn("vispa.legacy_gl.RenderGL", sys.modules)
 
         stderr = io.StringIO()
         with contextlib.redirect_stderr(stderr), self.assertRaises(SystemExit):
@@ -153,11 +153,11 @@ class LegacyOpenGLPlanningTests(unittest.TestCase):
 
     def test_top_level_help_lists_brain_view_lazily(self):
         before_modules = set(sys.modules)
-        from Visual_toolkit.cli import _parser
+        from vispa.cli import _parser
         help_text = _parser().format_help()
         self.assertIn("brain-view", help_text)
         self.assertIn("gui", help_text)
-        self.assertFalse({"Visual_toolkit.legacy_gl", "Visual_toolkit.legacy_gl.RenderGL"}
+        self.assertFalse({"vispa.legacy_gl", "vispa.legacy_gl.RenderGL"}
                          & (set(sys.modules) - before_modules))
 
     def test_launcher_uses_isolated_absolute_worker_and_no_mesh_cwd(self):
@@ -165,7 +165,7 @@ class LegacyOpenGLPlanningTests(unittest.TestCase):
             result = opengl.launch_configured_view("251637", "001.swc", "insula", self.config)
         self.assertEqual(result, "process")
         command, kwargs = popen.call_args.args[0], popen.call_args.kwargs
-        self.assertEqual(command[1:4], ["-I", "-m", "Visual_toolkit"])
+        self.assertEqual(command[1:4], ["-I", "-m", "vispa"])
         self.assertEqual(command[4], "brain-view")
         self.assertTrue(Path(command[0]).is_absolute())
         self.assertEqual(kwargs["cwd"], tempfile.gettempdir())
