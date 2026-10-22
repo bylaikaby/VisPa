@@ -12,51 +12,104 @@ New standalone run receipts, builds and candidate outputs live under `D:/VisPa/w
 
 VisPa renders local macaque microscopy arrays into soma and context review figures. The source tree is packaged independently from projectome; the projectome checkout can connect its cohort scripts and configured lab data through the provider and configuration interfaces described below.
 
-This checkout is **1.11.0.dev1, local and unreleased**. It preserves the existing rendering and source-verification algorithms. The DS00 sagittal panel retains its two documented axis hypotheses and its manifest, hash, geometry, and source checks; those hypotheses remain candidates pending independent anatomical validation. No study data, lab configuration, or private source tree is included. `extraction_manifest.json` records the historical extraction snapshot; today's build, installer selection and validation hashes are recorded in the shared project receipt.
+This checkout is **1.11.0.dev1, local and unreleased**. It preserves the existing rendering and source-verification algorithms. The DS00 sagittal panel retains its two documented axis hypotheses and its manifest, hash, geometry, and source checks; those hypotheses remain candidates pending independent anatomical validation. No study data, lab configuration, or private source tree is included. `extraction_manifest.json` records the historical extraction snapshot; current standalone build, installer selection and validation hashes are recorded under `work/vispa_rename_20261022/run_receipt.json`.
 
-## Quick start (Windows)
+## Install on a fresh Windows PC
 
-1. Clone from GitHub (first time only):
+You need 64-bit Windows, Internet access and permission to install desktop software. These instructions use **standard CPython 3.13, Windows x86-64**, the Python version tested for this package. Package metadata permits Python >=3.10; other versions are not all verified. No GitHub account, GitHub CLI (`gh`), developer setup or D: drive is needed. Choose per-user Python/Git installation where offered to avoid system-wide changes; managed PCs may still require administrator or IT approval. This procedure documents the supported setup; it has not been run on a newly provisioned PC.
 
-   ```powershell
-   gh repo clone bylaikaby/VisPa D:\VisPa
-   cd D:\VisPa
-   ```
+### 1. Install and check Python
 
-2. Install from the checkout:
+Download a **Python 3.13 Windows installer (64-bit)** from [Python's Windows downloads](https://www.python.org/downloads/windows/). Use the standard build, not the experimental free-threaded build. In the installer, keep **pip**, **Tcl/Tk and IDLE**, and the **Python launcher** enabled; select **Add python.exe to PATH** if offered. See the [official Python 3.13 Windows instructions](https://docs.python.org/3.13/using/windows.html).
 
-   ```powershell
-   .\install.cmd -Source
-   ```
-
-3. The GUI opens. A **VisPa** shortcut is added to the desktop for later use.
-
-The installer defaults to the code in the current checkout and installs the full `[3d]` stack. If the repo is already cloned, only step 2 is needed. Pass `-Wheel PATH` to install a built wheel explicitly; `-Wheel` and `-Source` cannot be combined.
-
-If the config is not set:
+Open a **new PowerShell** window after installation and check:
 
 ```powershell
-.\install.cmd -Config C:\data\visual_toolkit_config.yaml
+py -3.13 --version
+py -3.13 -m pip --version
+py -3.13 -m tkinter
 ```
 
-Offline / no download:
+The last command should open a small Tk demonstration window; close it. Select this exact interpreter for the installation:
 
 ```powershell
-.\install.cmd -Wheel C:\path\to\vispa-1.11.0.dev1-py3-none-any.whl -Wheelhouse C:\path\to\wheelhouse
+$vispaPython = (py -3.13 -c "import sys; print(sys.executable)").Trim()
+& $vispaPython -c "import struct; print('Python bits:', struct.calcsize('P') * 8)"
 ```
 
-Preview only:
+Expect Python 3.13 and `Python bits: 64`. Keep this PowerShell window open for the following steps.
+
+### 2. Get the source: Git or ZIP
+
+**Option A — Git (recommended for later updates).** Install [Git for Windows](https://git-scm.com/install/windows), keeping the option that makes Git available from the command line. Alternatively, if Windows Package Manager is available:
 
 ```powershell
-.\install.cmd -DryRun
+winget install --id Git.Git -e --source winget
 ```
 
-Uninstall:
+Restart PowerShell so it sees Git, then repeat the `$vispaPython = ...` line above and run:
 
 ```powershell
-vispa install-path --remove
-Remove-Item -Recurse "$env:LOCALAPPDATA\VisPa\venv"
+git --version
+$sourceParent = Join-Path $env:USERPROFILE 'source'
+New-Item -ItemType Directory -Force -Path $sourceParent | Out-Null
+$vispaSource = Join-Path $sourceParent 'VisPa'
+git clone https://github.com/bylaikaby/VisPa.git $vispaSource
+Set-Location -LiteralPath $vispaSource
 ```
+
+This public HTTPS clone needs no username, email, login or GitHub account. Git author name/email is needed only if you later create commits; authentication is needed to push, not to install.
+
+**Option B — ZIP (no Git required).** Open [the repository](https://github.com/bylaikaby/VisPa), choose **Code → Download ZIP**, and use **Extract All** in File Explorer. For example, extract under your user folder's `source` directory; the extracted folder is normally `VisPa-main`. Set its actual location in PowerShell:
+
+```powershell
+$vispaSource = Join-Path $env:USERPROFILE 'source\VisPa-main'
+Set-Location -LiteralPath $vispaSource
+```
+
+ZIP users skip Git installation and all Git commands entirely. Both options must leave `install.cmd` and `pyproject.toml` in the current folder. If a destination already exists, use that known checkout or choose a different empty folder; do not delete an existing folder to make the command work.
+
+### 3. Preview, then install
+
+```powershell
+.\install.cmd -Source -Python $vispaPython -DryRun
+.\install.cmd -Source -Python $vispaPython
+```
+
+The first command prints the plan only: it **does not validate Python, pip, permissions, network access or dependency availability**. Check its source/install locations before running the second command. The real command creates a dedicated environment at `%LOCALAPPDATA%\VisPa\venv`, installs this checkout and its `[3d]` dependencies, adds its Scripts directory to your user PATH, creates a **VisPa** desktop shortcut and launches the GUI. It does not install into your base Python. `install.cmd` invokes a separate PowerShell process with a process-scoped execution-policy bypass; it does not permanently change your policy.
+
+A fresh GUI contains no scientific images, SWCs, atlas, lab credentials or FNT executable, and does not automatically acquire study data. First confirm that the application opens. To use supplied lab data, obtain its YAML/configuration and access separately, then follow [Sources and configuration](#sources-and-configuration) and [Using the GUI](#using-the-gui). A supplied config can be selected at installation with `-Config 'C:\path\to\visual_toolkit_config.yaml'`; this is optional, not a bundled example dataset.
+
+### 4. Verify and reopen
+
+Use explicit paths immediately; a new terminal is needed before user-PATH changes appear in commands such as `vispa`:
+
+```powershell
+$vispaScripts = Join-Path $env:LOCALAPPDATA 'VisPa\venv\Scripts'
+& (Join-Path $vispaScripts 'vispa.exe') --version
+& (Join-Path $vispaScripts 'python.exe') -m pip check
+& (Join-Path $vispaScripts 'vispa-gui.exe')
+```
+
+Expect version `1.11.0.dev1`, `No broken requirements found`, and the VisPa GUI. Close an already open GUI before reopening it. After restarting PowerShell, `vispa --version` and the desktop shortcut are convenient alternatives. `vispa config-init --dry-run` previews per-user configuration creation; `vispa config-init` creates it without overwriting an existing file. Existing legacy config/cache/output locations are preserved; see [Sources and configuration](#sources-and-configuration).
+
+### Troubleshooting and other installation modes
+
+- **`py` or `python` is not found:** reopen PowerShell after installing Python. Re-run the official installer to add the launcher/pip/Tk if missing. If `python` opens Microsoft Store, use `py -3.13` or the full interpreter path shown by the installer; review Windows **App execution aliases** using the [official Python guidance](https://docs.python.org/3.13/using/windows.html). Do not guess another Python version.
+- **`git` is not found:** reopen PowerShell after Git installation, repair its command-line PATH option, or use the ZIP option instead.
+- **An old target environment contains `visual-toolkit`:** the installer refuses overlapping distribution ownership. Preserve it and choose a fresh target, for example `-InstallDir (Join-Path $env:LOCALAPPDATA 'VisPa\venv-clean')`; use that target's `Scripts` paths for verification. Do not overwrite a shared environment.
+- **Download/pip, proxy, certificate or permission errors:** keep the complete error, verify Internet/proxy access and an allowed user-owned install folder, then retry the same exact interpreter. Do not disable certificate verification or assume a partial installation succeeded. The offline option below requires a prepared wheel and compatible dependency wheelhouse.
+
+Offline / explicit wheel (paths below are placeholders):
+
+The installer expects a prepared wheelhouse with two child directories, `runtime-py313/` and `optional-py313/`, containing compatible dependency wheels. Pass their parent directory to `-Wheelhouse`. A flat folder created by the manual `pip download -d wheelhouse` example below is suitable for manual `pip --find-links`, but is not the installer wheelhouse layout.
+
+```powershell
+.\install.cmd -Python $vispaPython -Wheel C:\path\to\vispa-1.11.0.dev1-py3-none-any.whl -Wheelhouse C:\path\to\wheelhouse -DryRun
+.\install.cmd -Python $vispaPython -Wheel C:\path\to\vispa-1.11.0.dev1-py3-none-any.whl -Wheelhouse C:\path\to\wheelhouse
+```
+
+`-Wheel` and `-Source` cannot be combined. Advanced manual setup is described in [Manual install](#manual-install). To remove a dedicated installation, first close VisPa, remove its user-PATH entry with `vispa install-path --remove`, and remove only the exact environment you created. Keep your source checkout, configuration, caches and scientific data unless you independently intend to remove them.
 
 ## Using the GUI
 
