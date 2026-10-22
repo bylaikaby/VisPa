@@ -168,7 +168,7 @@ three existing parameter groups; `all` is grouped JSON and loads no optional
 feature dependencies. The root Python API is `vispa.settings_schema(scope="all")`,
 `resolve_settings(scope, overrides=None, base=None, config=None)`, and
 `apply_settings(scope, overrides, settings=None, config=None)`. The same APIs
-are available through the compatibility `vispa` module alias. Values can be mappings or
+are available through the compatibility `Visual_toolkit` module alias. Values can be mappings or
 repeated `KEY=VALUE` strings; JSON values such as arrays/numbers are decoded,
 while review's historical comma sequences, hex colors, and `auto` remain accepted.
 For the Context panel, `context.swc_overlay_depth_um` sets the total soma-centred
