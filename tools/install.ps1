@@ -2,12 +2,12 @@
 .SYNOPSIS
 Install VisPa into a dedicated virtual environment.
 
-Version: 1.11.0.dev2 (local/unreleased)
+Version: 1.11.0.dev3 (local/unreleased)
 Last updated: 2026-10-22
 Change history: ../CHANGELOG.md
 
 .EXAMPLE
-.\tools\install.ps1 -Wheel .\dist\vispa-1.11.0.dev2-py3-none-any.whl -Wheelhouse C:\path\to\wheelhouse -Config C:\data\visual_toolkit_config.yaml
+.\tools\install.ps1 -Wheel .\dist\vispa-1.11.0.dev3-py3-none-any.whl -Wheelhouse C:\path\to\wheelhouse -Config C:\data\visual_toolkit_config.yaml
 
 .EXAMPLE
 .\tools\install.ps1 -DryRun

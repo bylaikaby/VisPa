@@ -1,6 +1,6 @@
 """Bounded command line for one local VisPa review render or montage.
 
-Version: 1.11.0.dev2 (local/unreleased)
+Version: 1.11.0.dev3 (local/unreleased)
 Last updated: 2026-10-22
 Change history: CHANGELOG.md
 """
@@ -499,6 +499,44 @@ def _resource_check(args):
     return 0 if not args.fnt or plan["ready"] else 1
 
 
+def _catalog_check(args):
+    from .dataset_config import load
+    from .sources import catalog_request_url, list_neurons
+
+    if not args.sample:
+        raise ValueError("config-check --catalog requires --sample with one exact sample ID")
+    config = load(args.config)
+    catalog = (config.get("sources") or {}).get("neuron_catalog")
+    if not isinstance(catalog, dict):
+        raise ValueError("no sources.neuron_catalog configuration is configured")
+    selected = args.catalog_source or catalog.get("mode", "csv")
+    if selected not in {"csv", "live-iondata"}:
+        raise ValueError("catalog source must be 'csv' or 'live-iondata'")
+    if selected == "live-iondata":
+        request_url = catalog_request_url(args.sample, catalog)
+        snapshot_path = catalog.get("snapshot_path")
+    else:
+        configured_path = (catalog.get("snapshot_path") if catalog.get("mode") == "live-iondata"
+                           else catalog.get("path"))
+        request_url = None
+        snapshot_path = str(configured_path) if configured_path else None
+    plan = {"schema": "vispa.neuron-catalog-check.v1", "dry_run": bool(args.dry_run),
+            "sample_id": args.sample, "source_kind": selected,
+            "request_url": request_url,
+            "timeout_seconds": catalog.get("timeout_seconds", 10) if selected == "live-iondata" else None,
+            "max_response_bytes": catalog.get("max_response_bytes", 8 * 1024 * 1024) if selected == "live-iondata" else None,
+            "snapshot_path": str(snapshot_path) if snapshot_path else None,
+            "limits": "one exact sample; no retries, cache writes, or directory creation"}
+    if args.dry_run:
+        plan["plan"] = "Resolve live URL and limits without a network request" if selected == "live-iondata" else "Resolve dated CSV snapshot without reading its rows"
+        print(json.dumps(plan, indent=2, sort_keys=True))
+        return 0
+    result = list_neurons(args.sample, config=config, source=selected)
+    plan.update(result=result)
+    print(json.dumps(plan, indent=2, sort_keys=True))
+    return 0
+
+
 def _same_path(left, right):
     def normalized(value):
         return os.path.normcase(
@@ -643,6 +681,10 @@ def _parser():
     config_check.add_argument("--config")
     config_check.add_argument("--sample", help="exact sample for read-only hashed resource inventory")
     config_check.add_argument("--neuron", help="exact neuron for read-only hashed resource inventory")
+    config_check.add_argument("--catalog", action="store_true",
+                              help="read or plan one neuron-catalog listing; use --sample")
+    config_check.add_argument("--catalog-source", choices=("live-iondata", "csv"),
+                              help="select live portal or dated CSV snapshot when both are configured")
     config_check.add_argument("--dry-run", action="store_true", help="read-only preflight (config-check never writes)")
     config_check.add_argument("--fnt", action="store_true", help="require executable AND matching neuron project; never launch")
     config_init = commands.add_parser("config-init", help="create the per-user YAML config without overwriting")
@@ -700,6 +742,11 @@ def main(argv=None):
         except (OSError, RuntimeError, ValueError, KeyError) as exc:
             parser.error(str(exc))
     if args.command == "config-check":
+        if args.catalog:
+            try:
+                return _catalog_check(args)
+            except (OSError, RuntimeError, ValueError, KeyError) as exc:
+                parser.error(str(exc))
         if args.sample or args.neuron or args.fnt:
             try:
                 return _resource_check(args)

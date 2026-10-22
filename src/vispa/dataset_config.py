@@ -1,6 +1,6 @@
 """Load explicit, portable VisPa dataset configuration.
 
-Version: 1.11.0.dev2 (local/unreleased)
+Version: 1.11.0.dev3 (local/unreleased)
 Last updated: 2026-10-22
 Change history: ../../CHANGELOG.md
 """
@@ -346,14 +346,55 @@ def load(path: str | Path | None = None, base_dir: str | Path | None = None) -> 
     for key in ("dataset_manifest", "legacy_raw_swc_root"):
         if sources.get(key):
             sources[key] = _resolve(sources[key], configured_base)
+    if (sources.get("raw_swc_base") and (sources.get("http_host") or sources.get("http_base_url"))
+            and not sources.get("legacy_raw_swc_root")):
+        # Keep remotely fetched raw trees persistent across loads while keeping
+        # shared profiles free of machine-specific cache paths.
+        sources["legacy_raw_swc_root"] = user_data / "swc_raw"
     catalog = sources.get("neuron_catalog")
     if catalog is not None:
         if not isinstance(catalog, dict):
-            raise ValueError("sources.neuron_catalog must be a mapping with path, source_date, and columns")
+            raise ValueError("sources.neuron_catalog must be a mapping")
         catalog = dict(catalog)
-        if not catalog.get("path"):
-            raise ValueError("sources.neuron_catalog.path is required")
-        catalog["path"] = _resolve(catalog["path"], configured_base)
+        mode = catalog.get("mode", "csv")
+        if not isinstance(mode, str) or mode not in {"csv", "live-iondata"}:
+            raise ValueError("sources.neuron_catalog.mode must be 'csv' or 'live-iondata'")
+        catalog["mode"] = mode
+        if mode == "csv":
+            if not catalog.get("path"):
+                raise ValueError("sources.neuron_catalog.path is required for CSV mode")
+            catalog["path"] = _resolve(catalog["path"], configured_base)
+        else:
+            if catalog.get("path"):
+                catalog["path"] = _resolve(catalog["path"], configured_base)
+            if catalog.get("snapshot_path"):
+                catalog["snapshot_path"] = _resolve(catalog["snapshot_path"], configured_base)
+        if (mode == "live-iondata"
+                or any(key in catalog for key in ("host", "timeout_seconds", "max_response_bytes"))):
+            host = catalog.get("host", "http://10.10.48.110")
+            from urllib.parse import urlsplit
+            if not isinstance(host, str) or not host.strip() or host != host.strip():
+                raise ValueError("sources.neuron_catalog.host must be an HTTP(S) origin without a path or query")
+            parsed_host = urlsplit(host)
+            if (parsed_host.scheme not in {"http", "https"} or not parsed_host.netloc
+                    or parsed_host.username or parsed_host.password
+                    or parsed_host.path not in {"", "/"} or parsed_host.query or parsed_host.fragment):
+                raise ValueError("sources.neuron_catalog.host must be an HTTP(S) origin without credentials or path")
+            try:
+                parsed_host.port
+            except ValueError as exc:
+                raise ValueError("sources.neuron_catalog.host has an invalid port") from exc
+            timeout = catalog.get("timeout_seconds", 10)
+            if (isinstance(timeout, bool) or not isinstance(timeout, (int, float))
+                    or not math.isfinite(timeout) or timeout < 1 or timeout > 60):
+                raise ValueError("sources.neuron_catalog.timeout_seconds must be between 1 and 60")
+            byte_limit = catalog.get("max_response_bytes", 8 * 1024 * 1024)
+            if (isinstance(byte_limit, bool) or not isinstance(byte_limit, int)
+                    or byte_limit < 1024 or byte_limit > 32 * 1024 * 1024):
+                raise ValueError("sources.neuron_catalog.max_response_bytes must be between 1024 and 33554432")
+            catalog["host"] = f"{parsed_host.scheme}://{parsed_host.netloc}"
+            catalog["timeout_seconds"] = float(timeout)
+            catalog["max_response_bytes"] = byte_limit
         column_map = catalog.get("columns") or {}
         if not isinstance(column_map, dict):
             raise ValueError("sources.neuron_catalog.columns must be a mapping")

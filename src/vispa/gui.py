@@ -1,7 +1,7 @@
 """
 vispa_gui.py - GUI for NeuroVis Visual Toolkit
 
-Version: 1.11.0.dev2 (local/unreleased)
+Version: 1.11.0.dev3 (local/unreleased)
 Last updated: 2026-10-22
 Change history: ../../CHANGELOG.md
 Status: candidate (visual review pending)
@@ -22,7 +22,7 @@ KEY FEATURES:
       written automatically, and "Browse…" / "Open output folder" sit in one block
     - Auto-Load on Startup: Uses optional configured identity and auto-load defaults
     - Auto-Fill Soma: Read soma coordinates from the configured SWC source
-    - Neuron list: Browse the configured CSV snapshot and select an exact SWC ID
+    - Neuron list: Browse the configured live or dated source and select an exact SWC ID
     - fnt-tracer: Open the current neuron's FNT project beside the 3D brain view
     - Threaded Processing: Non-blocking panel requests with progress indicators
 
@@ -500,6 +500,9 @@ class NeuroVisGUI:
         self._catalog_observed_sample_id = self.sample_id.get().strip()
         self._catalog_sample_id = None
         self._catalog_snapshot = None
+        self._catalog_source = None
+        self._catalog_source_var = None
+        self._catalog_source_choices = {}
         self._catalog_rows_by_iid = {}
         self._portal_region_cache = {}
         self._neuron_catalog_window = None
@@ -1058,10 +1061,10 @@ class NeuroVisGUI:
         if self._neuron_catalog_window is not None:
             if self.neuron_catalog_load_button is not None:
                 self.neuron_catalog_load_button.configure(state='normal')
-            self.neuron_catalog_info.set("Sample changed. Load the portal snapshot for this sample.")
+            self.neuron_catalog_info.set("Sample changed. Refresh the neuron list for this sample.")
 
     def _open_neuron_catalog(self):
-        """Open the compact snapshot browser; keep the Sample card uncluttered."""
+        """Open the compact live-or-snapshot browser; keep the Sample card uncluttered."""
         window = self._neuron_catalog_window
         if window is not None and window.winfo_exists():
             window.lift()
@@ -1073,18 +1076,24 @@ class NeuroVisGUI:
             return
 
         window = tk.Toplevel(self.root)
-        window.title("Portal neuron list")
-        window.geometry("560x540")
-        window.minsize(460, 360)
+        window.title("Neuron list")
+        window.geometry("560x600")
+        window.minsize(460, 420)
         window.transient(self.root)
-        window.grid_rowconfigure(1, weight=1)
+        window.grid_rowconfigure(2, weight=1)
         window.grid_columnconfigure(0, weight=1)
         self._neuron_catalog_window = window
         tk.Label(window, textvariable=self.neuron_catalog_info, justify='left',
                  anchor='w', wraplength=520, padx=12, pady=10).grid(
                      row=0, column=0, columnspan=2, sticky='ew')
+        tk.Label(
+            window,
+            text=("INS cohort AnimalIDs (megatable): 331, 605, 631, 797, 900, 936, 945, 948\n"
+                  "Separate sample: 747 (SampleID 250432)"),
+            justify='left', anchor='w', wraplength=520, padx=12, pady=0,
+            foreground='#4d5f6f').grid(row=1, column=0, columnspan=2, sticky='ew')
         table_frame = tk.Frame(window)
-        table_frame.grid(row=1, column=0, columnspan=2, sticky='nsew', padx=12)
+        table_frame.grid(row=2, column=0, columnspan=2, sticky='nsew', padx=12)
         table_frame.grid_rowconfigure(0, weight=1)
         table_frame.grid_columnconfigure(0, weight=1)
         self.neuron_catalog_table = ttk.Treeview(
@@ -1103,13 +1112,18 @@ class NeuroVisGUI:
                                        self._on_neuron_catalog_selected)
         self.neuron_catalog_table.bind('<Double-1>', self._load_catalog_row_event)
         actions = tk.Frame(window)
-        actions.grid(row=2, column=0, columnspan=2, sticky='ew', padx=12, pady=10)
+        actions.grid(row=3, column=0, columnspan=2, sticky='ew', padx=12, pady=8)
+        source_row = tk.Frame(actions)
+        source_row.pack(fill='x')
+        button_row = tk.Frame(actions)
+        button_row.pack(fill='x', pady=(6, 0))
         self.neuron_catalog_load_button = ttk.Button(
-            actions, text="Refresh list", command=self.load_neuron_catalog)
+            source_row, text="Refresh list", command=self.load_neuron_catalog)
         self.neuron_catalog_load_button.pack(side='left')
-        ttk.Button(actions, text="Load selected",
-                   command=self.load_selected_catalog_row).pack(side='left', padx=(10, 0))
-        ttk.Button(actions, text="Close", command=self._close_neuron_catalog).pack(side='right')
+        self._configure_catalog_source_control(source_row)
+        ttk.Button(button_row, text="Load selected",
+                   command=self.load_selected_catalog_row).pack(side='left')
+        ttk.Button(button_row, text="Close", command=self._close_neuron_catalog).pack(side='right')
         window.protocol("WM_DELETE_WINDOW", self._close_neuron_catalog)
 
         if (self._catalog_sample_id == self.sample_id.get().strip()
@@ -1118,6 +1132,50 @@ class NeuroVisGUI:
             self._populate_neuron_catalog(self._catalog_snapshot)
         else:
             self.load_neuron_catalog()
+
+    def _configure_catalog_source_control(self, parent):
+        """Offer a source selector only when both live and dated sources exist."""
+        try:
+            from .dataset_config import load as load_config
+            config = load_config(self.config_path)
+            catalog = (config.get("sources") or {}).get("neuron_catalog") or {}
+        except Exception:
+            catalog = {}
+        mode = str(catalog.get("mode") or "").strip().lower()
+        has_snapshot = bool(catalog.get("snapshot_path")) if mode == "live-iondata" else bool(catalog.get("path"))
+        # A configured CSV catalog remains the default, but the operator may
+        # explicitly request the intranet API. This is never an automatic fallback.
+        has_live = mode == "live-iondata" or bool(catalog)
+        choices = {}
+        if has_live:
+            choices["Live IONData"] = "live-iondata"
+        if has_snapshot:
+            choices["Dated CSV snapshot"] = "csv"
+        if not choices:
+            choices["Configured source"] = None
+        self._catalog_source_choices = choices
+        configured = mode if mode in {"live-iondata", "csv"} else next(iter(choices.values()))
+        if configured not in choices.values():
+            configured = next(iter(choices.values()))
+        self._catalog_source = configured
+        if len(choices) > 1:
+            self._catalog_source_var = tk.StringVar(
+                parent, value=next(label for label, source in choices.items()
+                                   if source == configured))
+            ttk.Label(parent, text="Source:").pack(side="left", padx=(14, 4))
+            selector = ttk.Combobox(
+                parent, textvariable=self._catalog_source_var,
+                values=tuple(choices), state="readonly", width=20)
+            selector.pack(side="left", padx=(0, 8))
+            selector.bind("<<ComboboxSelected>>", self._on_catalog_source_changed)
+        else:
+            label = next(iter(choices))
+            ttk.Label(parent, text=f"Source: {label}").pack(side="left", padx=(14, 8))
+
+    def _on_catalog_source_changed(self, _event=None):
+        label = self._catalog_source_var.get() if self._catalog_source_var is not None else ""
+        self._catalog_source = self._catalog_source_choices.get(label)
+        self.load_neuron_catalog()
 
     def _close_neuron_catalog(self):
         window = self._neuron_catalog_window
@@ -1133,7 +1191,7 @@ class NeuroVisGUI:
             pass
 
     def load_neuron_catalog(self):
-        """Load the configured, dated portal snapshot without network access."""
+        """Load the selected live or dated neuron list in a worker thread."""
         sample_id = self.sample_id.get().strip()
         if not sample_id:
             self.neuron_catalog_info.set("Enter a sample ID before loading its neuron list.")
@@ -1142,18 +1200,21 @@ class NeuroVisGUI:
             return
         self._catalog_request_id += 1
         request_id = self._catalog_request_id
+        requested_source = self._catalog_source
         self._catalog_sample_id = None
         self._catalog_snapshot = None
         self._catalog_rows_by_iid.clear()
         for item in self.neuron_catalog_table.get_children():
             self.neuron_catalog_table.delete(item)
-        self.neuron_catalog_info.set(f"Loading configured portal snapshot for {sample_id}…")
+        self.neuron_catalog_info.set(f"Loading the configured neuron list for {sample_id}…")
         self.neuron_catalog_load_button.configure(state='disabled')
 
         def worker():
             try:
                 from .dataset_config import load as load_config
-                result = IT.list_neurons(sample_id, config=load_config(self.config_path))
+                result = IT.list_neurons(
+                    sample_id, config=load_config(self.config_path),
+                    source=requested_source)
                 error = None
             except Exception as exc:
                 result, error = None, str(exc)
@@ -1177,13 +1238,14 @@ class NeuroVisGUI:
             self._catalog_rows_by_iid.clear()
             for item in self.neuron_catalog_table.get_children():
                 self.neuron_catalog_table.delete(item)
-            self.neuron_catalog_info.set(f"Could not load portal snapshot: {error}")
-            self.update_status("Neuron list unavailable; check the configured catalog source")
+            self.neuron_catalog_info.set(f"Could not load neuron list: {error}")
+            self.update_status("Neuron list unavailable; check the selected source and network")
             return
         self._catalog_sample_id = sample_id
         self._catalog_snapshot = result
         self._populate_neuron_catalog(result)
-        self.update_status(f"Loaded {result['count']} portal neuron IDs for {sample_id}")
+        source_label = "live IONData" if result.get('source_kind') == 'live-iondata' else "dated snapshot"
+        self.update_status(f"Loaded {result['count']} neuron IDs from {source_label} for {sample_id}")
 
     def _populate_neuron_catalog(self, result):
         self._catalog_rows_by_iid.clear()
@@ -1195,11 +1257,25 @@ class NeuroVisGUI:
             region = row["portal_region"] if row["portal_region"] else "Unassigned"
             self.neuron_catalog_table.insert(
                 '', 'end', iid=iid, values=(row["neuron_id"], region))
-        monkey = result.get("monkey_id") or "unmapped"
-        self.neuron_catalog_info.set(
-            f"Portal snapshot {result['source_date']} · sample {result['sample_id']} · "
-            f"monkey {monkey} · {result['count']} neurons\n"
-            f"{result['source_path']} · SHA-256 {result['sha256']}")
+        monkey = result.get("monkey_id")
+        if not monkey:
+            try:
+                from .dataset_config import load as load_config
+                monkey = (load_config(self.config_path).get("samples", {})
+                          .get(str(result["sample_id"]), {}).get("monkey"))
+            except Exception:
+                monkey = None
+        monkey = monkey or "unmapped"
+        if result.get('source_kind') == 'live-iondata':
+            self.neuron_catalog_info.set(
+                f"Live IONData · sample {result['sample_id']} · monkey {monkey} · "
+                f"{result['count']} neurons · fetched {result.get('fetched_at', 'time unknown')}\n"
+                f"{result.get('request_url', 'source URL unavailable')} · SHA-256 {result['sha256']}")
+        else:
+            self.neuron_catalog_info.set(
+                f"Dated snapshot {result.get('source_date') or 'unknown'} · "
+                f"sample {result['sample_id']} · monkey {monkey} · {result['count']} neurons\n"
+                f"{result.get('source_path', 'source path unavailable')} · SHA-256 {result['sha256']}")
 
     def _on_template_brain_view(self):
         """Pass current identity and catalog region to the audited OpenGL hook."""

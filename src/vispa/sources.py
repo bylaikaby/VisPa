@@ -1,6 +1,6 @@
 """Local SWC source and explicit adapter seam for source-tree providers.
 
-Version: 1.11.0.dev2 (local/unreleased)
+Version: 1.11.0.dev3 (local/unreleased)
 Last updated: 2026-10-22
 Change history: ../../CHANGELOG.md
 """
@@ -10,8 +10,10 @@ import csv
 import hashlib
 import io
 import json
+import math
 import os
 import tempfile
+from datetime import datetime, timezone
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
@@ -59,21 +61,138 @@ class SWCTree:
     points: list[SWCNode]
 
 
-def list_neurons(sample_id: str, config: dict | None = None) -> dict:
-    """Read exact-sample neuron IDs and portal regions from an explicit CSV.
+def list_neurons(sample_id: str, config: dict | None = None, *, source: str | None = None) -> dict:
+    """Read one sample's catalog from configured CSV or the live IONData API.
 
-    The configured catalog describes a dated snapshot, not a live portal query.
-    It is intentionally independent of selected-cohort workbooks and does not
-    infer sample membership from SWC files present on disk.
+    CSV remains the mode for older configurations. Live results are a bounded,
+    timestamped in-memory snapshot; there is no implicit CSV fallback.
     """
-    if not isinstance(sample_id, str):
-        raise TypeError("sample_id must be an exact string identifier")
-    if not sample_id or sample_id != sample_id.strip():
-        raise ValueError("sample_id must be a nonempty exact identifier")
+    _validate_sample_id(sample_id)
     resolved = config if config is not None else load()
     catalog = (resolved.get("sources") or {}).get("neuron_catalog")
-    if not isinstance(catalog, dict) or not catalog.get("path"):
-        raise ValueError("no sources.neuron_catalog.path is configured")
+    if not isinstance(catalog, dict):
+        raise ValueError("no sources.neuron_catalog.path or live-iondata source is configured")
+    mode = source if source is not None else catalog.get("mode", "csv")
+    if mode not in {"csv", "live-iondata"}:
+        raise ValueError("source must be 'csv' or 'live-iondata'")
+    if mode == "live-iondata":
+        result = _list_live_neurons(sample_id, catalog)
+    else:
+        csv_catalog = dict(catalog)
+        if catalog.get("mode") == "live-iondata":
+            csv_catalog["path"] = catalog.get("snapshot_path")
+        result = _list_csv_neurons(sample_id, csv_catalog)
+    for row in result["rows"]:
+        if result.get("snapshot_id"):
+            row["snapshot_id"] = result["snapshot_id"]
+    return result
+
+
+def _validate_sample_id(sample_id: str) -> None:
+    if not isinstance(sample_id, str):
+        raise TypeError("sample_id must be an exact string identifier")
+    if (not sample_id or sample_id != sample_id.strip()
+            or any(ord(char) < 32 for char in sample_id)):
+        raise ValueError("sample_id must be a nonempty exact identifier without control characters")
+
+
+def _safe_neuron_id(neuron_id, context: str, sample_id: str) -> str:
+    if (not isinstance(neuron_id, str) or not neuron_id or neuron_id != neuron_id.strip()
+            or "/" in neuron_id or "\\" in neuron_id or ":" in neuron_id
+            or ".." in neuron_id or any(ord(char) < 32 for char in neuron_id)):
+        raise ValueError(
+            f"{context}: neuron ID must be an exact safe basename without path separators, "
+            f"colon, or '..' for sample {sample_id!r}")
+    return neuron_id
+
+
+def _list_live_neurons(sample_id: str, catalog: dict) -> dict:
+    request_url = catalog_request_url(sample_id, catalog)
+    timeout_value = catalog.get("timeout_seconds", 10)
+    byte_value = catalog.get("max_response_bytes", 8 * 1024 * 1024)
+    if (isinstance(timeout_value, bool) or not isinstance(timeout_value, (int, float))
+            or not math.isfinite(timeout_value) or not 1 <= timeout_value <= 60):
+        raise ValueError("sources.neuron_catalog.timeout_seconds must be between 1 and 60")
+    if (isinstance(byte_value, bool) or not isinstance(byte_value, int)
+            or not 1024 <= byte_value <= 32 * 1024 * 1024):
+        raise ValueError("sources.neuron_catalog.max_response_bytes must be between 1024 and 33554432")
+    timeout = float(timeout_value)
+    max_bytes = byte_value
+    request = urllib.request.Request(request_url, headers={"Accept": "application/json"})
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        status = response.getcode()
+        raw_bytes = response.read(max_bytes + 1)
+    if status != 200:
+        raise RuntimeError(f"IONData neuron catalog returned HTTP {status}: {request_url}")
+    if len(raw_bytes) > max_bytes:
+        raise ValueError(f"IONData neuron catalog exceeded the {max_bytes}-byte response limit")
+    try:
+        source_rows = json.loads(raw_bytes.decode("utf-8-sig"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"IONData neuron catalog returned invalid UTF-8 JSON: {request_url}") from exc
+    if not isinstance(source_rows, list):
+        raise ValueError("IONData neuron catalog response must be a JSON array")
+
+    rows = []
+    seen = set()
+    for index, source_row in enumerate(source_rows):
+        if not isinstance(source_row, dict):
+            raise ValueError(f"IONData catalog row {index + 1} must be an object")
+        row_sample = source_row.get("sampleid")
+        if not isinstance(row_sample, str) or row_sample != sample_id:
+            raise ValueError(
+                f"IONData catalog row {index + 1} has sampleid {row_sample!r}; "
+                f"expected exact sample {sample_id!r}")
+        neuron_id = _safe_neuron_id(source_row.get("name"), f"IONData row {index + 1}", sample_id)
+        if neuron_id in seen:
+            raise ValueError(f"IONData catalog has duplicate neuron ID {neuron_id!r} for sample {sample_id!r}")
+        seen.add(neuron_id)
+        rows.append({
+            "sample_id": sample_id,
+            "neuron_id": neuron_id,
+            "portal_region": _string_or_empty(source_row.get("region"), f"row {index + 1} region"),
+            "type": _string_or_empty(source_row.get("type"), f"row {index + 1} type"),
+            "exclude": _string_or_empty(source_row.get("exclude"), f"row {index + 1} exclude"),
+            "comment": _string_or_empty(source_row.get("comment"), f"row {index + 1} comment"),
+        })
+    fetched_at = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    response_sha = hashlib.sha256(raw_bytes).hexdigest()
+    return {"sample_id": sample_id, "monkey_id": "", "source_kind": "live-iondata",
+            "source_path": request_url, "request_url": request_url, "source_date": "live",
+            "fetched_at": fetched_at, "sha256": response_sha, "source_size": len(raw_bytes),
+            "count": len(rows), "rows": rows,
+            "snapshot_id": hashlib.sha256(
+                f"{sample_id}\0{fetched_at}\0{response_sha}".encode("utf-8")).hexdigest()}
+
+
+def catalog_request_url(sample_id: str, catalog: dict) -> str:
+    """Resolve the observed IONData route without sending a request."""
+    _validate_sample_id(sample_id)
+    host = str(catalog.get("host", "http://10.10.48.110")).rstrip("/")
+    parsed_host = urllib.parse.urlsplit(host)
+    if (parsed_host.scheme not in {"http", "https"} or not parsed_host.netloc
+            or parsed_host.username or parsed_host.password
+            or parsed_host.path or parsed_host.query or parsed_host.fragment):
+        raise ValueError("sources.neuron_catalog.host must be an HTTP(S) origin without credentials or path")
+    try:
+        parsed_host.port
+    except ValueError as exc:
+        raise ValueError("sources.neuron_catalog.host has an invalid port") from exc
+    encoded_id = urllib.parse.quote(sample_id, safe="")
+    return f"{host}/neuronbrowser/api/user/selectNeurons?id={encoded_id}"
+
+
+def _string_or_empty(value, label: str) -> str:
+    if value is None:
+        return ""
+    if not isinstance(value, (str, int, float, bool)):
+        raise ValueError(f"IONData {label} must be a scalar string/number/boolean")
+    return str(value)
+
+
+def _list_csv_neurons(sample_id: str, catalog: dict) -> dict:
+    if not catalog.get("path"):
+        raise ValueError("no sources.neuron_catalog.path is configured for CSV mode")
     path = Path(catalog["path"]).expanduser().resolve()
     if not path.is_file():
         raise FileNotFoundError(f"configured neuron catalog does not exist: {path}")
@@ -104,12 +223,7 @@ def list_neurons(sample_id: str, config: dict | None = None) -> dict:
         if exact_sample != sample_id:
             continue
         neuron_id = source_row.get(neuron_column, "")
-        if (not isinstance(neuron_id, str) or not neuron_id or neuron_id != neuron_id.strip()
-                or "/" in neuron_id or "\\" in neuron_id or ":" in neuron_id
-                or ".." in neuron_id):
-            raise ValueError(
-                f"{path}:{line_number}: neuron ID must be an exact safe basename "
-                f"without path separators, colon, or '..' for sample {sample_id!r}")
+        _safe_neuron_id(neuron_id, f"{path}:{line_number}", sample_id)
         if neuron_id in seen:
             raise ValueError(
                 f"{path}:{line_number}: duplicate neuron ID {neuron_id!r} for sample {sample_id!r}; "
@@ -126,14 +240,31 @@ def list_neurons(sample_id: str, config: dict | None = None) -> dict:
                      "portal_region": region, "monkey_id": monkey})
     if len(monkeys) > 1:
         raise ValueError(f"{path}: sample {sample_id!r} maps to multiple monkey IDs: {sorted(monkeys)}")
+    raw_sha = hashlib.sha256(raw_bytes).hexdigest()
     return {"sample_id": sample_id, "monkey_id": next(iter(monkeys), ""),
-            "source_path": str(path), "source_date": str(catalog.get("source_date") or "unknown"),
-            "sha256": hashlib.sha256(raw_bytes).hexdigest(), "source_size": after.st_size,
+            "source_kind": "csv", "source_path": str(path),
+            "source_date": str(catalog.get("source_date") or "unknown"),
+            "request_url": None, "fetched_at": None,
+            "sha256": raw_sha, "source_size": after.st_size,
             "source_mtime_ns": after.st_mtime_ns, "count": len(rows), "rows": rows}
 
 
 def catalog_snapshot_unchanged(snapshot: dict) -> bool:
     """Fast invalidation guard for a loaded list; the full SHA is captured at load."""
+    if snapshot.get("source_kind") == "live-iondata":
+        try:
+            expected_id = hashlib.sha256(
+                f"{snapshot['sample_id']}\0{snapshot['fetched_at']}\0{snapshot['sha256']}".encode("utf-8")
+            ).hexdigest()
+            return (isinstance(snapshot.get("sample_id"), str)
+                    and isinstance(snapshot.get("snapshot_id"), str)
+                    and snapshot["snapshot_id"] == expected_id
+                    and len(snapshot.get("sha256", "")) == 64
+                    and isinstance(snapshot.get("request_url"), str)
+                    and snapshot.get("request_url", "").startswith(("http://", "https://"))
+                    and all(row.get("snapshot_id") == expected_id for row in snapshot.get("rows", [])))
+        except (KeyError, TypeError, AttributeError):
+            return False
     try:
         stat = Path(snapshot["source_path"]).stat()
     except (KeyError, OSError, TypeError):
@@ -152,7 +283,11 @@ def catalog_selection_id(sample_id: str, current_sample: str, snapshot: dict,
     """Return the exact SWC ID only for a current row from an unchanged snapshot."""
     if not catalog_matches_sample(sample_id, current_sample):
         return None
-    if row.get("sample_id") != str(sample_id) or not catalog_snapshot_unchanged(snapshot):
+    if (row.get("sample_id") != str(sample_id)
+            or not catalog_snapshot_unchanged(snapshot)
+            or (snapshot.get("source_kind") == "live-iondata"
+                and (row.get("snapshot_id") != snapshot.get("snapshot_id")
+                     or row not in snapshot.get("rows", [])))):
         return None
     neuron_id = row.get("neuron_id")
     return neuron_id if isinstance(neuron_id, str) and neuron_id else None

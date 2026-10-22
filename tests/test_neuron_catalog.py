@@ -1,7 +1,7 @@
 """Exact-source catalog and stale GUI selection checks.
 
-Version: 1.10.0.dev0 (local/unreleased)
-Last updated: 2026-10-18
+Version: 1.11.0.dev3 (local/unreleased)
+Last updated: 2026-10-22
 Change history: ../CHANGELOG.md
 """
 import csv
@@ -168,6 +168,42 @@ class NeuronCatalogTests(unittest.TestCase):
         self.assertEqual(gui.neuron_id.get(), "001.swc")
         gui.load_and_autofill.assert_not_called()
         gui.run_selected.assert_not_called()
+
+    def test_gui_legacy_csv_profile_offers_explicit_live_source(self):
+        from vispa.gui import NeuroVisGUI
+
+        class Variable:
+            def __init__(self, *args, value=""):
+                self.value = value
+            def get(self):
+                return self.value
+            def set(self, value):
+                self.value = value
+
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp)
+            catalog_path = folder / "catalog.csv"
+            catalog_path.write_text(
+                "sample,neuron_id,portal_region,registry_animal\n"
+                "250432,001.swc,Area X,747\n", encoding="utf-8")
+            config_path = folder / "config.yaml"
+            config_path.write_text(
+                "version: 1\nsources:\n  neuron_catalog:\n"
+                "    mode: csv\n    path: catalog.csv\n", encoding="utf-8")
+            gui = NeuroVisGUI.__new__(NeuroVisGUI)
+            gui.config_path = str(config_path)
+            parent = object()
+            with mock.patch("vispa.gui.tk.StringVar", side_effect=Variable), \
+                 mock.patch("vispa.gui.ttk.Label") as label, \
+                 mock.patch("vispa.gui.ttk.Combobox") as combobox:
+                gui._configure_catalog_source_control(parent)
+
+        self.assertEqual(gui._catalog_source, "csv")
+        self.assertEqual(gui._catalog_source_choices, {
+            "Live IONData": "live-iondata", "Dated CSV snapshot": "csv"})
+        self.assertEqual(combobox.call_args.kwargs["values"],
+                         ("Live IONData", "Dated CSV snapshot"))
+        label.assert_called_once()
 
     def test_gui_discards_stale_sample_result_without_populating_dialog(self):
         from vispa.gui import NeuroVisGUI
