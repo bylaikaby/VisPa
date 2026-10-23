@@ -27,6 +27,15 @@
   editable package imports from `D:/VisPa/src/vispa`, and the Conda environment
   contains no VisPa/VisualToolkit console scripts. The current 252385/044 demo
   config, recorded panel hashes and 3D snapshot remain valid.
+- Fresh-clone validation at `167b71f8cac2d7a5143b6dfaad0da9c164160154`:
+  cloned `simplified` into an isolated local directory, created a clean Conda
+  prefix from `environment.yml` including pip-installed PyGLM/GLFW, installed
+  the package editable, and passed the full 131/131 suite plus version, config,
+  and GUI dry runs. Hosted Windows Conda run
+  [39917956968](https://github.com/bylaikaby/VisPa/actions/runs/39917956968)
+  passed for the same commit. The cloned DS00 montage test module passed 10/10,
+  and a real 251637 five-view montage rendered successfully with a role legend
+  and plane-specific RAS+ axes.
 - Validation pending in this local candidate: source suite, wheel/runtime
   payload parity, Projectome caller migration, and a bounded Projectome render
   with the explicit adapter. No scientific or anatomical acceptance is implied.
