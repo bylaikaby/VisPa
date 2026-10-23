@@ -1,35 +1,54 @@
 # VisPa — Visual Projectome Analysis tool
 
-VisPa reviews macaque neuron and microscopy data from configured lab sources. This checkout is 1.11.0.dev7, a development version without a release tag. The published `codex/minimal-windows-install-20261023` branch was verified at earlier dev6 commit `97e429574f67b3d314ec721f7e1c376c0adb7e8f`; `main` is separate.
+VisPa reviews macaque neuron and microscopy data from configured lab sources.
+This `simplified` branch is version 1.11.0.dev7, a Python-only development
+candidate without a release tag. Install Miniforge or another Conda
+distribution before following this guide.
 
-## Install with Conda
-
-VisPa is a Python package and does not require console executables, PATH edits,
-or a desktop launcher. Install Miniforge or another Conda distribution first,
-then run from the VisPa source folder:
+## Quick start from a fresh clone
 
 ```powershell
+git clone --branch simplified https://github.com/bylaikaby/VisPa.git D:\vispa-work
+Set-Location D:\vispa-work
 conda env create -f environment.yml
-conda activate vispa
-python -m pip install --no-deps -e .
-python -m vispa --version
+conda run -n vispa python -m pip install --no-deps -e .
+conda run -n vispa python -m vispa --version
 ```
 
-For an existing environment:
+Create a local profile if one does not already exist:
 
 ```powershell
-conda env update -n vispa -f environment.yml
-conda activate vispa
-python -m pip install --no-deps -e .
+conda run -n vispa python -m vispa config-init
 ```
 
-The package does not include private images, SWCs, credentials, or an FNT
-executable. Lab data remain explicit external sources.
+Start the GUI without activating the environment:
+
+```powershell
+conda run -n vispa python -m vispa.gui --config "$env:APPDATA\VisPa\vispa_config.yaml"
+```
+
+To update an existing clone and environment:
+
+```powershell
+git pull --ff-only
+conda env update -n vispa -f environment.yml
+conda run -n vispa python -m pip install --no-deps -e .
+```
+
+Relative source paths resolve from the selected YAML file. Lab data remain
+explicit external sources; no images, SWCs, credentials, or FNT executable are
+packaged.
 
 ### IDE setup
 
-Select `C:\Users\<user>\miniforge3\envs\vispa\python.exe` or the equivalent
-Conda environment interpreter, with `D:\VisPa` as the working directory.
+Find the exact interpreter:
+
+```powershell
+conda run -n vispa python -c "import sys; print(sys.executable)"
+```
+
+Select that interpreter in the IDE and use the cloned checkout as the working
+directory.
 
 Use these run configurations:
 
