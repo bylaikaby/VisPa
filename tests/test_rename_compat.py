@@ -15,12 +15,12 @@ class RenameCompatibilityTests(unittest.TestCase):
   import Visual_toolkit.toolkit as legacy
   self.assertIs(primary,legacy)
   self.assertIs(primary.VisPa,primary.Visual_toolkit)
- def test_primary_env_precedence_and_old_fallback(self):
-  from vispa.dataset_config import config_path
+ def test_primary_env_precedence_and_own_default(self):
+  from vispa.dataset_config import config_path, default_config_path
   with patch.dict(os.environ,{"VISPA_CONFIG":"primary.yaml","VISUAL_TOOLKIT_CONFIG":"old.yaml"}):
    self.assertEqual(str(config_path()),"primary.yaml")
   with patch.dict(os.environ,{"VISPA_CONFIG":"","VISUAL_TOOLKIT_CONFIG":"old.yaml"}):
-   self.assertEqual(str(config_path()),"old.yaml")
+   self.assertEqual(config_path(),default_config_path())
  def test_legacy_import_keeps_optional_gl_lazy(self):
   result=subprocess.run([sys.executable,"-c","import Visual_toolkit,sys; assert not any(n.startswith('vispa.legacy_gl') for n in sys.modules)"],capture_output=True,text=True)
   self.assertEqual(result.returncode,0,result.stderr)

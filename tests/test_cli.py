@@ -1,13 +1,14 @@
 """CLI contract tests for bounded standalone use.
 
-Version: 1.11.0.dev3 (local/unreleased)
-Last updated: 2026-10-22
+Version: 1.11.0.dev4 (local/unreleased)
+Last updated: 2026-10-23
 Change history: ../CHANGELOG.md
 """
 from __future__ import annotations
 
 import json
 import hashlib
+import io
 import os
 from pathlib import Path
 import subprocess
@@ -72,6 +73,33 @@ class CliContractTests(unittest.TestCase):
         isolated.start()
         self.addCleanup(isolated.stop)
 
+    def test_validate_only_accepts_offline_unc_declarations_without_source_probes(self):
+        from vispa.cli import main
+        from vispa import dataset_config
+
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "offline.json"
+            config.write_text(json.dumps({
+                "version": 1,
+                "defaults": {"ds00_root": "\\\\offline-host\\share\\DS00"},
+                "samples": {"s01": {"ds00_relative": "brain.nii"}},
+            }), encoding="utf-8")
+            original_resolve = Path.resolve
+
+            def no_remote_resolve(path, *args, **kwargs):
+                if str(path).startswith("\\\\"):
+                    raise AssertionError("config validation probed a remote share")
+                return original_resolve(path, *args, **kwargs)
+
+            output = io.StringIO()
+            with mock.patch.object(Path, "resolve", no_remote_resolve), \
+                    mock.patch.object(dataset_config, "check", side_effect=AssertionError("source probe")), \
+                    mock.patch("sys.stdout", output):
+                self.assertEqual(main(["config-check", "--validate-only", "--config", str(config)]), 0)
+            self.assertTrue(json.loads(output.getvalue())["valid"])
+            with mock.patch("sys.stderr", io.StringIO()), self.assertRaises(SystemExit):
+                main(["config-check", "--validate-only", "--catalog", "--config", str(config)])
+
     def test_install_path_entry_is_idempotent_and_removable(self):
         from vispa.cli import merge_user_path, remove_user_path
         root = Path(tempfile.gettempdir()) / "VisPa path test"
@@ -80,18 +108,24 @@ class CliContractTests(unittest.TestCase):
         duplicate = str(root / "tools") if os.name == "nt" else tools
         current = f"{root / 'Windows'};{tools_in_current}"
         unchanged, changed = merge_user_path(current, duplicate)
-        self.assertFalse(changed)
-        self.assertEqual(unchanged, current)
+        self.assertTrue(changed)
+        self.assertTrue(unchanged.startswith(duplicate + ";"))
         entry = str(root / "vispa" / ".venv" / "Scripts")
         added, changed = merge_user_path(current, entry)
         self.assertTrue(changed)
-        self.assertTrue(added.endswith(entry))
+        self.assertTrue(added.startswith(entry + ";"))
         removed, changed = remove_user_path(added, entry + os.sep * 2)
         self.assertTrue(changed)
         self.assertNotIn(entry, removed)
         case_variant = str(root / "VISPA" / ".venv" / "Scripts")
         _, changed = merge_user_path(added, case_variant)
-        self.assertEqual(changed, os.name != "nt")
+        self.assertFalse(changed)
+        older = str(root / "older-vispa" / "Scripts")
+        promoted, changed = merge_user_path(older + ";" + added, entry)
+        self.assertTrue(changed)
+        self.assertEqual(promoted.split(";")[0], entry)
+        self.assertEqual(promoted.split(";").count(entry), 1)
+        self.assertIn(older, promoted)
 
     def test_help_and_version_do_not_import_backend(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -107,7 +141,7 @@ class CliContractTests(unittest.TestCase):
             self.assertEqual(run_cli("--help", cwd=tmp_path).returncode, 0)
             version = run_cli("--version", cwd=tmp_path)
             self.assertEqual(version.returncode, 0)
-            self.assertIn("1.11.0.dev3", version.stdout)
+            self.assertIn("1.11.0.dev4", version.stdout)
 
     def test_settings_command_prints_discoverable_json_without_optional_imports(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -205,7 +239,7 @@ assert main(["settings", "--scope", "all"]) == 0
             plan = json.loads(result.stdout)
             assert_backend_is_installed(self, plan)
             self.assertEqual(plan["schema"], "visual-toolkit.render.v1")
-            self.assertEqual(plan["package_version"], "1.11.0.dev3")
+            self.assertEqual(plan["package_version"], "1.11.0.dev4")
             self.assertTrue(Path(plan["python_executable"]).is_file())
             self.assertTrue(Path(plan["runtime"]["python_executable"]).is_file())
             self.assertTrue(Path(plan["runtime"]["backend_module"]).is_file())
@@ -283,7 +317,7 @@ assert main(["settings", "--scope", "all"]) == 0
             self.assertEqual({path.name for path in output.iterdir()}, {png.name, receipt_path.name})
             self.assertTrue(os.path.samefile(receipt["output_png"], png))
             self.assertEqual(receipt["schema"], "visual-toolkit.render.v1")
-            self.assertEqual(receipt["package_version"], "1.11.0.dev3")
+            self.assertEqual(receipt["package_version"], "1.11.0.dev4")
             runtime = receipt["runtime"]
             self.assertTrue(Path(runtime["python_prefix"]).exists())
             self.assertEqual(runtime["backend_sha256"],
@@ -359,7 +393,10 @@ class FNTResourcePreflightTests(unittest.TestCase):
             root = Path(directory)
             exe = root / 'fnt-tracer.exe'
             exe.write_bytes(b'not executable')
-            config = {'visual_toolkit': {'fnt_tracer': {'executable': exe, 'project_root': root}}}
+            config = {'visual_toolkit': {'fnt_tracer': {
+                'executable': exe, 'project_root': root,
+                'server_base_url': 'http://fnt.example',
+                'catalog_base_url': 'http://catalog.example'}}}
             with mock.patch('subprocess.Popen', side_effect=AssertionError('must not launch')):
                 missing = fnt_plan(config, 's01', '003.swc')
                 self.assertFalse(missing['ready'])

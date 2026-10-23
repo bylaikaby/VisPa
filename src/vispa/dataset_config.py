@@ -1,7 +1,7 @@
 """Load explicit, portable VisPa dataset configuration.
 
-Version: 1.11.0.dev3 (local/unreleased)
-Last updated: 2026-10-22
+Version: 1.11.0.dev4 (local/unreleased)
+Last updated: 2026-10-23
 Change history: ../../CHANGELOG.md
 """
 from __future__ import annotations
@@ -27,7 +27,7 @@ YAML_SUFFIXES = (".yaml", ".yml")
 
 def config_path() -> Path:
     """Return an explicit config path or the per-user YAML target, without creating it."""
-    configured = os.environ.get(ENV_VAR) or os.environ.get(COMPAT_ENV_VAR) or os.environ.get(LEGACY_ENV_VAR)
+    configured = os.environ.get(ENV_VAR)
     return Path(configured).expanduser() if configured else default_config_path()
 
 
@@ -35,7 +35,7 @@ def default_config_path() -> Path:
     """Return the per-user YAML config target without creating it."""
     app_data = os.environ.get("APPDATA")
     base = Path(app_data) if app_data else Path.home() / ".config"
-    return base / "VisualToolkit" / "visual_toolkit_config.yaml"
+    return base / "VisPa" / "vispa_config.yaml"
 
 
 def legacy_default_config_path() -> Path:
@@ -43,6 +43,13 @@ def legacy_default_config_path() -> Path:
     app_data = os.environ.get("APPDATA")
     base = Path(app_data) if app_data else Path.home() / ".config"
     return base / "VisualToolkit" / "visual_toolkit_config.json"
+
+
+def legacy_yaml_config_path() -> Path:
+    """Return the former per-user YAML location without modifying it."""
+    app_data = os.environ.get("APPDATA")
+    base = Path(app_data) if app_data else Path.home() / ".config"
+    return base / "VisualToolkit" / "visual_toolkit_config.yaml"
 
 
 def _template_bytes() -> bytes:
@@ -63,9 +70,9 @@ def _parse_config_bytes(content: bytes, source: Path) -> dict:
 
 
 def _empty_config(source: Path, base_dir: Path | None = None, *, origin: str) -> dict:
-    user_data = Path(os.environ.get("LOCALAPPDATA") or (Path.home() / ".cache")) / "VisualToolkit"
+    user_data = Path(os.environ.get("LOCALAPPDATA") or (Path.home() / ".cache")) / "VisPa"
     base = base_dir or source.parent
-    defaults = {"cache_root": user_data / "cache", "output_root": Path.home() / "VisualToolkit" / "output"}
+    defaults = {"cache_root": user_data / "cache", "output_root": user_data / "output"}
     return {"path": source, "base_dir": base, "defaults": defaults, "samples": {},
             "visual_toolkit": {"output_root": defaults["output_root"], "settings": {},
                                "startup_mode": "configured"},
@@ -76,7 +83,28 @@ def _resolve(value, base: Path):
     if value is None or not str(value).strip():
         return None
     candidate = Path(os.path.expandvars(str(value))).expanduser()
-    return candidate if candidate.is_absolute() else (base / candidate).resolve()
+    if candidate.is_absolute():
+        return candidate
+    joined = base / candidate
+    # Path.resolve can probe a UNC server. Config loading must remain usable off
+    # the lab network; child paths are normalized without opening the share.
+    return Path(os.path.normpath(str(joined))) if str(base).startswith("\\\\") else joined.resolve()
+
+
+def _relative_under(value, root, key):
+    """Resolve a declared child of one editable source root."""
+    if value is None:
+        return None
+    if not root:
+        raise ValueError(f"{key} requires defaults.ds00_root")
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{key} must be a nonempty relative path")
+    candidate = Path(value)
+    windows = PureWindowsPath(value)
+    if (candidate.is_absolute() or windows.is_absolute() or windows.drive
+            or ".." in candidate.parts or ".." in windows.parts):
+        raise ValueError(f"{key} must stay under defaults.ds00_root")
+    return _resolve(candidate, root)
 
 
 def _positive_int_vector(value, key, length=3):
@@ -187,12 +215,12 @@ def _resample_policy(value, sample_id, resample_path):
 def load(path: str | Path | None = None, base_dir: str | Path | None = None) -> dict:
     """Load schema-v1 JSON or YAML and resolve paths against its declared base.
 
-    An explicit argument or environment path wins and is never created. With no
-    override, an existing per-user YAML wins, then the prior per-user JSON is
-    read-only, then the package-owned neutral YAML is used in memory.
+    An explicit argument or VISPA_CONFIG path wins and is never created. With no
+    override, the own per-user YAML wins, then the package-owned neutral YAML
+    is used in memory. Legacy files remain available by explicit path.
     """
     explicit = path is not None
-    env_path = os.environ.get(ENV_VAR) or os.environ.get(COMPAT_ENV_VAR) or os.environ.get(LEGACY_ENV_VAR)
+    env_path = os.environ.get(ENV_VAR)
     origin = "explicit" if explicit else "environment" if env_path else "user_yaml"
     if explicit:
         source = Path(path).expanduser()
@@ -200,13 +228,9 @@ def load(path: str | Path | None = None, base_dir: str | Path | None = None) -> 
         source = Path(env_path).expanduser()
     else:
         target = default_config_path()
-        legacy = legacy_default_config_path()
         if target.is_file():
             source = target
             origin = "user_yaml"
-        elif legacy.is_file():
-            source = legacy
-            origin = "legacy_user_json"
         else:
             source = target
             origin = "package_default"
@@ -241,11 +265,11 @@ def load(path: str | Path | None = None, base_dir: str | Path | None = None) -> 
     # not inherit the per-user cache_root fallback, which would move caches out of
     # the config's own tree when swc_root is absent.
     declared_swc_cache_base = defaults["swc_cache_root"] or defaults["swc_root"]
-    user_data = Path(os.environ.get("LOCALAPPDATA") or (Path.home() / ".cache")) / "VisualToolkit"
+    user_data = Path(os.environ.get("LOCALAPPDATA") or (Path.home() / ".cache")) / "VisPa"
     if defaults["cache_root"] is None:
         defaults["cache_root"] = user_data / "cache"
     if defaults["output_root"] is None:
-        defaults["output_root"] = Path.home() / "VisualToolkit" / "output"
+        defaults["output_root"] = user_data / "output"
     if defaults["swc_cache_root"] is None:
         defaults["swc_cache_root"] = defaults["swc_root"] or defaults["cache_root"]
     raw_samples = raw.get("samples", {})
@@ -259,6 +283,12 @@ def load(path: str | Path | None = None, base_dir: str | Path | None = None) -> 
             entry = {}
         if not isinstance(entry, dict):
             raise ValueError(f"samples.{sample_id} must be a mapping")
+        if entry.get("ds00_processed") is not None and entry.get("ds00_relative") is not None:
+            raise ValueError(f"samples.{sample_id} cannot set both ds00_processed and ds00_relative")
+        ds00_path = (_relative_under(entry.get("ds00_relative"), defaults["ds00_root"],
+                                     f"samples.{sample_id}.ds00_relative")
+                     if entry.get("ds00_relative") is not None
+                     else _resolve(entry.get("ds00_processed"), configured_base))
         resample_path = _resolve(entry.get("resample_5um"), defaults["resample_5um_root"] or configured_base)
         policy = _resample_policy(entry.get("resample_5um_policy"), str(sample_id), resample_path)
         corrected = entry.get("resample_5um_corrected", policy is not None)
@@ -270,7 +300,7 @@ def load(path: str | Path | None = None, base_dir: str | Path | None = None) -> 
             raise ValueError(f"samples.{sample_id}.resample_5um_policy conflicts with resample_5um_corrected: false")
         samples[str(sample_id)] = {
             "monkey": None if entry.get("monkey") is None else str(entry["monkey"]),
-            "ds00_processed": _resolve(entry.get("ds00_processed"), configured_base),
+            "ds00_processed": ds00_path,
             "ds00_sha256": entry.get("ds00_sha256"),
             "resample_5um": resample_path,
             "swc_cache": _resolve(entry.get("swc_cache"), declared_swc_cache_base or configured_base),
@@ -306,7 +336,9 @@ def load(path: str | Path | None = None, base_dir: str | Path | None = None) -> 
     fnt_tracer = ui.get("fnt_tracer") or {}
     if not isinstance(fnt_tracer, dict):
         raise ValueError("visual_toolkit.fnt_tracer must be a mapping")
-    unknown_fnt = set(fnt_tracer) - {"executable", "project_root"}
+    unknown_fnt = set(fnt_tracer) - {"executable", "project_root", "auto_download",
+                                     "cache_root", "server_base_url", "catalog_base_url",
+                                     "timeout_seconds", "max_response_bytes"}
     if unknown_fnt:
         raise ValueError(
             f"visual_toolkit.fnt_tracer has unknown key(s): {sorted(unknown_fnt)}")
@@ -314,6 +346,22 @@ def load(path: str | Path | None = None, base_dir: str | Path | None = None) -> 
         key: (_resolve(fnt_tracer.get(key), configured_base)
               if fnt_tracer.get(key) else None)
         for key in ("executable", "project_root")}
+    auto_download = fnt_tracer.get("auto_download", True)
+    if not isinstance(auto_download, bool):
+        raise ValueError("visual_toolkit.fnt_tracer.auto_download must be a boolean")
+    visual_toolkit["fnt_tracer"]["auto_download"] = auto_download
+    visual_toolkit["fnt_tracer"]["cache_root"] = _resolve(
+        fnt_tracer.get("cache_root"), configured_base) if fnt_tracer.get("cache_root") else None
+    for key in ("server_base_url", "catalog_base_url"):
+        value = fnt_tracer.get(key)
+        if value is not None and (not isinstance(value, str) or not value.strip()):
+            raise ValueError(f"visual_toolkit.fnt_tracer.{key} must be a nonempty URL")
+        visual_toolkit["fnt_tracer"][key] = value
+    for key, default in (("timeout_seconds", 30), ("max_response_bytes", 64 * 1024 * 1024)):
+        value = fnt_tracer.get(key, default)
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise ValueError(f"visual_toolkit.fnt_tracer.{key} must be a positive integer")
+        visual_toolkit["fnt_tracer"][key] = value
     for key in ("default_sample", "default_neuron"):
         if not isinstance(visual_toolkit[key], str):
             raise ValueError(f"visual_toolkit.{key} must be a string")
@@ -338,6 +386,12 @@ def load(path: str | Path | None = None, base_dir: str | Path | None = None) -> 
     if not isinstance(raw_sources, dict):
         raise ValueError("sources must be a mapping")
     sources = dict(raw_sources)
+    if sources.get("dataset_manifest") is not None and sources.get("dataset_manifest_relative") is not None:
+        raise ValueError("sources cannot set both dataset_manifest and dataset_manifest_relative")
+    if sources.get("dataset_manifest_relative") is not None:
+        sources["dataset_manifest"] = _relative_under(
+            sources.pop("dataset_manifest_relative"), defaults["ds00_root"],
+            "sources.dataset_manifest_relative")
     if sources.get("ssh_sample_id") is not None:
         sources["ssh_sample_id"] = str(sources["ssh_sample_id"])
     for key in ("dataset_manifest", "legacy_raw_swc_root"):
@@ -350,7 +404,31 @@ def load(path: str | Path | None = None, base_dir: str | Path | None = None) -> 
             and not sources.get("legacy_raw_swc_root")):
         # Keep remotely fetched raw trees persistent across loads while keeping
         # shared profiles free of machine-specific cache paths.
-        sources["legacy_raw_swc_root"] = user_data / "swc_raw"
+        sources["legacy_raw_swc_root"] = defaults["cache_root"] / "swc_raw"
+    example = sources.get("public_example")
+    if example is not None:
+        from urllib.parse import urlsplit
+        if not isinstance(example, dict):
+            raise ValueError("sources.public_example must be a mapping")
+        example = dict(example)
+        for key in ("source_url", "metadata_url"):
+            value = example.get(key)
+            parsed = urlsplit(value) if isinstance(value, str) else None
+            if (not parsed or parsed.scheme not in {"http", "https"} or not parsed.netloc
+                    or parsed.username or parsed.password or parsed.fragment):
+                raise ValueError(f"sources.public_example.{key} must be a plain HTTP(S) URL")
+        record_id = example.get("record_id")
+        if not isinstance(record_id, str) or not record_id.strip():
+            raise ValueError("sources.public_example.record_id must be nonempty text")
+        record_file = example.get("record_file")
+        if (not isinstance(record_file, str) or not record_file.lower().endswith(".swc")
+                or Path(record_file).name != record_file or PureWindowsPath(record_file).name != record_file
+                or ".." in record_file):
+            raise ValueError("sources.public_example.record_file must be a simple .swc basename")
+        sha = example.get("sha256")
+        if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", sha):
+            raise ValueError("sources.public_example.sha256 must be 64 hexadecimal characters")
+        sources["public_example"] = example
     catalog = sources.get("neuron_catalog")
     if catalog is not None:
         if not isinstance(catalog, dict):
@@ -371,7 +449,7 @@ def load(path: str | Path | None = None, base_dir: str | Path | None = None) -> 
                 catalog["snapshot_path"] = _resolve(catalog["snapshot_path"], configured_base)
         if (mode == "live-iondata"
                 or any(key in catalog for key in ("host", "timeout_seconds", "max_response_bytes"))):
-            host = catalog.get("host", "http://10.10.48.110")
+            host = catalog.get("host")
             from urllib.parse import urlsplit
             if not isinstance(host, str) or not host.strip() or host != host.strip():
                 raise ValueError("sources.neuron_catalog.host must be an HTTP(S) origin without a path or query")
@@ -464,10 +542,10 @@ def _materialized_settings(config: dict | None) -> dict:
 def initialize_default_config(output: str | Path | None = None,
                               from_path: str | Path | None = None,
                               *, dry_run: bool = False) -> dict:
-    """Create YAML without overwriting; only the implicit target migrates legacy JSON.
+    """Create YAML without overwriting; legacy sources require from_path.
 
     Explicit output paths use neutral package defaults unless from_path is supplied.
-    A default-target migration preserves the user's JSON source bytes. The created
+    An explicit migration preserves the user's JSON source bytes. The created
     file carries validated effective settings for every scope, so a new config is
     complete without inheriting process or package defaults implicitly.
     """
@@ -478,16 +556,12 @@ def initialize_default_config(output: str | Path | None = None,
     if output is not None and target.suffix.lower() not in YAML_SUFFIXES:
         raise ValueError(f"config-init --output must end with .yaml or .yml: {target}")
     target = target.resolve()
-    default_target = default_config_path().resolve()
-    legacy = legacy_default_config_path().resolve()
     if target.exists():
         existing_hash = hashlib.sha256(target.read_bytes()).hexdigest()
         return {"action": "already_exists", "config_path": str(target),
                 "output_sha256": existing_hash, "source_kind": "existing_target"}
 
     selected_source = Path(from_path).expanduser().resolve() if from_path is not None else None
-    if selected_source is None and output is None and target == default_target and legacy.is_file():
-        selected_source = legacy
 
     source_stat = None
     source_base = None
@@ -508,7 +582,7 @@ def initialize_default_config(output: str | Path | None = None,
         if selected_source.parent.resolve() != target.parent.resolve():
             raw = dict(raw)
             raw["base_dir"] = str(source_base)
-        source_kind = "explicit_source" if from_path is not None else "legacy_user_json_migration"
+        source_kind = "explicit_source"
         source_label = str(selected_source)
         source_hash = hashlib.sha256(source_bytes).hexdigest()
     else:
@@ -570,11 +644,11 @@ def initialize_default_config(output: str | Path | None = None,
 
 
 def default_output_root(config: dict | None = None) -> Path:
-    """Return the configured output root or the per-user VisualToolkit folder."""
+    """Return the configured output root or the per-user VisPa folder."""
     config = config if config is not None else load()
     return Path(config.get("visual_toolkit", {}).get("output_root") or
                 config.get("defaults", {}).get("output_root") or
-                (Path.home() / "VisualToolkit" / "output"))
+                (Path(os.environ.get("LOCALAPPDATA") or (Path.home() / ".cache")) / "VisPa" / "output"))
 
 
 

@@ -2,12 +2,12 @@
 .SYNOPSIS
 Install VisPa into a dedicated virtual environment.
 
-Version: 1.11.0.dev3 (local/unreleased)
-Last updated: 2026-10-22
+Version: 1.11.0.dev4 (local/unreleased)
+Last updated: 2026-10-23
 Change history: ../CHANGELOG.md
 
 .EXAMPLE
-.\tools\install.ps1 -Wheel .\dist\vispa-1.11.0.dev3-py3-none-any.whl -Wheelhouse C:\path\to\wheelhouse -Config C:\data\visual_toolkit_config.yaml
+.\tools\install.ps1 -Wheel .\dist\vispa-1.11.0.dev4-py3-none-any.whl -Wheelhouse C:\path\to\wheelhouse -Config C:\data\visual_toolkit_config.yaml
 
 .EXAMPLE
 .\tools\install.ps1 -DryRun
@@ -29,8 +29,13 @@ param(
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 if (-not $Config -and $env:VISPA_CONFIG) { $Config = $env:VISPA_CONFIG }
-if (-not $Config -and $env:VISUAL_TOOLKIT_CONFIG) {
-    $Config = $env:VISUAL_TOOLKIT_CONFIG
+$userConfig = Join-Path $env:APPDATA 'VisPa\vispa_config.yaml'
+$configSelection = if ($Config) { 'selected_existing' } elseif (Test-Path -LiteralPath $userConfig) {
+    $Config = $userConfig
+    'existing_per_user'
+} else {
+    $Config = $userConfig
+    'create_from_package_defaults'
 }
 if (-not $Wheelhouse -and $env:VISPA_WHEELHOUSE) { $Wheelhouse = $env:VISPA_WHEELHOUSE }
 if (-not $Wheelhouse -and $env:VISUAL_TOOLKIT_WHEELHOUSE) {
@@ -38,6 +43,9 @@ if (-not $Wheelhouse -and $env:VISUAL_TOOLKIT_WHEELHOUSE) {
 }
 if ($Wheel -and $Source) {
     throw 'Choose either -Wheel or -Source; the options cannot be used together.'
+}
+if ($Wheel -and -not (Test-Path -LiteralPath $Wheel -PathType Leaf)) {
+    throw "Explicit VisPa wheel does not exist: $Wheel"
 }
 $pythonCommand = $Python
 $pythonPrefix = @()
@@ -70,6 +78,11 @@ $plan = [ordered]@{
     wheel = $Wheel
     wheelhouse = $Wheelhouse
     config = $Config
+    config_selection = $configSelection
+    cache_root = (Join-Path $env:LOCALAPPDATA 'VisPa\cache')
+    output_root = (Join-Path $env:LOCALAPPDATA 'VisPa\output')
+    runtime_python = $venvPython
+    source_root = $repo
     source_install = $sourceMode
     add_user_path = (-not $NoPath)
     launch_gui = (-not $NoLaunch)
@@ -78,6 +91,9 @@ $plan = [ordered]@{
 if ($DryRun) {
     $plan | ConvertTo-Json
     return
+}
+if ($configSelection -ne 'create_from_package_defaults' -and -not (Test-Path -LiteralPath $Config -PathType Leaf)) {
+    throw "Selected VisPa config does not exist: $Config"
 }
 if (-not $Wheel -and -not $sourceMode) {
     throw "No source checkout or explicit wheel was provided for $repo."
@@ -165,6 +181,14 @@ $spec = if ($sourceMode) {
     'vispa[3d]'
 }
 $pipArgs += $spec
+if ($Wheel) {
+    # A candidate wheel may reuse the same local version while its bytes change.
+    # Install those exact bytes, then let the normal extras command resolve deps.
+    & $venvPython -m pip install --disable-pip-version-check --force-reinstall --no-deps $Wheel
+    if ($LASTEXITCODE -ne 0) {
+        throw "Installing the exact wheel failed with exit code $LASTEXITCODE."
+    }
+}
 if ($sourceMode) {
     Push-Location $repo
     try {
@@ -180,14 +204,33 @@ if ($sourceMode) {
     }
 }
 
+if ($configSelection -eq 'create_from_package_defaults') {
+    & (Join-Path $InstallDir 'Scripts\vispa.exe') config-init --output $Config
+    if ($LASTEXITCODE -ne 0) {
+        throw "Creating the per-user VisPa config failed with exit code $LASTEXITCODE."
+    }
+}
+if (-not (Test-Path -LiteralPath $Config -PathType Leaf)) {
+    throw "VisPa config is missing after installation: $Config"
+}
+& (Join-Path $InstallDir 'Scripts\vispa.exe') config-check --validate-only --config $Config
+if ($LASTEXITCODE -ne 0) {
+    throw "Selected VisPa config did not pass validation; user environment was not registered: $Config"
+}
+
 if (-not $NoPath) {
-    $pathArgs = @('install-path')
+    $pathArgs = @('install-path', '--scripts-dir', (Join-Path $InstallDir 'Scripts'))
     if ($Config) { $pathArgs += @('--config', $Config) }
     & (Join-Path $InstallDir 'Scripts\vispa.exe') @pathArgs
     if ($LASTEXITCODE -ne 0) {
         throw "Registering the user PATH failed with exit code $LASTEXITCODE."
     }
 }
+if (-not $NoPath) {
+    $env:VISPA_PYTHON = $venvPython
+    [Environment]::SetEnvironmentVariable('VISPA_PYTHON', $venvPython, 'User')
+}
+if ($Config) { $env:VISPA_CONFIG = $Config }
 $gui = Join-Path $InstallDir 'Scripts\vispa-gui.exe'
 if (-not $NoShortcut) {
     try {
@@ -208,9 +251,9 @@ if (-not $NoShortcut) {
 if (-not $NoLaunch) {
     try {
         if ($Config) {
-            Start-Process -FilePath $gui -ArgumentList @('--config', "`"$Config`"")
+            Start-Process -FilePath $gui -ArgumentList @('--config', "`"$Config`"") -WindowStyle Hidden
         } else {
-            Start-Process -FilePath $gui
+            Start-Process -FilePath $gui -WindowStyle Hidden
         }
     } catch {
         throw "Package installation completed, but the GUI did not launch. Once dependencies are installed, start '$gui' directly. Launch error: $_"

@@ -6,3 +6,7 @@ dist/
 .venv/
 .pytest_cache/
 work/
+config/
+runtime/
+cache/
+output/

@@ -1,6 +1,6 @@
 <#
-Version: 1.11.0.dev3 (local/unreleased)
-Last updated: 2026-10-22
+Version: 1.11.0.dev4 (local/unreleased)
+Last updated: 2026-10-23
 Change history: ../CHANGELOG.md
 
 Run with Windows PowerShell 5.1:
@@ -15,8 +15,9 @@ $guiLog = Join-Path $temp 'gui args.txt'
 $savedVispaConfig = $env:VISPA_CONFIG
 $savedLegacyConfig = $env:VISUAL_TOOLKIT_CONFIG
 $savedPath = $env:PATH
+$savedAppData = $env:APPDATA
 $savedTestEnv = @{}
-foreach ($name in @('VISPA_TEST_BASE_JSON', 'VISPA_TEST_TARGET_JSON', 'VISPA_TEST_LAUNCHER_ARGS', 'VISPA_TEST_FALLBACK_ARGS', 'VISPA_TEST_PIP_LOG', 'VISPA_TEST_GUI_ARGS')) {
+foreach ($name in @('VISPA_TEST_BASE_JSON', 'VISPA_TEST_TARGET_JSON', 'VISPA_TEST_LAUNCHER_ARGS', 'VISPA_TEST_FALLBACK_ARGS', 'VISPA_TEST_PIP_LOG', 'VISPA_TEST_GUI_ARGS', 'VISPA_TEST_VISPA_ARGS')) {
     $savedTestEnv[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
 }
 $env:VISPA_TEST_BASE_JSON = '{"executable":"C:\\fixture\\python.exe","version":[3,13,13],"bits":64}'
@@ -24,10 +25,15 @@ $env:VISPA_TEST_TARGET_JSON = '{"executable":"stub","version":[3,13,13],"bits":6
 $env:VISPA_TEST_LAUNCHER_ARGS = Join-Path $temp 'launcher args.txt'
     $env:VISPA_TEST_FALLBACK_ARGS = Join-Path $temp 'fallback args.txt'
 $env:VISPA_TEST_PIP_LOG = Join-Path $temp 'pip calls.txt'
+$env:VISPA_TEST_VISPA_ARGS = Join-Path $temp 'vispa args.txt'
 $env:VISPA_CONFIG = $null
 $env:VISUAL_TOOLKIT_CONFIG = $null
 $env:VISPA_TEST_GUI_ARGS = $guiLog
 New-Item -ItemType Directory -Path $temp | Out-Null
+$env:APPDATA = Join-Path $temp 'appdata'
+$defaultConfig = Join-Path $env:APPDATA 'VisPa\vispa_config.yaml'
+New-Item -ItemType Directory -Path (Split-Path $defaultConfig) -Force | Out-Null
+Set-Content -LiteralPath $defaultConfig -Value 'version: 1' -Encoding UTF8
 try {
     $pythonDir = Join-Path $temp 'Python with spaces'
     New-Item -ItemType Directory -Path $pythonDir | Out-Null
@@ -67,6 +73,8 @@ public static class VisPaInstallerStub {
     }
     if (Environment.GetCommandLineArgs()[0].EndsWith("vispa-gui.exe", StringComparison.OrdinalIgnoreCase))
       File.WriteAllText(Environment.GetEnvironmentVariable("VISPA_TEST_GUI_ARGS"), String.Join("\n", args));
+    if (Environment.GetCommandLineArgs()[0].EndsWith("vispa.exe", StringComparison.OrdinalIgnoreCase))
+      File.AppendAllText(Environment.GetEnvironmentVariable("VISPA_TEST_VISPA_ARGS"), String.Join(" ", args) + "\n");
     return 0;
   }
 }
@@ -81,6 +89,9 @@ public static class VisPaInstallerStub {
     Remove-Item -LiteralPath $env:VISPA_TEST_LAUNCHER_ARGS -Force -ErrorAction SilentlyContinue
     & $installer -InstallDir $installDir -Source -NoLaunch -NoPath -NoShortcut
     if ($LASTEXITCODE -ne 0) { throw 'Default launcher install preflight failed.' }
+    if (-not (Select-String -LiteralPath $env:VISPA_TEST_VISPA_ARGS -Pattern 'config-check --validate-only --config ' -Quiet)) {
+        throw 'Installer did not validate configuration without source-path probes.'
+    }
     $launcherArgs = Get-Content -LiteralPath $env:VISPA_TEST_LAUNCHER_ARGS -Raw
     if ($launcherArgs -notmatch '^-3\.13 -c ') { throw "Default did not invoke py -3.13: $launcherArgs" }
     Write-Host 'PASS: ordinary install invokes py -3.13 without a -Python variable.'
@@ -117,8 +128,11 @@ public static class VisPaInstallerStub {
     $deadline = (Get-Date).AddSeconds(10)
     while (-not (Test-Path -LiteralPath $guiLog) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 100 }
     if (-not (Test-Path -LiteralPath $guiLog)) { throw 'GUI child was not launched for the no-config case.' }
-    if ((Get-Item -LiteralPath $guiLog).Length -ne 0) { throw 'No-config GUI launch received unexpected arguments.' }
-    Write-Host 'PASS: no-config GUI launch omits ArgumentList in Windows PowerShell.'
+    $defaultArgs = @(Get-Content -LiteralPath $guiLog)
+    if ($defaultArgs.Count -ne 2 -or $defaultArgs[0] -ne '--config' -or $defaultArgs[1] -ne $defaultConfig) {
+        throw "Default per-user config did not reach GUI: $($defaultArgs -join ' | ')"
+    }
+    Write-Host 'PASS: default per-user VisPa config reaches GUI.'
 
     $configDir = Join-Path $temp 'config folder with spaces'
     New-Item -ItemType Directory -Path $configDir | Out-Null
@@ -197,6 +211,7 @@ public static class VisPaInstallerStub {
     if ($null -eq $savedLegacyConfig) { Remove-Item Env:\VISUAL_TOOLKIT_CONFIG -ErrorAction SilentlyContinue }
     else { $env:VISUAL_TOOLKIT_CONFIG = $savedLegacyConfig }
     $env:PATH = $savedPath
+    $env:APPDATA = $savedAppData
     foreach ($name in $savedTestEnv.Keys) {
         if ($null -eq $savedTestEnv[$name]) { Remove-Item "Env:\$name" -ErrorAction SilentlyContinue }
         else { [Environment]::SetEnvironmentVariable($name, [string]$savedTestEnv[$name], 'Process') }

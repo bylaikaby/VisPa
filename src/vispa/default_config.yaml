@@ -3,7 +3,7 @@
 # configured intranet hosts/shares are reachable. No credentials or local tools.
 # Per-sample DS00/5 µm links are inherited source declarations, not validation or
 # anatomical acceptance. Caches and outputs resolve to the current user's profile.
-# Version: 1.11.0.dev3 (local/unreleased) | Last updated: 2026-10-22
+# Version: 1.11.0.dev4 (local/unreleased) | Last updated: 2026-10-22
 # Change history: ../../CHANGELOG.md
 version: 1
 base_dir: .
@@ -17,32 +17,32 @@ defaults:
 samples:
   '250432':
     monkey: '747'
-    ds00_processed: \\10.102.8.200\microscopy_data\fMOST\CH00DS_datasets\processed_nii\747_250432_ch00ds_100x100x90_orient-LPS.nii
+    ds00_relative: processed_nii/747_250432_ch00ds_100x100x90_orient-LPS.nii
     ds00_sha256: e789fd1318d3617462ea2d113f65fbbf827e7ce5bfe00509ccaf2f0e6c26b43b
     resample_5um: null
   '251637':
     monkey: '936'
-    ds00_processed: \\10.102.8.200\microscopy_data\fMOST\CH00DS_datasets\processed_nii\936_251637_ch00ds_100x100x90_orient-LPS.nii
+    ds00_relative: processed_nii/936_251637_ch00ds_100x100x90_orient-LPS.nii
     ds00_sha256: 622ce03b84aef5a4b1d19981cbdf0855360bc43f7f00189e9dcf62f19ccd9351
     resample_5um: 251637-CH1_resample/resample_5um
   '251730':
     monkey: '746'
-    ds00_processed: null
+    ds00_relative: null
     ds00_sha256: null
     resample_5um: null
   '252383':
     monkey: '605'
-    ds00_processed: \\10.102.8.200\microscopy_data\fMOST\CH00DS_datasets\processed_nii\605_252383_ch00ds_100x100x89.56_orient-LPS.nii
+    ds00_relative: processed_nii/605_252383_ch00ds_100x100x89.56_orient-LPS.nii
     ds00_sha256: 393107733999e38532870fec8ccc91bf956b732e928c356b84c44a3bf8adf147
     resample_5um: null
   '252384':
     monkey: '948'
-    ds00_processed: \\10.102.8.200\microscopy_data\fMOST\CH00DS_datasets\processed_nii\948_252384_ch00ds_100x100x90_orient-LPS.nii
+    ds00_relative: processed_nii/948_252384_ch00ds_100x100x90_orient-LPS.nii
     ds00_sha256: 98a6ce771bc403d16ce696f0b0b76adc3dab1de94defe3e49ae5c155a34f3f1d
     resample_5um: 252384_CH1_resample/resample_5um
   '252385':
     monkey: '331'
-    ds00_processed: \\10.102.8.200\microscopy_data\fMOST\CH00DS_datasets\archive\intermediate_20261016\aligned_nii\331_252385_ch00ds_100x100x100_orient-LPS_desc-shiftcorr_v03_aligned.nii
+    ds00_relative: archive/intermediate_20261016/aligned_nii/331_252385_ch00ds_100x100x100_orient-LPS_desc-shiftcorr_v03_aligned.nii
     ds00_sha256: 48c021689a9ddf4324f749d33400c53ebdff0381f13d304c0ae496fdec8edad1
     resample_5um: 252385-CH1_resample/resample_5um_z12527_aligned
     resample_5um_corrected: true
@@ -73,7 +73,7 @@ samples:
         padding: zero; excluded source support
   '252527':
     monkey: '945'
-    ds00_processed: \\10.102.8.200\microscopy_data\fMOST\CH00DS_datasets\processed_nii\945_252527_ch00ds_100x100x90_orient-LPS.nii
+    ds00_relative: processed_nii/945_252527_ch00ds_100x100x90_orient-LPS.nii
     ds00_sha256: 27887f56e5fffc415821a0c0c79d80925ee93e56c8af1d756f51e4ed093f7f89
     resample_5um: 252527_CH1_resample/resample_5um
     ds00_expected_geometry:
@@ -91,17 +91,17 @@ samples:
       - 0.1
   '252714':
     monkey: '631'
-    ds00_processed: \\10.102.8.200\microscopy_data\fMOST\CH00DS_datasets\processed_nii\631_252714_ch00ds_100x100x90_orient-LPS.nii
+    ds00_relative: processed_nii/631_252714_ch00ds_100x100x90_orient-LPS.nii
     ds00_sha256: 7006fd90ea5786ff405f9a22f72c6c25621c18aa975b74c2097683708d399413
     resample_5um: 252714-CH1_resample/resample_5um
   '252718':
     monkey: '900'
-    ds00_processed: \\10.102.8.200\microscopy_data\fMOST\CH00DS_datasets\processed_nii\900_252718_ch00ds_100x100x90_orient-LPS.nii
+    ds00_relative: processed_nii/900_252718_ch00ds_100x100x90_orient-LPS.nii
     ds00_sha256: f5169d356de7afd05d82856f4c0b084aae269b11e0345e7204bb0816c81418a1
     resample_5um: null
   '252790':
     monkey: '797'
-    ds00_processed: \\10.102.8.200\microscopy_data\fMOST\CH00DS_datasets\processed_nii\797_252790_ch00ds_100x100x90_orient-LPS.nii
+    ds00_relative: processed_nii/797_252790_ch00ds_100x100x90_orient-LPS.nii
     ds00_sha256: aad63119f6d26b4f8c0e4a1e5616f7801077f3ca1411747d654de7dfce150678
     resample_5um: 252790-CH1_resample/resample_5um
 visual_toolkit:
@@ -115,6 +115,12 @@ visual_toolkit:
   fnt_tracer:
     executable: null
     project_root: null
+    auto_download: true
+    cache_root: null
+    server_base_url: http://10.10.48.110/www/upload/neuron
+    catalog_base_url: http://10.10.48.110/monkeydata
+    timeout_seconds: 30
+    max_response_bytes: 67108864
   settings:
     review:
       marker.color: '#00e5ee'
@@ -229,12 +235,18 @@ visual_toolkit:
       green_channel_scale: 0.985
       blue_channel_scale: 0.94
 sources:
+  public_example:
+    source_url: https://mouse.digital-brain.cn/projectome/2/srv/info/monkey/pfc/neuron_download/221747_1-qroot433.swc
+    metadata_url: https://mouse.digital-brain.cn/projectome/2/srv/info/monkey/pfc/macaque.neuron.info.json
+    record_id: '1'
+    record_file: 221747_1-qroot433.swc
+    sha256: c0e4c507368d69703900b0baae3abbc49fd3003ea02b23b6ca739976f24ca1d7
   neuron_catalog:
     mode: live-iondata
     host: http://10.10.48.110
     timeout_seconds: 10
     max_response_bytes: 8388608
-  dataset_manifest: \\10.102.8.200\microscopy_data\fMOST\CH00DS_datasets\manifest.json
+  dataset_manifest_relative: manifest.json
   legacy_raw_swc_root: null
   http_host: http://bap.cebsit.ac.cn
   http_path: monkeydata

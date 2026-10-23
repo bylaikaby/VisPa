@@ -1,7 +1,7 @@
 """Bounded command line for one local VisPa review render or montage.
 
-Version: 1.11.0.dev3 (local/unreleased)
-Last updated: 2026-10-22
+Version: 1.11.0.dev4 (local/unreleased)
+Last updated: 2026-10-23
 Change history: CHANGELOG.md
 """
 from __future__ import annotations
@@ -437,16 +437,39 @@ def fnt_plan(config, sample, neuron):
     stem = f"{sample}_{str(neuron).removesuffix('.swc')}"
     candidates = [Path(root) / f"{stem}{suffix}" for suffix in (".fnt", ".decimate.fnt")] if root else []
     project = next((path for path in candidates if path.is_file()), None)
-    errors = []
-    if not executable or not Path(executable).is_file():
-        errors.append("Configure an existing visual_toolkit.fnt_tracer.executable")
+    from .fnt import resolve_fnt_plan
+    try:
+        native = resolve_fnt_plan(config, sample, neuron)
+    except ValueError:
+        if project is None:
+            raise
+        native = None
     if project is None:
-        errors.append(f"Matching project missing: {stem}.fnt or {stem}.decimate.fnt")
-    command = [str(executable), str(project)] if not errors else None
+        cached = Path(native["source_path"])
+        bound = Path(native["bound_path"])
+        project = next((p for p in (bound, cached) if p.is_file()), None)
+    executable_ready = bool(executable and Path(executable).is_file())
+    errors = []
+    if not executable_ready:
+        errors.append("Configure an existing visual_toolkit.fnt_tracer.executable to launch")
+    if project is None:
+        errors.append(f"Matching project missing; use fnt-fetch for {sample} {neuron}")
+    command = [str(executable), str(project)] if executable_ready and project else None
     return {"sample": sample, "neuron": neuron, "executable": str(executable) if executable else None,
             "project": str(project) if project else None, "searched": [str(p) for p in candidates],
-            "command": command, "errors": errors, "ready": not errors,
+            "native_plan": native, "command": command, "errors": errors,
+            "project_ready": project is not None, "executable_ready": executable_ready,
+            "ready": bool(project and executable_ready),
             "version": None, "version_note": "Binary is not executed during preflight"}
+
+
+def _fnt_fetch(args):
+    from .dataset_config import load
+    from .fnt import ensure_fnt
+    config = load(args.config)
+    result = ensure_fnt(config, args.sample, args.neuron, dry_run=args.dry_run)
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0 if result["status"] in {"planned", "downloaded", "cached"} else 1
 
 
 def _resource_check(args):
@@ -545,11 +568,12 @@ def _same_path(left, right):
 
 
 def merge_user_path(current, entry):
-    """Return (new_path, changed) with one idempotent user-PATH entry."""
+    """Put this VisPa Scripts path first, preserving unrelated user entries."""
     parts = _path_parts(current)
-    if any(_same_path(part, entry) for part in parts):
+    if parts and _same_path(parts[0], entry) and not any(
+            _same_path(part, entry) for part in parts[1:]):
         return current, False
-    return ";".join(parts + [str(entry)]), True
+    return ";".join([str(entry)] + [part for part in parts if not _same_path(part, entry)]), True
 
 
 def remove_user_path(current, entry):
@@ -595,8 +619,9 @@ def _install_path(args):
     """Add or remove this venv's Scripts folder from the current user's PATH."""
     if os.name != "nt":
         raise RuntimeError("install-path is Windows-only")
-    scripts = Path(sys.executable).resolve().parent
-    if not (scripts / "vispa.exe").is_file():
+    scripts = (Path(args.scripts_dir).expanduser().absolute() if args.scripts_dir
+               else Path(sys.executable).resolve().parent)
+    if not (scripts / "vispa.exe").is_file() or not (scripts / "python.exe").is_file():
         raise RuntimeError(
             f"{scripts} does not contain vispa.exe; "
             "run this command from the installed venv")
@@ -619,6 +644,7 @@ def _install_path(args):
         "previous_path": current,
         "updated_path": updated,
         "config_env": config_value,
+        "python_env": str(scripts / "python.exe") if not args.remove else None,
         "dry_run": bool(args.dry_run),
     }
     if not args.dry_run:
@@ -626,7 +652,9 @@ def _install_path(args):
             _write_user_path(updated, kind)
         if config_value:
             _set_user_env("VISPA_CONFIG", config_value)
-        if changed or config_value:
+        if not args.remove:
+            _set_user_env("VISPA_PYTHON", str(scripts / "python.exe"))
+        if changed or config_value or not args.remove:
             _broadcast_environment_change()
     print(json.dumps(plan, indent=2, sort_keys=True))
     return 0
@@ -644,6 +672,7 @@ def _parser():
                          help="show the bounded single-neuron plan without network or file access")
     example.add_argument("--output-dir", help="new PNG and provenance receipt directory")
     example.add_argument("--cache-dir", help="per-user cache directory for the immutable source SWC")
+    example.add_argument("--config", help="VisPa profile containing the public example source and SHA-256")
     example.add_argument("--dpi", type=int, default=160,
                          help="figure resolution, integer 100-240 (default: 160)")
     render = commands.add_parser("render", help="render one local array as a review panel")
@@ -677,8 +706,10 @@ def _parser():
     settings.add_argument("--scope", choices=("review", "brain-view", "montage", "all"),
                           default="review", help="setting group to print (default: review)")
     settings.add_argument("--config", help="optional VisPa JSON/YAML settings config")
-    config_check = commands.add_parser("config-check", help="check configured source paths")
+    config_check = commands.add_parser("config-check", help="validate configuration or check configured source paths")
     config_check.add_argument("--config")
+    config_check.add_argument("--validate-only", action="store_true",
+                              help="validate config syntax and declarations without probing source paths")
     config_check.add_argument("--sample", help="exact sample for read-only hashed resource inventory")
     config_check.add_argument("--neuron", help="exact neuron for read-only hashed resource inventory")
     config_check.add_argument("--catalog", action="store_true",
@@ -687,9 +718,14 @@ def _parser():
                               help="select live portal or dated CSV snapshot when both are configured")
     config_check.add_argument("--dry-run", action="store_true", help="read-only preflight (config-check never writes)")
     config_check.add_argument("--fnt", action="store_true", help="require executable AND matching neuron project; never launch")
+    fnt_fetch = commands.add_parser("fnt-fetch", help="fetch one exact native FNT into the verified per-user cache")
+    fnt_fetch.add_argument("--config", help="VisPa JSON/YAML settings config")
+    fnt_fetch.add_argument("--sample", required=True, help="one exact SampleID")
+    fnt_fetch.add_argument("--neuron", required=True, help="one three-digit neuron ID, optionally .swc")
+    fnt_fetch.add_argument("--dry-run", action="store_true", help="show URL and cache paths without network or writes")
     config_init = commands.add_parser("config-init", help="create the per-user YAML config without overwriting")
     config_init.add_argument("--output", help="explicit YAML destination; defaults to the per-user config path")
-    config_init.add_argument("--from-config", help="copy an existing JSON/YAML config; default target auto-migrates legacy per-user JSON")
+    config_init.add_argument("--from-config", help="explicitly copy an existing JSON/YAML config into the selected VisPa target")
     config_init.add_argument("--dry-run", action="store_true", help="show source/destination hashes and action without writing")
     install_path = commands.add_parser(
         "install-path",
@@ -698,6 +734,7 @@ def _parser():
                               help="remove the entry instead of adding it")
     install_path.add_argument("--config",
                               help="also set VISPA_CONFIG for the current user")
+    install_path.add_argument("--scripts-dir", help="installed Scripts folder; used by the Windows installer when Python reports a redirected path")
     install_path.add_argument("--dry-run", action="store_true",
                               help="print the plan without changing the environment")
     return parser
@@ -724,7 +761,7 @@ def main(argv=None):
             print(json.dumps(run_public_example(output_dir=args.output_dir,
                                                 cache_dir=args.cache_dir,
                                                 dpi=args.dpi,
-                                                dry_run=args.dry_run),
+                                                dry_run=args.dry_run, config=args.config),
                              indent=2, sort_keys=True))
             return 0
         except (OSError, RuntimeError, ValueError, KeyError) as exc:
@@ -742,6 +779,19 @@ def main(argv=None):
         except (OSError, RuntimeError, ValueError, KeyError) as exc:
             parser.error(str(exc))
     if args.command == "config-check":
+        if args.validate_only:
+            if args.catalog or args.catalog_source or args.sample or args.neuron or args.fnt:
+                parser.error("--validate-only cannot be combined with catalog or resource checks")
+            try:
+                from .dataset_config import load
+                if args.config and not Path(args.config).expanduser().is_file():
+                    raise ValueError(f"config file does not exist: {args.config}")
+                config = load(args.config)
+                print(json.dumps({"config": str(config["path"]), "valid": True,
+                                  "samples": len(config["samples"])}, indent=2))
+                return 0
+            except (OSError, RuntimeError, ValueError, KeyError) as exc:
+                parser.error(str(exc))
         if args.catalog:
             try:
                 return _catalog_check(args)
@@ -757,6 +807,11 @@ def main(argv=None):
         if args.config:
             check_argv.extend(("--config", args.config))
         return config_main(check_argv)
+    if args.command == "fnt-fetch":
+        try:
+            return _fnt_fetch(args)
+        except (OSError, RuntimeError, ValueError, KeyError) as exc:
+            parser.error(str(exc))
     if args.command == "config-init":
         try:
             from .dataset_config import initialize_default_config

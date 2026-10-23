@@ -1,8 +1,8 @@
 """
 vispa_gui.py - GUI for NeuroVis Visual Toolkit
 
-Version: 1.11.0.dev3 (local/unreleased)
-Last updated: 2026-10-22
+Version: 1.11.0.dev4 (local/unreleased)
+Last updated: 2026-10-23
 Change history: ../../CHANGELOG.md
 Status: candidate (visual review pending)
 
@@ -100,7 +100,7 @@ UNRELEASED LOCAL CHANGE (2026-10-17):
       folder), one "Render" action and a right-hand
       figure preview that shows the newest panel or review figure.
     - GUI renders use the configured GUI output folder or the per-user
-      ``VisualToolkit/output`` default; backend cache/output roots remain independent.
+      VisPa output default; backend cache/output roots remain independent.
     - Panel failures are isolated: the Sagittal panel's missing raw-SWC source is
       reported in the status bar (and pre-warned in the Plot lane) while Soma and
       Context still render and preview. A modal appears only when nothing rendered.
@@ -373,7 +373,8 @@ def _resolve_output_root(config_path=None):
             return str(configured), "dataset configuration"
         return str(default_output_root(config)), "per-user toolkit default"
     except Exception:
-        return str(Path.home() / "VisualToolkit" / "output"), "per-user fallback"
+        local_data = Path(os.environ.get("LOCALAPPDATA") or (Path.home() / ".cache"))
+        return str(local_data / "VisPa" / "output"), "per-user VisPa fallback"
 
 # Import the core toolkit
 try:
@@ -527,7 +528,7 @@ class NeuroVisGUI:
         return os.path.join(self.output_root, f"{sample}_{time.strftime('%Y%m%d')}")
 
     def _configured_output_root(self):
-        """Output/reload root from visual_toolkit_config.yaml or per-user default."""
+        """Output/reload root from the active VisPa config or per-user default."""
         return _resolve_output_root(self.config_path)[0]
 
     def _on_sample_id_change(self, *args):
@@ -599,12 +600,12 @@ class NeuroVisGUI:
         header = tk.Frame(self.root, bg=C['header'], height=P(54))
         header.grid(row=0, column=0, columnspan=2, sticky='ew')
         header.grid_propagate(False)
-        tk.Label(header, text="NeuroVis Visual Toolkit", bg=C['header'],
+        tk.Label(header, text=f"VisPa {__version__}", bg=C['header'],
                  fg=C['header_text'], font=('Segoe UI', 14, 'bold')).pack(
                      side='left', padx=(P(18), P(8)))
         tk.Label(header, text="DEB lab · fMOST neuron reviewer", bg=C['header'],
                  fg=C['header_muted'], font=('Segoe UI', 9)).pack(side='left')
-        self._flat_button(header, "Config YAML", self._open_config_yaml,
+        self._flat_button(header, "Settings", self._open_config_yaml,
                           small=True).pack(side='right', padx=P(16))
 
         # Left column: scrollable setting cards, fixed to the mockup's 392 px.
@@ -687,13 +688,12 @@ class NeuroVisGUI:
         steps = (
             ("LOAD", "Load & Auto-Fill Soma",
              "Or pick from Neuron list. Reads the raw SWC root; if the neuron is "
-             "absent locally, it is fetched from the portal and cached in "
-             "resource/swc_raw/<sample>/."),
+             "absent locally, it is fetched from the portal into the VisPa download cache."),
             ("TARGET", "Target soma coordinate (µm)",
              "The SWC root fills X/Y/Z in micrometres. Edit the triplet if the "
              "marker sits off the soma."),
             ("ACQUIRE", "Soma Plot cubes",
-             "Reuse 0.65 µm CH1 cubes in resource/cubes/<sample>/high_res_http. "
+             "Reuse 0.65 µm CH1 cubes in the VisPa download cache. "
              "Missing cubes are downloaded and checked before drawing."),
             ("FALLBACK", "Missing cube",
              "The portal fetch is cached before the panel is drawn. A failed cube "
@@ -706,9 +706,8 @@ class NeuroVisGUI:
              "Uses the configured processed SWC and brain mesh. fnt-tracer opens "
              "the matching <sample>_<neuron>.fnt project."),
             ("FNT", "Open the matching fnt-tracer project",
-             "Launches visual_toolkit.fnt_tracer.executable with "
-             "<sample>_<neuron>.fnt (or .decimate.fnt); if no project exists it "
-             "reports the missing matching project."),
+             "Launches the configured fnt-tracer program with this neuron's "
+             "matching project from VisPa's FNT cache, if available."),
         )
         for index, (name, headline, detail) in enumerate(steps):
             self._review_step(steps_inner, index, index + 1, name, headline, detail,
@@ -1324,54 +1323,8 @@ class NeuroVisGUI:
         self._append_log(f"fnt-tracer opened: {plan['project']}")
 
     def _on_fnt_setup(self):
-        """Browse FNT paths and save through the existing validated config writer."""
-        import json
-        import yaml
-        import hashlib
-        from .dataset_config import load
-        try:
-            configuration = load(self.config_path)
-            path = Path(configuration['path'])
-            original_bytes = path.read_bytes()
-            original_hash = hashlib.sha256(original_bytes).hexdigest()
-            raw = json.loads(original_bytes) if path.suffix.lower() == '.json' else yaml.safe_load(original_bytes)
-            current = configuration.get('visual_toolkit', {}).get('fnt_tracer') or {}
-        except Exception as exc:
-            messagebox.showerror('FNT setup', f'Could not read configuration:\n{exc}')
-            return
-        window = tk.Toplevel(self.root)
-        window.title('FNT setup')
-        window.transient(self.root)
-        values = {key: tk.StringVar(value=str(current.get(key) or '')) for key in ('executable', 'project_root')}
-        for row, (key, label) in enumerate((('executable', 'FNT executable'), ('project_root', 'Project folder'))):
-            tk.Label(window, text=label).grid(row=row, column=0, padx=8, pady=8, sticky='w')
-            tk.Entry(window, textvariable=values[key], width=64).grid(row=row, column=1, padx=8, pady=8)
-            def browse(field=key):
-                selected = filedialog.askopenfilename(parent=window, title='Select fnt-tracer executable') if field == 'executable' else filedialog.askdirectory(parent=window, title='Select FNT project folder')
-                if selected:
-                    values[field].set(selected)
-            tk.Button(window, text='Browse…', command=browse).grid(row=row, column=2, padx=8)
-        tk.Label(window, text='Projects must be named <sample>_<neuron>.fnt or .decimate.fnt.').grid(row=2, column=0, columnspan=3, padx=8, pady=8)
-        def save():
-            selected = {key: value.get().strip() for key, value in values.items()}
-            if not Path(selected['executable']).is_file() or not Path(selected['project_root']).is_dir():
-                messagebox.showerror('FNT setup', 'Choose an existing executable and project folder.', parent=window)
-                return
-            try:
-                current_hash = hashlib.sha256(path.read_bytes()).hexdigest()
-            except OSError as exc:
-                messagebox.showerror('FNT setup', f'Could not recheck configuration:\n{exc}', parent=window)
-                return
-            if current_hash != original_hash:
-                messagebox.showerror('FNT setup', 'Configuration changed while this dialog was open. Reopen setup.', parent=window)
-                return
-            raw['visual_toolkit'] = raw.get('visual_toolkit') or {}
-            raw['visual_toolkit']['fnt_tracer'] = {key: str(Path(value).resolve()) for key, value in selected.items()}
-            content = json.dumps(raw, indent=2) if path.suffix.lower() == '.json' else yaml.safe_dump(raw, sort_keys=False, allow_unicode=True)
-            if self._save_config_text(str(path), content):
-                self.update_status('FNT paths saved; matching project checked when opened')
-                window.destroy()
-        tk.Button(window, text='Save paths', command=save).grid(row=3, column=1, pady=12)
+        """Open common settings for the optional fnt-tracer program."""
+        self._open_config_yaml()
 
     def launch_template_brain_view(self, sample_id: str, neuron_id: str,
                                    portal_region: str = ""):
@@ -1509,8 +1462,7 @@ class NeuroVisGUI:
     def _refresh_dataset_sources(self):
         sample = self.sample_id.get().strip() or 'sample'
         self.soma_source.set(
-            f"0.65 µm CH1 cubes · cached or fetched online · "
-            f"resource/cubes/{sample}/high_res_http")
+            "0.65 µm CH1 cubes · cached or fetched online · VisPa download cache")
         try:
             from .dataset_config import sample as sample_entry
             entry = sample_entry(sample) or {}
@@ -1522,7 +1474,7 @@ class NeuroVisGUI:
             self.context_source.set(f"5 µm CH1 resample · …\\{tail}")
         else:
             self.context_source.set(
-                "5 µm CH1 resample · not configured in visual_toolkit_config.yaml")
+                "5 µm CH1 resample · not configured in the active VisPa settings")
 
     def _refresh_plot_state(self):
         """The soma NIfTI needs the Soma volume, so it follows the Soma plot tick."""
@@ -1958,6 +1910,39 @@ class NeuroVisGUI:
         self.update_status(
             f"Updated preview from {len(found)} existing figure(s) for "
             f"{sample}/{neuron}{note}")
+        if not quiet:
+            self._start_fnt_fetch(sample, neuron)
+
+    def _start_fnt_fetch(self, sample, neuron):
+        """Fetch a matching FNT in the background without delaying cached figures."""
+        key = (sample, neuron)
+        active = getattr(self, '_fnt_fetch_active', set())
+        if key in active:
+            return
+        active.add(key)
+        self._fnt_fetch_active = active
+
+        def worker():
+            try:
+                self._fetch_fnt(sample, neuron)
+            finally:
+                self._ui_call(active.discard, key)
+        threading.Thread(target=worker, name='vispa-fnt-fetch', daemon=True).start()
+
+    def _fetch_fnt(self, sample, neuron):
+        """Keep FNT acquisition optional and report its result without failing images."""
+        try:
+            from .dataset_config import load
+            from .fnt import ensure_fnt
+            result = ensure_fnt(load(self.config_path), sample, neuron)
+            status = result.get('status', 'failed')
+            if status in ('downloaded', 'cached'):
+                self._ui_call(self._append_log, f"FNT {status}: {result.get('project_path')}")
+            elif status not in ('disabled', 'unsupported'):
+                detail = '; '.join(result.get('errors') or []) or status
+                self._ui_call(self._append_log, f"FNT unavailable for {sample}/{neuron}: {detail}")
+        except Exception as exc:
+            self._ui_call(self._append_log, f"FNT unavailable for {sample}/{neuron}: {exc}")
 
     def _open_output_folder(self):
         folder = (os.path.dirname(self.current_preview)
@@ -1969,8 +1954,10 @@ class NeuroVisGUI:
             messagebox.showerror("Open folder", f"Could not open {folder}:\n{exc}")
 
     def _open_config_yaml(self):
+        import hashlib
         from .dataset_config import config_path
-        path = str(config_path())
+        from .config_editor import FIELDS, parse_text, dump_text, field_value, apply_fields
+        path = str(Path(self.config_path or config_path()).resolve())
         window = getattr(self, '_config_window', None)
         if window is not None and window.winfo_exists():
             window.lift()
@@ -1978,16 +1965,35 @@ class NeuroVisGUI:
             return
         window = tk.Toplevel(self.root)
         self._config_window = window
-        window.title(f"VisPa config — {Path(path).name}")
-        window.geometry("900x640")
+        window.title(f"VisPa settings — {Path(path).name}")
+        window.geometry("920x700")
         window.configure(bg=self.COLORS['page'])
         header = tk.Frame(window, bg=self.COLORS['header'])
         header.pack(fill='x')
+        tk.Label(header, text="Active configuration", bg=self.COLORS['header'],
+                 fg=self.COLORS['header_text'], font=('Segoe UI', 11, 'bold')).pack(anchor='w', padx=12, pady=(8, 0))
         tk.Label(header, text=path, bg=self.COLORS['header'],
-                 fg=self.COLORS['header_text'], font=('Consolas', 9)).pack(
-                     side='left', padx=12, pady=6)
-        frame = tk.Frame(window)
-        frame.pack(fill='both', expand=True, padx=8, pady=8)
+                 fg=self.COLORS['header_text'], font=('Consolas', 9),
+                 wraplength=880, justify='left').pack(anchor='w', padx=12, pady=(0, 8))
+        tabs = ttk.Notebook(window)
+        tabs.pack(fill='both', expand=True, padx=8, pady=8)
+        form_outer = ttk.Frame(tabs)
+        tabs.add(form_outer, text='Common settings')
+        form_canvas = tk.Canvas(form_outer, highlightthickness=0)
+        form_scroll = ttk.Scrollbar(form_outer, orient='vertical', command=form_canvas.yview)
+        form_canvas.configure(yscrollcommand=form_scroll.set)
+        form_canvas.pack(side='left', fill='both', expand=True)
+        form_scroll.pack(side='right', fill='y')
+        form = ttk.Frame(form_canvas)
+        form_id = form_canvas.create_window((0, 0), window=form, anchor='nw')
+        form.bind('<Configure>', lambda event: form_canvas.configure(scrollregion=form_canvas.bbox('all')))
+        form_canvas.bind('<Configure>', lambda event: form_canvas.itemconfigure(form_id, width=event.width))
+        advanced = ttk.Frame(tabs)
+        tabs.add(advanced, text='Advanced YAML')
+        ttk.Label(advanced, text="Edit the complete configuration here. Apply YAML to update the form before saving.",
+                  wraplength=850).pack(anchor='w', padx=8, pady=8)
+        frame = ttk.Frame(advanced)
+        frame.pack(fill='both', expand=True, padx=8, pady=4)
         frame.grid_rowconfigure(0, weight=1)
         frame.grid_columnconfigure(0, weight=1)
         text = tk.Text(frame, wrap='none', font=('Consolas', 9),
@@ -2000,39 +2006,107 @@ class NeuroVisGUI:
         scroll_y.grid(row=0, column=1, sticky='ns')
         scroll_x.grid(row=1, column=0, sticky='ew')
 
+        variables = {}
+        widgets = {}
+        sections = {}
+        for group, dotted, label, kind in FIELDS:
+            if group not in sections:
+                box = ttk.LabelFrame(form, text=group)
+                box.pack(fill='x', padx=12, pady=(8, 2))
+                box.grid_columnconfigure(1, weight=1)
+                sections[group] = [box, 0]
+            box, row = sections[group]
+            sections[group][1] += 1
+            ttk.Label(box, text=label).grid(row=row, column=0, sticky='w', padx=8, pady=5)
+            var = tk.BooleanVar() if kind == 'bool' else tk.StringVar()
+            variables[dotted] = var
+            if kind == 'bool':
+                widget = ttk.Checkbutton(box, variable=var)
+            elif kind == 'catalog_mode':
+                widget = ttk.Combobox(box, textvariable=var,
+                                      values=('live-iondata', 'csv'), state='readonly')
+            else:
+                widget = ttk.Entry(box, textvariable=var)
+            widget.grid(row=row, column=1, sticky='ew', padx=8, pady=5)
+            widgets[dotted] = widget
+            if kind in ('dir', 'file'):
+                def browse(field=dotted, mode=kind, title=label):
+                    selected = (filedialog.askdirectory(parent=window, title=title)
+                                if mode == 'dir' else filedialog.askopenfilename(parent=window, title=title))
+                    if selected:
+                        variables[field].set(selected)
+                ttk.Button(box, text='Browse…', command=browse).grid(row=row, column=2, padx=8)
+        ttk.Label(form, text="Sample-specific paths, geometry, provenance and display parameters remain in Advanced YAML.",
+                  wraplength=820).pack(anchor='w', padx=16, pady=12)
+        error = tk.StringVar(value='')
+        ttk.Label(window, textvariable=error, foreground='#b45309', wraplength=850).pack(anchor='w', padx=12)
+        state = {'hash': None, 'raw': None, 'text': None}
+
+        def fill_form(raw):
+            for _, dotted, _, kind in FIELDS:
+                value = field_value(raw, dotted)
+                variables[dotted].set(bool(value) if kind == 'bool' else '' if value is None else str(value))
+
         def load():
             try:
-                content = Path(path).read_text(encoding='utf-8')
+                raw_bytes = Path(path).read_bytes()
+                content = raw_bytes.decode('utf-8')
+                raw = parse_text(content, path)
             except Exception as exc:
-                content = f"Could not read {path}:\n{exc}"
+                error.set(f"Could not read configuration: {exc}")
+                return
+            state.update(hash=hashlib.sha256(raw_bytes).hexdigest(), raw=raw, text=content)
             text.delete('1.0', 'end')
             text.insert('1.0', content)
+            fill_form(raw)
+            error.set('')
+
+        def apply_yaml():
+            content = text.get('1.0', 'end-1c')
+            try:
+                raw = parse_text(content, path)
+            except Exception as exc:
+                error.set(f"Advanced YAML is invalid: {exc}")
+                tabs.select(advanced)
+                return
+            state['raw'] = raw
+            state['text'] = content
+            fill_form(raw)
+            error.set('YAML applied to form; save to write the file.')
+            tabs.select(form_outer)
 
         def save():
-            content = text.get('1.0', 'end-1c')
-            if self._save_config_text(path, content):
+            try:
+                if hashlib.sha256(Path(path).read_bytes()).hexdigest() != state['hash']:
+                    raise ValueError('The file changed outside this window. Reload it before saving.')
+                if tabs.index(tabs.select()) == 1 and text.get('1.0', 'end-1c') != state['text']:
+                    raw = parse_text(text.get('1.0', 'end-1c'), path)
+                    content = text.get('1.0', 'end-1c')
+                    fill_form(raw)
+                else:
+                    if text.get('1.0', 'end-1c') != state['text']:
+                        raise ValueError('YAML has unapplied edits. Apply YAML before saving the form.')
+                    raw = apply_fields(state['raw'], {key: var.get() for key, var in variables.items()})
+                    content = state['text'] if raw == state['raw'] else dump_text(raw, path)
+            except Exception as exc:
+                error.set(str(exc))
+                return
+            if self._save_config_text(path, content, expected_sha256=state['hash']):
                 load()
                 self._refresh_dataset_sources()
-                default_name = f"visual_toolkit_config.default{Path(path).suffix or '.yaml'}"
-                messagebox.showinfo(
-                    "Config settings",
-                    "Saved. The previous file is in config_backups/ and the pristine "
-                    f"copy is {default_name}.\n\n"
-                    "Acquisition paths apply to new toolkit instances; restart the GUI "
-                    "to pick up a changed source root.")
+                self.update_status('Configuration saved; restart VisPa to apply changed source folders')
 
         load()
         buttons = tk.Frame(window)
         buttons.pack(pady=(0, 8))
-        ttk.Button(buttons, text="Save", command=save).pack(side='left', padx=4)
+        ttk.Button(buttons, text="Save settings", command=save).pack(side='left', padx=4)
+        ttk.Button(buttons, text="Apply YAML to form", command=apply_yaml).pack(side='left', padx=4)
         ttk.Button(buttons, text="Reload", command=load).pack(side='left', padx=4)
-        default_name = f"visual_toolkit_config.default{Path(path).suffix or '.yaml'}"
-        tk.Label(window, text="Backups: config_backups/ · default copy: "
-                              + default_name,
+        tk.Label(window, text="Saving validates the complete configuration. Restart VisPa after changing source folders.",
                  bg=self.COLORS['page'], fg=self.COLORS['muted'],
                  font=('Segoe UI', 8)).pack(pady=(0, 6))
 
-    def _save_config_text(self, path, content):
+    def _save_config_text(self, path, content, expected_sha256=None):
         """Validate scoped settings, preserve JSON/YAML format, and atomically replace."""
         import json
         from .dataset_config import load as load_config
@@ -2048,6 +2122,15 @@ class NeuroVisGUI:
             messagebox.showerror("Config", f"Invalid {'JSON' if is_json else 'YAML'}:\n{exc}")
             return False
         folder = os.path.dirname(os.path.abspath(path))
+        if expected_sha256 is not None:
+            import hashlib
+            try:
+                if hashlib.sha256(Path(path).read_bytes()).hexdigest() != expected_sha256:
+                    messagebox.showerror('Config', 'Configuration changed outside this window. Reload before saving.')
+                    return False
+            except OSError as exc:
+                messagebox.showerror('Config', f'Could not recheck configuration: {exc}')
+                return False
         temp_suffix = '.json' if is_json else '.yaml'
         temp = os.path.join(folder, f".visual_toolkit_config_{os.getpid()}.tmp{temp_suffix}")
         try:
@@ -2144,7 +2227,8 @@ class NeuroVisGUI:
         def worker():
             try:
                 from .public_example import run
-                result = run()
+                from .dataset_config import load
+                result = run(config=load(getattr(self, 'config_path', None)))
                 self._public_example_queue.put(("ok", result))
             except Exception as exc:
                 self._public_example_queue.put(("error", f"{type(exc).__name__}: {exc}"))
@@ -2420,7 +2504,7 @@ class NeuroVisGUI:
         swc, _ = resolve_swc_path(request.sample_id, neuron,
                                   SAMPLE_PATHS.get(request.sample_id) or {})
         if swc is None:
-            # Trigger the portal download into resource/swc_raw, then let the
+            # Trigger the portal download into VisPa's cache, then let the
             # adapter re-resolve; a network failure leaves the recorded reason.
             try:
                 IT.IONData().getRawNeuronTreeByID(request.sample_id, request.neuron_id)
@@ -2453,6 +2537,7 @@ class NeuroVisGUI:
             except Exception as e:
                 self._ui_call(messagebox.showerror, "Processing Error", f"Error: {str(e)}")
             finally:
+                self._fetch_fnt(request.sample_id, request.neuron_id.removesuffix('.swc'))
                 self._ui_call(self._hide_progress)
                 if toolkit:
                     toolkit.close()
@@ -2500,6 +2585,8 @@ class NeuroVisGUI:
                         self.update_status(
                             "Cached figures match; loaded without re-rendering.")
                         self._append_log("Cached figures reused; no re-render.")
+                        self._start_fnt_fetch(
+                            request.sample_id, request.neuron_id.removesuffix('.swc'))
                         return
             except Exception:
                 # A partially built or headless instance renders normally.
@@ -2674,7 +2761,7 @@ def _initialize_default_config_for_gui(args):
     """Initialize only a valid implicit first launch; explicit and read-only modes stay untouched."""
     if args.config or args.dry_run:
         return None
-    if os.environ.get("VISUAL_TOOLKIT_CONFIG") or os.environ.get("PROJECTOME_DATASETS"):
+    if os.environ.get("VISPA_CONFIG"):
         return None
     from .dataset_config import initialize_default_config
     return initialize_default_config()

@@ -1,6 +1,6 @@
 """Local SWC source and explicit adapter seam for source-tree providers.
 
-Version: 1.11.0.dev3 (local/unreleased)
+Version: 1.11.0.dev4 (local/unreleased)
 Last updated: 2026-10-22
 Change history: ../../CHANGELOG.md
 """
@@ -168,7 +168,7 @@ def _list_live_neurons(sample_id: str, catalog: dict) -> dict:
 def catalog_request_url(sample_id: str, catalog: dict) -> str:
     """Resolve the observed IONData route without sending a request."""
     _validate_sample_id(sample_id)
-    host = str(catalog.get("host", "http://10.10.48.110")).rstrip("/")
+    host = str(catalog.get("host") or "").rstrip("/")
     parsed_host = urllib.parse.urlsplit(host)
     if (parsed_host.scheme not in {"http", "https"} or not parsed_host.netloc
             or parsed_host.username or parsed_host.password

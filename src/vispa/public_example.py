@@ -1,6 +1,6 @@
 """Download and render one explicitly public SWC morphology example.
 
-Version: 1.11.0.dev3 (local/unreleased)
+Version: 1.11.0.dev4 (local/unreleased)
 Last updated: 2026-10-22
 Change history: ../../CHANGELOG.md
 Status: candidate (public source frame and units are unspecified)
@@ -13,21 +13,11 @@ import math
 import os
 from pathlib import Path
 import tempfile
+import urllib.parse
 import urllib.request
 
 from ._version import __version__
 
-SOURCE_URL = (
-    "https://mouse.digital-brain.cn/projectome/2/srv/info/monkey/pfc/"
-    "neuron_download/221747_1-qroot433.swc"
-)
-METADATA_URL = (
-    "https://mouse.digital-brain.cn/projectome/2/srv/info/monkey/pfc/"
-    "macaque.neuron.info.json"
-)
-RECORD_ID = "1"
-RECORD_FILE = "221747_1-qroot433.swc"
-EXPECTED_SHA256 = "c0e4c507368d69703900b0baae3abbc49fd3003ea02b23b6ca739976f24ca1d7"
 MAX_BYTES = 8 * 1024 * 1024
 TIMEOUT_SECONDS = 20
 DEFAULT_DPI = 160
@@ -47,12 +37,47 @@ def _renderer_code_sha256() -> str:
     return hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 
 
-def default_cache_dir() -> Path:
-    return _user_data_root() / "cache" / "public-neuron-example"
+def _configuration(config=None) -> dict:
+    if isinstance(config, dict):
+        return config
+    from .dataset_config import load
+    return load(config)
 
 
-def default_output_dir() -> Path:
-    return _user_data_root() / "output" / "public-neuron-example"
+def _source(config: dict) -> dict:
+    source = (config.get("sources") or {}).get("public_example") or {}
+    required = ("source_url", "metadata_url", "record_id", "record_file", "sha256")
+    if not all(isinstance(source.get(key), str) and source[key].strip() for key in required):
+        raise ValueError("configure sources.public_example with source_url, metadata_url, record_id, record_file and sha256")
+    for key in ("source_url", "metadata_url"):
+        parsed = urllib.parse.urlsplit(source[key])
+        if (parsed.scheme not in {"http", "https"} or not parsed.netloc
+                or parsed.username or parsed.password or parsed.fragment):
+            raise ValueError(f"sources.public_example.{key} must be a plain HTTP(S) URL")
+    filename = source["record_file"]
+    if Path(filename).name != filename or filename in {".", ".."} or not filename.lower().endswith(".swc"):
+        raise ValueError("sources.public_example.record_file must be one SWC filename")
+    checksum = source["sha256"].lower()
+    if len(checksum) != 64 or any(char not in "0123456789abcdef" for char in checksum):
+        raise ValueError("sources.public_example.sha256 must be a 64-digit SHA-256")
+    return {**source, "sha256": checksum}
+
+
+def _source_namespace(source: dict) -> str:
+    url_hash = hashlib.sha256(source["source_url"].encode("utf-8")).hexdigest()[:8]
+    return f"{source['sha256'][:12]}-{url_hash}"
+
+
+def default_cache_dir(config=None) -> Path:
+    active = _configuration(config)
+    root = (active.get("defaults") or {}).get("cache_root")
+    return (Path(root) if root else _user_data_root() / "cache") / "public-neuron-example"
+
+
+def default_output_dir(config=None) -> Path:
+    active = _configuration(config)
+    root = (active.get("defaults") or {}).get("output_root")
+    return (Path(root) if root else _user_data_root() / "output") / "public-neuron-example"
 
 
 def parse_swc(payload: bytes):
@@ -140,18 +165,19 @@ def _atomic_write(path: Path, payload: bytes) -> None:
             os.unlink(temporary)
 
 
-def _load_source(cache_dir: Path):
+def _load_source(cache_dir: Path, source: dict):
     cache_dir.mkdir(parents=True, exist_ok=True)
-    cached = cache_dir / RECORD_FILE
+    cached = cache_dir / _source_namespace(source) / source["record_file"]
+    cached.parent.mkdir(parents=True, exist_ok=True)
     fetched = not cached.exists()
     if cached.exists():
         if cached.stat().st_size > MAX_BYTES:
             raise ValueError("cached public SWC exceeds the 8 MiB limit")
         payload = cached.read_bytes()
     else:
-        payload = _read_url(SOURCE_URL)
+        payload = _read_url(source["source_url"])
     digest = hashlib.sha256(payload).hexdigest()
-    if digest != EXPECTED_SHA256:
+    if digest != source["sha256"]:
         raise ValueError("public SWC content or cache does not match the verified source checksum")
     rows = parse_swc(payload)
     if not cached.exists():
@@ -161,7 +187,8 @@ def _load_source(cache_dir: Path):
     return cached, rows, digest, fetched
 
 
-def _matching_existing(png: Path, receipt_path: Path, source_sha: str, dpi: int) -> bool:
+def _matching_existing(png: Path, receipt_path: Path, source_sha: str, dpi: int,
+                       source: dict) -> bool:
     if not png.is_file() or not receipt_path.is_file():
         return False
     try:
@@ -171,7 +198,10 @@ def _matching_existing(png: Path, receipt_path: Path, source_sha: str, dpi: int)
         rendered = receipt["render"]
         if (receipt.get("schema") != "vispa.public-neuron-example.v1"
                 or receipt.get("vispa_version") != __version__
-                or receipt.get("source", {}).get("url") != SOURCE_URL
+                or receipt.get("source", {}).get("url") != source["source_url"]
+                or receipt.get("source", {}).get("metadata_url") != source["metadata_url"]
+                or receipt.get("source", {}).get("record_id") != source["record_id"]
+                or receipt.get("source", {}).get("file") != source["record_file"]
                 or receipt.get("source", {}).get("sha256") != source_sha
                 or receipt.get("source", {}).get("coordinate_frame") != "unknown"
                 or receipt.get("source", {}).get("coordinate_units") != "unknown"
@@ -189,19 +219,19 @@ def _matching_existing(png: Path, receipt_path: Path, source_sha: str, dpi: int)
         return False
 
 
-def _output_paths(output_dir: Path, source_sha: str, dpi: int):
+def _output_paths(output_dir: Path, source_sha: str, dpi: int, source: dict):
     base = output_dir / "public-macaque-neuron-morphology.png"
     base_receipt = base.with_suffix(".json")
-    if _matching_existing(base, base_receipt, source_sha, dpi):
+    if _matching_existing(base, base_receipt, source_sha, dpi, source):
         return base, base_receipt, True
     if not base.exists() and not base_receipt.exists():
         return base, base_receipt, False
 
     qualified = output_dir / (
         f"public-macaque-neuron-morphology-v{__version__}-dpi{dpi}-"
-        f"r{_renderer_code_sha256()[:12]}.png")
+        f"s{_source_namespace(source)}-r{_renderer_code_sha256()[:12]}.png")
     qualified_receipt = qualified.with_suffix(".json")
-    if _matching_existing(qualified, qualified_receipt, source_sha, dpi):
+    if _matching_existing(qualified, qualified_receipt, source_sha, dpi, source):
         return qualified, qualified_receipt, True
     if not qualified.exists() and not qualified_receipt.exists():
         return qualified, qualified_receipt, False
@@ -211,7 +241,7 @@ def _output_paths(output_dir: Path, source_sha: str, dpi: int):
 
 
 def _render(rows, output_dir: Path, dpi: int, source_path: Path, source_sha: str,
-            png: Path, receipt_path: Path):
+            png: Path, receipt_path: Path, source: dict):
     import matplotlib.figure
     from matplotlib.backends.backend_agg import FigureCanvasAgg
     from matplotlib.collections import LineCollection
@@ -241,7 +271,7 @@ def _render(rows, output_dir: Path, dpi: int, source_path: Path, source_sha: str
     fig = matplotlib.figure.Figure(figsize=(12, 9), dpi=dpi, facecolor="white")
     FigureCanvasAgg(fig)
     fig.suptitle("Public macaque neuron · morphology only\n"
-                 f"{RECORD_FILE} · record {RECORD_ID} · frame and units unspecified",
+                 f"{source['record_file']} · record {source['record_id']} · frame and units unspecified",
                  fontsize=14, fontweight="bold")
     views = ((0, 1, "XY", "Source X", "Source Y"),
              (0, 2, "XZ", "Source X", "Source Z"),
@@ -295,8 +325,8 @@ def _render(rows, output_dir: Path, dpi: int, source_path: Path, source_sha: str
         "schema": "vispa.public-neuron-example.v1",
         "vispa_version": __version__,
         "purpose": "public SWC morphology preview only",
-        "source": {"url": SOURCE_URL, "metadata_url": METADATA_URL,
-                   "record_id": RECORD_ID, "file": RECORD_FILE,
+        "source": {"url": source["source_url"], "metadata_url": source["metadata_url"],
+                   "record_id": source["record_id"], "file": source["record_file"],
                    "source_date": None, "source_date_status": "unknown",
                    "sha256": source_sha, "cached_path": str(source_path),
                    "coordinate_frame": "unknown", "coordinate_units": "unknown"},
@@ -317,13 +347,17 @@ def _render(rows, output_dir: Path, dpi: int, source_path: Path, source_sha: str
     return png, receipt_path, digest
 
 
-def run(*, output_dir=None, cache_dir=None, dpi=DEFAULT_DPI, dry_run=False):
+def run(*, output_dir=None, cache_dir=None, dpi=DEFAULT_DPI, dry_run=False,
+        config=None):
     if isinstance(dpi, bool) or not isinstance(dpi, int) or not MIN_DPI <= dpi <= MAX_DPI:
         raise ValueError(f"dpi must be an integer from {MIN_DPI} to {MAX_DPI}")
-    output = Path(output_dir).expanduser() if output_dir else default_output_dir()
-    cache = Path(cache_dir).expanduser() if cache_dir else default_cache_dir()
-    plan = {"source_url": SOURCE_URL, "metadata_url": METADATA_URL,
-            "record_id": RECORD_ID, "file": RECORD_FILE, "cache_path": str(cache / RECORD_FILE),
+    active = _configuration(config)
+    source = _source(active)
+    output = Path(output_dir).expanduser() if output_dir else default_output_dir(active)
+    cache = Path(cache_dir).expanduser() if cache_dir else default_cache_dir(active)
+    cached = cache / _source_namespace(source) / source["record_file"]
+    plan = {"source_url": source["source_url"], "metadata_url": source["metadata_url"],
+            "record_id": source["record_id"], "file": source["record_file"], "cache_path": str(cached),
             "output_png": str(output / "public-macaque-neuron-morphology.png"),
             "output_receipt": str(output / "public-macaque-neuron-morphology.json"),
             "dpi": dpi, "dpi_range": [MIN_DPI, MAX_DPI], "dry_run": bool(dry_run),
@@ -331,9 +365,9 @@ def run(*, output_dir=None, cache_dir=None, dpi=DEFAULT_DPI, dry_run=False):
             "coordinate_units": "unknown", "mode": "morphology only"}
     if dry_run:
         return {"plan": plan, "written": False}
-    source_path, rows, source_sha, fetched = _load_source(cache)
+    source_path, rows, source_sha, fetched = _load_source(cache, source)
     plan["network_access"] = fetched
-    png, receipt_path, reused = _output_paths(output, source_sha, dpi)
+    png, receipt_path, reused = _output_paths(output, source_sha, dpi, source)
     plan["output_png"] = str(png)
     plan["output_receipt"] = str(receipt_path)
     if reused:
@@ -344,7 +378,7 @@ def run(*, output_dir=None, cache_dir=None, dpi=DEFAULT_DPI, dry_run=False):
                 "png": str(png), "receipt": str(receipt_path),
                 "node_count": len(rows)}
     png, receipt_path, output_sha = _render(rows, output, dpi, source_path,
-                                             source_sha, png, receipt_path)
+                                             source_sha, png, receipt_path, source)
     return {"plan": plan, "written": True, "source_sha256": source_sha,
             "output_sha256": output_sha, "png": str(png), "receipt": str(receipt_path),
             "node_count": len(rows), "reused": False}

@@ -1,7 +1,7 @@
 """Focused regression checks for the standalone extraction seams.
 
-Version: 1.11.0.dev3 (local/unreleased)
-Last updated: 2026-10-22
+Version: 1.11.0.dev4 (local/unreleased)
+Last updated: 2026-10-23
 Change history: ../CHANGELOG.md
 """
 import copy
@@ -80,13 +80,14 @@ if installed:
                 encoding="utf-8")
             script = """from pathlib import Path
 from vispa import toolkit
-assert toolkit.ACTIVE_CONFIG['config_origin'] == 'user_yaml'
+assert toolkit.ACTIVE_CONFIG['config_origin'] == 'environment'
 assert toolkit.review_settings_snapshot()['marker']['color'] == '#123456'
 assert Path(toolkit.ACTIVE_CONFIG['path']).name == 'visual_toolkit_config.yaml'
 """
             env = {key: value for key, value in os.environ.items()
                    if key not in {"VISPA_CONFIG", "VISUAL_TOOLKIT_CONFIG", "PROJECTOME_DATASETS"}}
-            env.update({"APPDATA": appdata, "PYTHONPATH": str(SRC), "MPLBACKEND": "Agg"})
+            env.update({"APPDATA": appdata, "VISPA_CONFIG": str(config_dir / "visual_toolkit_config.yaml"),
+                        "PYTHONPATH": str(SRC), "MPLBACKEND": "Agg"})
             result = subprocess.run([sys.executable, "-c", script], cwd=tempfile.gettempdir(),
                                     env=env, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -722,7 +723,7 @@ class ConfigTests(unittest.TestCase):
                              (folder / "0007").resolve())
             self.assertFalse(Path(config["defaults"]["cache_root"]).is_relative_to(folder))
 
-    def test_config_init_requires_yaml_output_and_migrates_only_the_implicit_target(self):
+    def test_config_init_uses_own_default_and_explicitly_imports_legacy(self):
         from vispa.dataset_config import initialize_default_config, load
         with tempfile.TemporaryDirectory() as temp:
             appdata = Path(temp) / "appdata"
@@ -732,7 +733,7 @@ class ConfigTests(unittest.TestCase):
             legacy.write_text(json.dumps({"version": 1, "samples": {
                 "0007": {"swc_cache": "0007"}}}), encoding="utf-8")
             legacy_bytes = legacy.read_bytes()
-            target = legacy_dir / "visual_toolkit_config.yaml"
+            target = appdata / "VisPa" / "vispa_config.yaml"
             env = {"APPDATA": str(appdata), "VISPA_CONFIG": "", "VISUAL_TOOLKIT_CONFIG": "",
                    "PROJECTOME_DATASETS": ""}
             with mock.patch.dict(os.environ, env):
@@ -741,13 +742,13 @@ class ConfigTests(unittest.TestCase):
                 self.assertFalse(target.exists())
                 dry = initialize_default_config(dry_run=True)
                 self.assertEqual((dry["action"], dry["source_kind"]),
-                                 ("would_create", "legacy_user_json_migration"))
+                                 ("would_create", "package_defaults"))
                 self.assertEqual(Path(dry["config_path"]), target.resolve())
                 self.assertFalse(target.exists())
-                explicit = initialize_default_config(output=str(target), dry_run=True)
-                self.assertEqual(explicit["source_kind"], "package_defaults")
+                explicit = initialize_default_config(output=str(target), from_path=str(legacy), dry_run=True)
+                self.assertEqual(explicit["source_kind"], "explicit_source")
                 self.assertFalse(target.exists())
-                plan = initialize_default_config()
+                plan = initialize_default_config(from_path=str(legacy))
                 self.assertEqual(plan["action"], "created")
                 self.assertTrue(target.is_file())
                 self.assertEqual(legacy.read_bytes(), legacy_bytes)
@@ -755,6 +756,77 @@ class ConfigTests(unittest.TestCase):
                 loaded = load()
                 self.assertEqual(loaded["samples"]["0007"]["swc_cache"],
                                  (legacy_dir / "0007").resolve())
+
+    def test_new_vispa_profile_ignores_inherited_legacy_environment(self):
+        from vispa.dataset_config import initialize_default_config, load
+        with tempfile.TemporaryDirectory() as temp:
+            appdata = Path(temp) / "appdata"
+            legacy = Path(temp) / "old_project.yaml"
+            legacy.write_text("version: 1\nvisual_toolkit:\n  default_sample: OLD\n  default_neuron: 001.swc\n",
+                              encoding="utf-8")
+            user_data = Path(temp) / "localappdata"
+            with mock.patch.dict(os.environ, {"APPDATA": str(appdata), "LOCALAPPDATA": str(user_data),
+                                              "VISPA_CONFIG": "",
+                                              "VISUAL_TOOLKIT_CONFIG": str(legacy),
+                                              "PROJECTOME_DATASETS": str(legacy)}):
+                plan = initialize_default_config()
+                config = load()
+            self.assertEqual(plan["source_kind"], "package_defaults")
+            self.assertEqual(config["path"], (appdata / "VisPa" / "vispa_config.yaml").resolve())
+            self.assertEqual(config["visual_toolkit"]["default_sample"], "250432")
+            self.assertEqual(config["sources"]["neuron_catalog"]["mode"], "live-iondata")
+            self.assertEqual(config["sources"]["neuron_catalog"]["host"], "http://10.10.48.110")
+            self.assertEqual(config["sources"]["http_host"], "http://bap.cebsit.ac.cn")
+            self.assertEqual(config["sources"]["raw_swc_base"], "http://10.10.31.31/swc/newswc")
+            self.assertEqual(config["defaults"]["cache_root"], user_data / "VisPa" / "cache")
+            self.assertEqual(config["defaults"]["output_root"], user_data / "VisPa" / "output")
+            self.assertTrue(config["visual_toolkit"]["fnt_tracer"]["auto_download"])
+            self.assertIsNone(config["visual_toolkit"]["fnt_tracer"]["project_root"])
+
+    def test_ds00_children_follow_editable_root_without_changing_legacy_paths(self):
+        from vispa.dataset_config import load
+        with tempfile.TemporaryDirectory() as temp:
+            config_file = Path(temp) / "settings.json"
+            source = {"version": 1, "defaults": {"ds00_root": str(Path(temp) / "new-ds00")},
+                      "samples": {"relative": {"ds00_relative": "processed_nii/brain.nii"},
+                                  "legacy": {"ds00_processed": str(Path(temp) / "legacy.nii")}},
+                      "sources": {"dataset_manifest_relative": "manifest.json"}}
+            config_file.write_text(json.dumps(source), encoding="utf-8")
+            loaded = load(config_file)
+            self.assertEqual(loaded["samples"]["relative"]["ds00_processed"].resolve(),
+                             (Path(temp) / "new-ds00" / "processed_nii" / "brain.nii").resolve())
+            self.assertEqual(loaded["samples"]["legacy"]["ds00_processed"].resolve(), (Path(temp) / "legacy.nii").resolve())
+            self.assertEqual(loaded["sources"]["dataset_manifest"].resolve(), (Path(temp) / "new-ds00" / "manifest.json").resolve())
+            source["samples"]["relative"]["ds00_processed"] = "other.nii"
+            config_file.write_text(json.dumps(source), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "both ds00_processed and ds00_relative"):
+                load(config_file)
+            source["samples"]["relative"].pop("ds00_processed")
+            source["samples"]["relative"]["ds00_relative"] = "../escape.nii"
+            config_file.write_text(json.dumps(source), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "stay under defaults.ds00_root"):
+                load(config_file)
+
+    def test_packaged_sample_paths_follow_edited_source_roots(self):
+        import yaml
+        from vispa.dataset_config import load
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            from importlib.resources import files
+            raw = yaml.safe_load(files("vispa").joinpath("default_config.yaml").read_text(encoding="utf-8"))
+            raw["defaults"]["ds00_root"] = str(root / "new-ds00")
+            raw["defaults"]["resample_5um_root"] = str(root / "new-5um")
+            path = root / "profile.yaml"
+            path.write_text(yaml.safe_dump(raw, sort_keys=False), encoding="utf-8")
+            loaded = load(path)
+            for sample_id, declaration in raw["samples"].items():
+                if declaration.get("ds00_relative"):
+                    self.assertEqual(loaded["samples"][sample_id]["ds00_processed"].resolve(),
+                                     (root / "new-ds00" / declaration["ds00_relative"]).resolve())
+                if declaration.get("resample_5um"):
+                    self.assertEqual(loaded["samples"][sample_id]["resample_5um"].resolve(),
+                                     (root / "new-5um" / declaration["resample_5um"]).resolve())
+            self.assertEqual(loaded["sources"]["dataset_manifest"].resolve(), (root / "new-ds00" / "manifest.json").resolve())
 
     def test_config_init_materializes_validated_effective_settings_for_all_scopes(self):
         import yaml
@@ -832,9 +904,10 @@ class ConfigTests(unittest.TestCase):
         from vispa import gui
         with tempfile.TemporaryDirectory() as temp:
             appdata = Path(temp)
-            target = appdata / "VisualToolkit" / "visual_toolkit_config.yaml"
-            env = {"APPDATA": str(appdata), "VISPA_CONFIG": "", "VISUAL_TOOLKIT_CONFIG": "",
-                   "PROJECTOME_DATASETS": ""}
+            target = appdata / "VisPa" / "vispa_config.yaml"
+            legacy = appdata / "legacy-config.json"
+            env = {"APPDATA": str(appdata), "VISPA_CONFIG": "",
+                   "VISUAL_TOOLKIT_CONFIG": str(legacy), "PROJECTOME_DATASETS": str(legacy)}
             with mock.patch.dict(os.environ, env):
                 invalid = (["--sam", "252527"], ["--bogus"],
                            ["--conf", str(appdata / "x.json")],
@@ -1038,8 +1111,8 @@ class SWCProviderTests(unittest.TestCase):
             config.write_text(json.dumps({"version": 1,
                 "defaults": {"swc_cache_root": str(Path(temp) / "swc")},
                 "samples": {"0007": {"swc_cache": "0007"}}}), encoding="utf-8")
-            prior = os.environ.get("VISUAL_TOOLKIT_CONFIG")
-            os.environ["VISUAL_TOOLKIT_CONFIG"] = str(config)
+            prior = os.environ.get("VISPA_CONFIG")
+            os.environ["VISPA_CONFIG"] = str(config)
             marker = object()
             class Remote:
                 def getRawNeuronTreeByID(self, sample, neuron):
@@ -1053,9 +1126,9 @@ class SWCProviderTests(unittest.TestCase):
             finally:
                 sources.set_iondata_provider_factory(None)
                 if prior is None:
-                    os.environ.pop("VISUAL_TOOLKIT_CONFIG", None)
+                    os.environ.pop("VISPA_CONFIG", None)
                 else:
-                    os.environ["VISUAL_TOOLKIT_CONFIG"] = prior
+                    os.environ["VISPA_CONFIG"] = prior
 
     def test_legacy_local_swc_root_is_tried_after_configured_cache_miss(self):
         from vispa import sources

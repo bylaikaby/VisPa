@@ -1,7 +1,7 @@
 """
 vispa.py - Macaque Brain Hybrid-Resolution Visualization Toolkit
 
-Version: 1.11.0.dev3 (local/unreleased)
+Version: 1.11.0.dev4 (local/unreleased)
 Last updated: 2026-10-22
 Change history: ../../CHANGELOG.md
 Status: candidate (visual review pending)
@@ -597,14 +597,14 @@ class VisPa:
         
         configuration = ACTIVE_CONFIG if ACTIVE_CONFIG is not None else configure_data_sources()
         defaults = configuration.get('defaults', {})
-        user_data = Path(os.environ.get('LOCALAPPDATA') or (Path.home() / '.cache')) / 'VisualToolkit'
+        user_data = Path(os.environ.get('LOCALAPPDATA') or (Path.home() / '.cache')) / 'VisPa'
         if cache_dir:
             cache_base = Path(cache_dir)
             output_base = cache_base / 'output'
             cache_base = cache_base / 'cubes'
         else:
             cache_base = Path(cache_root or defaults.get('cache_root') or (user_data / 'cache'))
-            output_base = Path(output_root or defaults.get('output_root') or (Path.home() / 'VisualToolkit' / 'output'))
+            output_base = Path(output_root or defaults.get('output_root') or (user_data / 'output'))
         # Preserve the historical explicit cache_dir contract: it is a
         # combined toolkit root containing output/ and cubes/ directly.
         self.output_dir = str(output_base if cache_dir else output_base / sample_id)
@@ -1933,17 +1933,13 @@ def _has_user_dataset_config() -> bool:
     """Return whether startup should load an operator-supplied config.
 
     Importing the renderer for lightweight commands must not parse the bundled
-    YAML template. Preserve the historical startup behavior when an explicit
-    config or an existing per-user YAML/legacy JSON file is present.
+    YAML template. Use the own VisPa profile when explicitly selected or present.
     """
-    if any(os.environ.get(name) for name in
-           ("VISPA_CONFIG", "VISUAL_TOOLKIT_CONFIG", "PROJECTOME_DATASETS")):
+    if os.environ.get("VISPA_CONFIG"):
         return True
     app_data = os.environ.get("APPDATA")
     base = Path(app_data) if app_data else Path.home() / ".config"
-    config_dir = base / "VisualToolkit"
-    return ((config_dir / "visual_toolkit_config.yaml").is_file()
-            or (config_dir / "visual_toolkit_config.json").is_file())
+    return (base / "VisPa" / "vispa_config.yaml").is_file()
 
 
 if _has_user_dataset_config():

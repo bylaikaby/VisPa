@@ -1,7 +1,7 @@
 """Bounded live IONData catalog and dated-snapshot selection contracts.
 
-Version: 1.11.0.dev3 (local/unreleased)
-Last updated: 2026-10-22
+Version: 1.11.0.dev4 (local/unreleased)
+Last updated: 2026-10-23
 Change history: ../CHANGELOG.md
 """
 import contextlib
@@ -143,6 +143,7 @@ class LiveNeuronCatalogTests(unittest.TestCase):
             default_result = list_neurons("250432L", config)
         urlopen.assert_not_called()
         self.assertEqual(default_result["source_kind"], "csv")
+        config["sources"]["neuron_catalog"]["host"] = "http://10.10.48.110"
         response = _Response(self.response_rows())
         with mock.patch("vispa.sources.urllib.request.urlopen", return_value=response) as urlopen:
             opted_in = list_neurons("250432L", config, source="live-iondata")
@@ -175,7 +176,7 @@ class LiveNeuronCatalogTests(unittest.TestCase):
             "raw_swc_base": "http://raw.example/swc/newswc"}}), encoding="utf-8")
         with mock.patch.dict(os.environ, {"LOCALAPPDATA": str(local_appdata)}):
             config = load(config_path)
-        expected = local_appdata / "VisualToolkit" / "swc_raw"
+        expected = local_appdata / "VisPa" / "cache" / "swc_raw"
         self.assertEqual(config["sources"]["legacy_raw_swc_root"], expected)
         self.assertFalse(expected.exists())
 
