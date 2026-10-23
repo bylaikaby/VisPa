@@ -19,6 +19,10 @@ $evidence = [IO.Path]::GetFullPath($EvidenceDir)
 $profile = Join-Path $evidence 'VM profile with spaces'
 $download = Join-Path $evidence 'source.zip'
 $sourceRoot = Join-Path $evidence 'source with spaces'
+$miniforgeRoot = Join-Path $evidence 'miniforge3'
+if ($miniforgeRoot -match '[^\x21-\x7E]') {
+    throw 'EvidenceDir must use an ASCII path without spaces so Miniforge can bootstrap; the isolated user profile and VisPa runtime still test spaced paths.'
+}
 $runtime = Join-Path $profile 'LocalAppData\VisPa\conda-env'
 $config = Join-Path $profile 'AppData\VisPa\vispa_config.yaml'
 $plan = [ordered]@{
@@ -26,6 +30,7 @@ $plan = [ordered]@{
     source_url = "https://github.com/bylaikaby/VisPa/archive/$Commit.zip"
     source_zip = $download; source_root = $sourceRoot
     profile_root = $profile; install_dir = $runtime; config = $config
+    miniforge_root = $miniforgeRoot
     evidence_dir = $evidence; mode = 'one-case'
 }
 if ($DryRun) { $plan | ConvertTo-Json -Depth 4; return }
@@ -72,13 +77,14 @@ try {
     $steps.anonymous_http_commit_zip = 'pass'
     Push-Location -LiteralPath $source
     try {
-        $installerPlan = & .\install.cmd -InstallDir $runtime -NoLaunch -NoShortcut -DryRun | ConvertFrom-Json
+        $installerPlan = & .\install.cmd -InstallDir $runtime -MiniforgeRoot $miniforgeRoot -NoLaunch -NoShortcut -DryRun | ConvertFrom-Json
         if ($LASTEXITCODE -ne 0 -or $installerPlan.install_dir -ne $runtime -or
-            $installerPlan.config -ne $config -or $installerPlan.bootstrap_conda -ne $true) {
+            $installerPlan.config -ne $config -or $installerPlan.bootstrap_conda -ne $true -or
+            $installerPlan.bootstrap_root -ne $miniforgeRoot -or $installerPlan.bootstrap_root_selection -ne 'explicit') {
             throw 'Installer did not plan isolated Conda bootstrap and expected paths'
         }
         $steps.installer_dry_run = 'pass'
-        & .\install.cmd -InstallDir $runtime -NoLaunch -NoShortcut
+        & .\install.cmd -InstallDir $runtime -MiniforgeRoot $miniforgeRoot -NoLaunch -NoShortcut
         if ($LASTEXITCODE -ne 0) { throw 'Conda-first source install failed' }
         # The installer changes PATH only in its child process. Direct executable
         # probes need the same Conda DLL search path that VisPa.cmd supplies.
@@ -150,7 +156,7 @@ try {
         $marker = Join-Path $cache 'preservation-marker.txt'
         Set-Content -LiteralPath $marker -Value 'preserve' -NoNewline
         $markerHash = (Get-FileHash $marker -Algorithm SHA256).Hash
-        & .\install.cmd -InstallDir $runtime -NoLaunch -NoShortcut
+        & .\install.cmd -InstallDir $runtime -MiniforgeRoot $miniforgeRoot -NoLaunch -NoShortcut
         if ($LASTEXITCODE -ne 0) { throw 'Repeat install failed' }
         if ((Get-FileHash $config -Algorithm SHA256).Hash -ne $configHash -or
             (Get-FileHash $marker -Algorithm SHA256).Hash -ne $markerHash -or

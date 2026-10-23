@@ -9,6 +9,7 @@ Change history: ../CHANGELOG.md
 param(
     [string]$InstallDir = (Join-Path $env:LOCALAPPDATA 'VisPa\conda-env'),
     [string]$Conda = '',
+    [string]$MiniforgeRoot = '',
     [string]$Python = '',
     [string]$Wheel = '',
     [string]$Wheelhouse = '',
@@ -81,10 +82,22 @@ if (-not $sourceMode -and -not $Wheel) { throw 'A source checkout or -Wheel is r
 $InstallDir = [IO.Path]::GetFullPath($InstallDir)
 $targetPython = Join-Path $InstallDir 'python.exe'
 $targetCli = Join-Path $InstallDir 'Scripts\vispa.exe'
+$bootstrapRoot = if ($MiniforgeRoot) {
+    if (-not [IO.Path]::IsPathRooted($MiniforgeRoot)) { throw '-MiniforgeRoot must be an absolute local path.' }
+    [IO.Path]::GetFullPath($MiniforgeRoot)
+} else { Join-Path $env:LOCALAPPDATA 'VisPa\miniforge3' }
 function Find-Conda([string]$Explicit) {
     if ($Explicit) {
         if (-not (Test-Path -LiteralPath $Explicit -PathType Leaf)) { throw "Conda executable does not exist: $Explicit" }
         return [IO.Path]::GetFullPath($Explicit)
+    }
+    if ($MiniforgeRoot) {
+        $candidate = Join-Path $bootstrapRoot 'Scripts\conda.exe'
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
+    }
+    if (Test-Path -LiteralPath $previousHandle -PathType Leaf) {
+        $savedConda = [string](Get-Content -LiteralPath $previousHandle -Raw -Encoding UTF8 | ConvertFrom-Json).conda
+        if ($savedConda -and (Test-Path -LiteralPath $savedConda -PathType Leaf)) { return [IO.Path]::GetFullPath($savedConda) }
     }
     $command = Get-Command conda.exe -ErrorAction SilentlyContinue
     if ($command) { return $command.Source }
@@ -98,8 +111,10 @@ function Find-Conda([string]$Explicit) {
 }
 $condaExe = Find-Conda $Conda
 $bootstrap = -not $condaExe
-$bootstrapRoot = Join-Path $env:LOCALAPPDATA 'VisPa\miniforge3'
 if ($bootstrap -and $NoBootstrap) { throw 'Conda was not found. Install Miniforge or pass -Conda PATH.' }
+if ($bootstrap -and $bootstrapRoot -notmatch '^[A-Za-z]:\\[A-Za-z0-9_.\\-]+$') {
+    throw "Miniforge cannot bootstrap under a path with spaces or special characters: $bootstrapRoot. Pass -MiniforgeRoot with an absolute writable path containing only ASCII letters, digits, underscore, hyphen, and dot, or pass -Conda."
+}
 if ($bootstrap -and (Test-Path -LiteralPath $bootstrapRoot)) {
     throw "Miniforge bootstrap folder exists without conda.exe: $bootstrapRoot. Pass another -Conda or repair that installation."
 }
@@ -109,6 +124,7 @@ $plan = [ordered]@{
     conda_selection = if ($Conda) { 'explicit' } elseif ($bootstrap) { 'bootstrap_miniforge' } else { 'discovered' }
     bootstrap_conda = $bootstrap
     bootstrap_root = $bootstrapRoot
+    bootstrap_root_selection = if ($MiniforgeRoot) { 'explicit' } else { 'default_local_appdata' }
     environment_file = $environmentFile
     source_root = $repo
     source_install = $sourceMode
@@ -235,7 +251,7 @@ if ($configSelection -eq 'create_from_package_defaults') {
 if ($LASTEXITCODE -ne 0) { throw "VisPa config validation failed: $Config" }
 $handle = Join-Path $env:APPDATA 'VisPa\install.json'
 New-Item -ItemType Directory -Path (Split-Path $handle) -Force | Out-Null
-$handleValue = [ordered]@{ prefix = $InstallDir; config = [IO.Path]::GetFullPath($Config) } | ConvertTo-Json -Compress
+$handleValue = [ordered]@{ prefix = $InstallDir; config = [IO.Path]::GetFullPath($Config); conda = $condaExe } | ConvertTo-Json -Compress
 $existingHandle = if (Test-Path -LiteralPath $handle -PathType Leaf) { Get-Content -LiteralPath $handle -Raw -Encoding UTF8 } else { '' }
 if ($existingHandle -ne $handleValue) {
     [IO.File]::WriteAllText($handle, $handleValue, (New-Object System.Text.UTF8Encoding($false)))
@@ -245,6 +261,7 @@ if (-not $NoShortcut) {
         $desktop = [Environment]::GetFolderPath('Desktop')
         $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $desktop 'VisPa.lnk'))
         $shortcut.TargetPath = $launcher
+        $shortcut.Arguments = ''
         $shortcut.WorkingDirectory = $repo
         $shortcut.Description = 'VisPa review GUI'
         $shortcut.Save()

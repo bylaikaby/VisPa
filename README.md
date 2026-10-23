@@ -24,6 +24,8 @@ To update, extract a newer ZIP into a separate local folder and run its `.\insta
 
 `.\install.cmd -DryRun` prints the resolved Conda selection, source, environment, profile, cache, and launcher paths without installing. An existing Conda executable can be selected with `-Conda PATH`; `-NoBootstrap` fails clearly when Conda is absent. `-Config PATH` selects an existing active profile, `-Wheel PATH` selects an exact local VisPa wheel, and `-Wheelhouse PATH` provides local Python package wheels. A fully offline setup also needs Conda and its environment packages prepared locally; a pip wheelhouse alone does not replace the Conda environment solve. Keep the extracted source locally so `VisPa.cmd` can find its source-folder launcher.
 
+If Conda is absent and `%LOCALAPPDATA%` contains spaces or non-ASCII characters, automatic Miniforge bootstrap stops before downloading. Choose an ASCII path without spaces that you own and can write, then run, for example, `.\install.cmd -NoLaunch -MiniforgeRoot D:\VisPaTools\miniforge3` on a writable D: drive. This flag changes only the Miniforge bootstrap location; the VisPa environment remains under `%LOCALAPPDATA%\VisPa\conda-env`. Reuse the same root when repeating installation. The installer changes neither user PATH nor Conda activation.
+
 The [Windows installation workflow](.github/workflows/windows-install.yml) downloads an anonymous ZIP for the exact commit, runs a bounded install in a temporary user profile, checks installed runtime and Settings callbacks, and records graphics capability separately. Its result applies to that hosted Windows guest. Lab share access, visible desktop review, and scientific or anatomical acceptance remain separate.
 ## Using the GUI
 

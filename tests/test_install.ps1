@@ -44,6 +44,33 @@ if ($plan.runtime_python -notmatch '[\\/]python.exe$' -or $plan.environment_file
     throw 'Dry-run did not resolve Conda Python and environment definition.'
 }
 Write-Host 'PASS: dry run resolves isolated prefix and leaves PATH unchanged.'
+$safeRootPlan = & $installer -DryRun -NoLaunch -NoShortcut -MiniforgeRoot 'C:\VisPa-test-miniforge' | ConvertFrom-Json
+if ($safeRootPlan.bootstrap_root -ne 'C:\VisPa-test-miniforge' -or $safeRootPlan.bootstrap_root_selection -ne 'explicit') {
+    throw 'Dry run lost the explicit safe Miniforge root.'
+}
+$savedProfile = @($env:APPDATA,$env:LOCALAPPDATA,$env:USERPROFILE,$env:PATH)
+try {
+    $fakeProfile = Join-Path $env:TEMP 'VisPa profile with spaces'
+    $env:APPDATA = Join-Path $fakeProfile 'Roaming'
+    $env:LOCALAPPDATA = Join-Path $fakeProfile 'LocalAppData'
+    $env:USERPROFILE = $fakeProfile
+    $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
+    try {
+        & $installer -DryRun -NoLaunch -NoShortcut | Out-Null
+        throw 'Installer accepted a spaced bootstrap path.'
+    } catch {
+        if ($_.Exception.Message -eq 'Installer accepted a spaced bootstrap path.') { throw }
+        if ($_.Exception.Message -notmatch 'Miniforge cannot bootstrap.*-MiniforgeRoot') { throw }
+    }
+    $safePlan = & $installer -DryRun -NoLaunch -NoShortcut -MiniforgeRoot 'C:\VisPa-test-miniforge' | ConvertFrom-Json
+    if (-not $safePlan.bootstrap_conda -or $safePlan.bootstrap_root_selection -ne 'explicit') {
+        throw 'Explicit Miniforge root did not resolve a fresh bootstrap plan.'
+    }
+} finally {
+    $env:APPDATA=$savedProfile[0]; $env:LOCALAPPDATA=$savedProfile[1]
+    $env:USERPROFILE=$savedProfile[2]; $env:PATH=$savedProfile[3]
+}
+Write-Host 'PASS: spaced bootstrap path fails early and explicit safe root is resolved.'
 $missing = Join-Path $env:TEMP ('VisPa-missing-conda-' + [guid]::NewGuid().ToString('N') + '.exe')
 try {
     & $installer -Conda $missing -DryRun | Out-Null
@@ -69,6 +96,9 @@ $installerText = Get-Content -LiteralPath $installer -Raw
 if ($installerText -match '\bGet-FileHash\b' -or $installerText -notmatch 'function Get-Sha256File' -or
         $installerText -notmatch 'SHA256\]::Create\(') {
     throw 'Installer hashing must use streaming .NET SHA256 without module autoload.'
+}
+if ($installerText -notmatch '\$shortcut\.Arguments\s*=\s*''''') {
+    throw 'Installer must clear stale desktop shortcut arguments on upgrade.'
 }
 if ($installerText -notmatch 'install.json' -or $installerText -notmatch 'UTF8Encoding' -or $installerText -notmatch 'Library\\bin') {
     throw 'Launcher handle does not preserve Unicode prefix/config or Conda DLL path.'
