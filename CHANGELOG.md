@@ -1,5 +1,38 @@
 # VisPa change log
 
+## 1.11.0.dev11 — 2026-10-23 (local/unreleased)
+- Replace the leftover **Public SWC** preview tab with **3D SWC**. Selecting it
+  renders the current processed SWC on the configured template mesh in the
+  isolated OpenGL worker and displays the hash-verified snapshot in the
+  existing figure preview. The interactive **3D brain view** button remains.
+- Remove the manual **Load & Auto-Fill Soma** button. A valid Sample/Neuron
+  identity now triggers a debounced live raw-SWC lookup, with progress shown in
+  the existing progress bar and a highlighted Sample-section status panel
+  reporting whether the neuron was found and its portal region.
+- Start that lookup for the configured startup identity before the deferred
+  data-check prompt, so coordinates and neuron status populate immediately
+  instead of waiting for the modal checklist to close.
+- Start Soma coordinates blank and reject Render until the live lookup has
+  populated them, preventing misleading `(0, 0, 0)` cube requests and the
+  aggregated Soma/Context/Sagittal failure dialog.
+- Remove index axes, tick labels and the role legend from the Soma panel; keep
+  the title, scale bar and target marker. Context retains its axes and role
+  legend so trace colours remain explained.
+- Remove the sagittal A/B candidate traces and their legend entries. The
+  sagittal context now shows only the DS00 image, axes, scale bar and one cyan
+  soma-location marker; the marker has no separate legend entry, and provenance
+  records the single provisional mapping.
+- Replace the dense data-check message box with a scrollable VisPa dialog:
+  summary first, one status badge per resource, readable labels and wrapped
+  monospace paths. The public `vispa check` text output is unchanged.
+- Validation: the complete source suite passes **144/144**; the shared profile
+  reports **15/15** resources for `251637/004.swc`. Real-data checks cover the
+  isolated 3D snapshot, Soma and Context acquisition/cache reuse, Sagittal
+  single-marker rendering, live neuron lookup and startup progress. Desktop
+  review confirmed the auto-filled identity, highlighted neuron status, 3D SWC
+  tab, furniture-free Soma panel and structured resource dialog. No anatomical
+  or scientific acceptance is implied.
+
 ## 1.11.0.dev10 — 2026-10-23 (local/unreleased)
 - Show the resolved file, directory or source location beside every applicable
   item in `vispa check`, `vispa.check()` and the GUI readiness prompt.

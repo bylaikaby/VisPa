@@ -1,6 +1,6 @@
 """Checks for the public data-check API, CLI and GUI progress plumbing.
 
-Version: 1.11.0.dev10 (local/unreleased)
+Version: 1.11.0.dev11 (local/unreleased)
 Last updated: 2026-10-23
 Change history: ../CHANGELOG.md
 Status: candidate
@@ -171,7 +171,7 @@ class ProgressBarTests(unittest.TestCase):
         self.assertEqual(calls, ["first.tif", "second.tif"])
         self.assertEqual(list(tool._section_cache), [str(Path("second.tif").resolve())])
 
-    def test_ready_checklist_is_shown_as_a_gui_prompt(self):
+    def test_ready_checklist_is_shown_as_a_structured_gui_dialog(self):
         from vispa.gui import NeuroVisGUI
         gui = object.__new__(NeuroVisGUI)
         gui.sample_id = mock.Mock()
@@ -181,19 +181,94 @@ class ProgressBarTests(unittest.TestCase):
         gui._hide_progress = mock.Mock()
         gui._append_log = mock.Mock()
         gui.update_status = mock.Mock()
+        gui._show_data_check = mock.Mock()
+        gui._auto_fill_on_identity = False
+        gui.root = mock.Mock()
         report = {
             "ready": True,
             "checked": 2,
             "issues": 0,
             "checklist": ["[OK] DS00 image: Found", "[OK] Download cache: Writable"],
             "summary": "All configured resources ready (2/2)",
+            "checks": [
+                {"role": "ds00", "label": "DS00 image", "status": "ready",
+                 "detail": "Found", "path": r"\\server\ds00.nii"},
+                {"role": "download_cache", "label": "Download cache",
+                 "status": "ready", "detail": "Writable", "path": r"C:\cache"},
+            ],
         }
-        with mock.patch("vispa.gui.messagebox.showinfo") as showinfo:
-            gui._finish_resource_check(("0007", "001.swc"), report, None)
-        message = showinfo.call_args.args[1]
-        self.assertIn("All configured resources ready", message)
-        self.assertIn("✓ DS00 image: Found", message)
+        gui._finish_resource_check(("0007", "001.swc"), report, None)
+        gui._show_data_check.assert_called_once_with(report)
+        gui.update_status.assert_called_with("All configured resources ready (2/2)")
         self.assertEqual(gui.last_data_check, report)
+
+    def test_swc3d_tab_requests_a_snapshot_when_not_cached(self):
+        from vispa.gui import NeuroVisGUI
+        gui = object.__new__(NeuroVisGUI)
+        gui.preview_files = {}
+        gui._render_swc3d = mock.Mock()
+        gui._show_role("SWC3D")
+        gui._render_swc3d.assert_called_once_with()
+
+    def test_render_requires_loaded_soma_not_zero_placeholder(self):
+        from vispa.gui import NeuroVisGUI
+        gui = object.__new__(NeuroVisGUI)
+        gui.sample_id = mock.Mock()
+        gui.sample_id.get.return_value = "251637"
+        gui.neuron_id = mock.Mock()
+        gui.neuron_id.get.return_value = "004.swc"
+        gui._autofill_identity = None
+        for coordinates in (("", "", ""), ("0", "0", "0")):
+            with self.subTest(coordinates=coordinates):
+                gui.x_coord = mock.Mock()
+                gui.y_coord = mock.Mock()
+                gui.z_coord = mock.Mock()
+                gui.x_coord.get.return_value, gui.y_coord.get.return_value, gui.z_coord.get.return_value = coordinates
+                with mock.patch("vispa.gui.messagebox.showwarning") as warning:
+                    self.assertFalse(gui.validate_inputs())
+                self.assertEqual(warning.call_args.args[0], "Load soma first")
+
+    def test_valid_identity_change_schedules_live_soma_lookup(self):
+        from vispa.gui import NeuroVisGUI
+        gui = object.__new__(NeuroVisGUI)
+        gui.sample_id = mock.Mock()
+        gui.sample_id.get.return_value = "251637"
+        gui.neuron_id = mock.Mock()
+        gui.neuron_id.get.return_value = "004.swc"
+        gui._selected_identity = ("old", "001.swc")
+        gui._auto_fill_on_identity = True
+        gui._autofill_identity = ("old", "001.swc")
+        gui._soma_autofill_after = None
+        gui.x_coord = mock.Mock()
+        gui.y_coord = mock.Mock()
+        gui.z_coord = mock.Mock()
+        gui._clear_identity_preview = mock.Mock()
+        gui._update_neuron_status = mock.Mock()
+        gui.root = mock.Mock()
+        gui.root.after.return_value = "after-id"
+        gui._on_identity_change()
+        gui.x_coord.set.assert_called_once_with("")
+        gui.y_coord.set.assert_called_once_with("")
+        gui.z_coord.set.assert_called_once_with("")
+        self.assertEqual(gui.root.after.call_args.args[0], 650)
+        self.assertEqual(
+            gui.root.after.call_args.args[1].__self__,
+            gui,
+        )
+
+    def test_neuron_status_reports_found_identity_and_portal_region(self):
+        from vispa.gui import NeuroVisGUI
+        gui = object.__new__(NeuroVisGUI)
+        gui.sample_id = mock.Mock()
+        gui.sample_id.get.return_value = "251637"
+        gui.neuron_id = mock.Mock()
+        gui.neuron_id.get.return_value = "004.swc"
+        gui._portal_region_cache = {"251637": {"004.swc": "PrCO_49"}}
+        gui._neuron_lookup_state = "found"
+        gui.neuron_status_var = mock.Mock()
+        gui._update_neuron_status()
+        gui.neuron_status_var.set.assert_called_once_with(
+            "Neuron: found · PrCO_49")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 """CLI contract tests for bounded standalone use.
 
-Version: 1.11.0.dev10 (local/unreleased)
+Version: 1.11.0.dev11 (local/unreleased)
 Last updated: 2026-10-23
 Change history: ../CHANGELOG.md
 """
@@ -118,7 +118,7 @@ class CliContractTests(unittest.TestCase):
             self.assertEqual(run_cli("--help", cwd=tmp_path).returncode, 0)
             version = run_cli("--version", cwd=tmp_path)
             self.assertEqual(version.returncode, 0)
-            self.assertIn("1.11.0.dev10", version.stdout)
+            self.assertIn("1.11.0.dev11", version.stdout)
 
     def test_settings_command_prints_discoverable_json_without_optional_imports(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -218,7 +218,7 @@ assert main(["settings", "--scope", "all"]) == 0
             plan = json.loads(result.stdout)
             assert_backend_is_installed(self, plan)
             self.assertEqual(plan["schema"], "visual-toolkit.render.v1")
-            self.assertEqual(plan["package_version"], "1.11.0.dev10")
+            self.assertEqual(plan["package_version"], "1.11.0.dev11")
             self.assertTrue(Path(plan["python_executable"]).is_file())
             self.assertTrue(Path(plan["runtime"]["python_executable"]).is_file())
             self.assertTrue(Path(plan["runtime"]["backend_module"]).is_file())
@@ -296,7 +296,7 @@ assert main(["settings", "--scope", "all"]) == 0
             self.assertEqual({path.name for path in output.iterdir()}, {png.name, receipt_path.name})
             self.assertTrue(os.path.samefile(receipt["output_png"], png))
             self.assertEqual(receipt["schema"], "visual-toolkit.render.v1")
-            self.assertEqual(receipt["package_version"], "1.11.0.dev10")
+            self.assertEqual(receipt["package_version"], "1.11.0.dev11")
             runtime = receipt["runtime"]
             self.assertTrue(Path(runtime["python_prefix"]).exists())
             self.assertEqual(runtime["backend_sha256"],
@@ -320,8 +320,9 @@ assert main(["settings", "--scope", "all"]) == 0
             self.assertEqual(receipt["output_sha256"], hashlib.sha256(png.read_bytes()).hexdigest())
             self.assertEqual(receipt["input_shape_zyx"], [3, 5, 5])
             self.assertEqual(receipt["render_labels"]["legend_header_role"], "Soma")
-            self.assertIn("pixel index", receipt["render_labels"]["x_axis"])
-            self.assertIn("pixel index", receipt["render_labels"]["y_axis"])
+            self.assertIsNone(receipt["render_labels"]["x_axis"])
+            self.assertIsNone(receipt["render_labels"]["y_axis"])
+            self.assertEqual(receipt["render_labels"]["legend"], [])
 
     def test_configured_render_restores_global_and_cached_review_defaults_on_success_and_failure(self):
         from vispa import toolkit

@@ -1,6 +1,6 @@
 """Explicit local-input launcher for the isolated legacy OpenGL viewer.
 
-Version: 1.11.0.dev10 (local/unreleased)
+Version: 1.11.0.dev11 (local/unreleased)
 Last updated: 2026-10-23
 Change history: ../../CHANGELOG.md
 Status: candidate
@@ -281,6 +281,47 @@ def launch_configured_view(sample_id: str, neuron_id: str, portal_region: str = 
     if os.name == "nt":
         kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
     return subprocess.Popen(command, **kwargs)
+
+
+def render_configured_snapshot(sample_id: str, neuron_id: str,
+                               snapshot: str | os.PathLike,
+                               portal_region: str = "",
+                               config_path: str | os.PathLike | None = None) -> dict:
+    """Render one static 3D SWC view through the isolated worker."""
+    plan = plan_configured_view(
+        sample_id, neuron_id, portal_region, config_path, snapshot=snapshot)
+    command = [plan["worker_python"], "-I", "-m", "vispa", "brain-view",
+               "--sample", sample_id, "--neuron", neuron_id,
+               "--snapshot", plan["snapshot_png"]]
+    if portal_region:
+        command.extend(("--portal-region", str(portal_region)))
+    command.extend(("--config", plan["config_path"]))
+    command.extend(_settings_argv(plan["settings"]))
+    env = {key: value for key, value in os.environ.items()
+           if not (key.startswith("PYTHON") or key.startswith("CONDA")
+                   or key.startswith("TCL_") or key.startswith("TK_")
+                   or key.startswith("MPL") or key.startswith("MATPLOTLIB")
+                   or key in {"PYOPENGL_PLATFORM", "QT_PLUGIN_PATH", "GLFW_LIBRARY",
+                              "VISPA_PYTHON", "VISUAL_TOOLKIT_PYTHON"})}
+    env["PYTHONNOUSERSITE"] = "1"
+    completed = subprocess.run(
+        command, stdin=subprocess.DEVNULL, capture_output=True, text=True,
+        timeout=180, shell=False, env=env, cwd=tempfile.gettempdir(),
+    )
+    if completed.returncode != 0:
+        diagnostic = (completed.stderr or completed.stdout or "no diagnostic").strip()
+        raise RuntimeError(
+            f"3D SWC worker exited with status {completed.returncode}: {diagnostic[-4000:]}")
+    receipt = Path(plan["receipt"])
+    image = Path(plan["snapshot_png"])
+    if not image.is_file() or not receipt.is_file():
+        raise RuntimeError("3D SWC worker did not create both the PNG and receipt")
+    payload = json.loads(receipt.read_text(encoding="utf-8"))
+    if payload.get("status") != "rendered_candidate":
+        raise RuntimeError(f"Unexpected 3D SWC receipt status: {payload.get('status')!r}")
+    if payload.get("output_png_sha256") != _sha256(image):
+        raise RuntimeError("3D SWC snapshot hash does not match its receipt")
+    return payload
 
 
 def _settings_argv(settings: dict) -> list[str]:

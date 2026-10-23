@@ -1,6 +1,6 @@
 """Bounded command line for one local VisPa review render or montage.
 
-Version: 1.11.0.dev10 (local/unreleased)
+Version: 1.11.0.dev11 (local/unreleased)
 Last updated: 2026-10-23
 Change history: CHANGELOG.md
 """
@@ -186,13 +186,15 @@ def _render(args):
             panel["role"] = args.role.title()
             panel["title"] = (f"{sample} | {neuron} | {args.role.title()} local array | "
                               f"{input_path.name} | frame: {args.coordinate_frame}")
-            panel["legend"] = [
-                ("patch", "gray" if args.role == "soma" else "green", source_label),
+            panel["legend"] = ([] if args.role == "soma" else [
+                ("patch", "green", source_label),
                 ("marker", tk.TARGET_MARKER_COLOR, marker_label),
-            ]
+            ])
             panel["notes"] = [f"Input shape ZYX: {tuple(volume.shape)}; "
                               f"spacing XYZ µm: {tuple(resolution)}."]
-            panel["axis_labels"] = ("X pixel index (column)", "Y pixel index (row)")
+            panel["axis_labels"] = (
+                None if args.role == "soma"
+                else ("X pixel index (column)", "Y pixel index (row)"))
             rendered = Path(tool.plot_tri_plot([panel], neuron, output_dir=temp_dir,
                                                suffix=args.role, legend=True))
             tool.close()
@@ -215,8 +217,10 @@ def _render(args):
             "render_labels": {
                 "panel_title": panel["title"],
                 "legend_header_role": panel["role"],
-                "x_axis": panel["axis_labels"][0],
-                "y_axis": panel["axis_labels"][1],
+                "x_axis": (panel["axis_labels"][0]
+                           if panel["axis_labels"] is not None else None),
+                "y_axis": (panel["axis_labels"][1]
+                           if panel["axis_labels"] is not None else None),
                 "legend": panel["legend"],
             },
             "status": "rendered_candidate",

@@ -1,7 +1,7 @@
 # VisPa — Visual Projectome Analysis tool
 
 VisPa reviews macaque neuron and microscopy data configured by the DEB lab.
-The current `simplified` candidate is **1.11.0.dev10**. It is a Python package
+The current `simplified` candidate is **1.11.0.dev11**. It is a Python package
 inside a Conda environment; `vispa` is a pip-generated Python launcher, not a
 separately packaged application binary.
 
@@ -128,10 +128,14 @@ vispa gui
 1. Wait for **VisPa data check**. A ready profile shows a check mark and the
    resolved location for every required resource.
 2. Confirm the Sample ID and Neuron ID, or open **Neuron list** and select one.
-3. Click **Load & Auto-Fill Soma**.
-4. Click **Render** and wait for the progress bar to finish.
-5. Review **Soma**, **Context**, **Sagittal** and **TrioPlot**.
-6. Use **3D brain view** for the processed neuron; use **fnt-tracer** for the
+3. A valid Sample ID and Neuron ID trigger the Soma lookup automatically. The
+   status bar reports **Neuron: found**, **not found**, or a lookup error and
+   shows the portal region when known.
+4. Click **Render** after the coordinates appear, and wait for the progress bar
+   to finish.
+5. Review **Soma**, **Context**, **Sagittal**, **TrioPlot** and **3D SWC**. The
+   **3D SWC** tab renders the current processed neuron on the template mesh.
+6. Use **3D brain view** for the interactive viewer; use **fnt-tracer** for the
    matching annotation project.
 7. Use **Check data** at any time to repeat the readiness checklist.
 
@@ -167,16 +171,17 @@ New standalone run receipts, builds and candidate outputs live under `D:/VisPa/w
 
 VisPa includes a live per-sample IONData neuron list for the configured lab intranet and review panels for configured local microscopy resources. The live list is fetched from the neuron API; image cubes, raw SWCs, and microscopy files use separate configured hosts or shares. The package contains only server addresses and candidate sample-resource links, not source data, credentials, or local project tools. These links and checksums do not establish current share availability or scientific acceptance.
 
-This checkout is **1.11.0.dev10, without a release tag**. It preserves the
+This checkout is **1.11.0.dev11, without a release tag**. It preserves the
 existing rendering and source-verification algorithms while removing the
-retired `Visual_toolkit` compatibility namespace. The DS00 sagittal panel
-retains its two documented axis hypotheses and its manifest, hash, geometry,
-and source checks; those hypotheses remain candidates pending independent
-anatomical validation. No study data, credentials, or private source files are
-included; the package profile declares server endpoints and ten known sample
-mappings without copying images or SWCs. `extraction_manifest.json` records the
-historical extraction snapshot and is excluded from source distributions. The
-historical dev6 receipt does not verify this dev10 candidate.
+retired `Visual_toolkit` compatibility namespace. The DS00 sagittal panel now
+shows one provisional soma-location marker without A/B raw-SWC traces; its
+manifest, hash, geometry, and source checks remain. Marker placement still
+requires independent anatomical validation. No study data, credentials, or
+private source files are included; the package profile declares server
+endpoints and ten known sample mappings without copying images or SWCs.
+`extraction_manifest.json` records the historical extraction snapshot and is
+excluded from source distributions. The historical dev6 receipt does not
+verify this dev11 candidate.
 
 
 The supported Windows route is Conda plus `python -m`. Keep the VisPa environment
@@ -366,7 +371,7 @@ Passing `--output` selects the packaged same-intranet template; it never overwri
 
 All lab server addresses and source roots live in the editable profile. In the packaged profile, each sample's `ds00_relative` is resolved under `defaults.ds00_root`, and `sources.dataset_manifest_relative` follows the same root. The `resample_5um` entries follow `defaults.resample_5um_root`. Changing these roots redirects the declared paths without editing ten per-sample UNC strings; existing profiles that use `ds00_processed` keep their original path meaning. Relative child paths must stay within their declared root. The sample filenames and SHA-256 declarations remain candidate provenance; changing a root does not verify that files or geometry match. The optional `vispa example` CLI owns its checksum-pinned public source defaults and does not add example fields to the GUI profile.
 
-For SSH sections, set `ssh_sample_id` alongside `ssh_remote_base`; that remote root is only eligible for the matching sample. `low_res_ssh_base=` is an explicit per-instance override. The GUI identity and auto-load behavior is selected from `visual_toolkit.default_sample`, `visual_toolkit.default_neuron`, and `visual_toolkit.auto_load`. The packaged profile starts on sample `251637` and `004.swc` with auto-load disabled; this sample has registered DS00 and 5 µm sources. Explicit CLI/constructor identities take precedence, and `--no-autoload` always disables startup loading. In the GUI, **Neuron list** uses the selected source and shows every API row for the exact sample ID, preserving zero-padded filenames and suffixes; selecting a row fills only the Neuron ID field. The source selector offers Live IONData explicitly alongside a configured dated CSV; on older CSV-only profiles, CSV remains selected unless you choose Live IONData. The compact note lists the eight INS-cohort AnimalIDs from the megatable and separately identifies sample 250432 / AnimalID 747; it does not classify individual neuron rows. **Render** (F5) produces the complete panel set (Soma, Context, Sagittal and TrioPlot); there is no per-panel selection. **Save outputs** beside Render chooses whether the run writes files (unticked = preview only), and **Save Soma NIfTI (.nii.gz)** in Saving controls the soma volume. The **3D brain view** action carries the current sample, neuron ID, and any loaded portal region to the isolated original OpenGL worker, using the configured processed SWC only. **fnt-tracer** uses an explicitly configured matching project first, then an exact VisPa native FNT cache project; its executable is needed only to launch the external tracer. There is no bulk action.
+For SSH sections, set `ssh_sample_id` alongside `ssh_remote_base`; that remote root is only eligible for the matching sample. `low_res_ssh_base=` is an explicit per-instance override. The GUI identity is selected from `visual_toolkit.default_sample` and `visual_toolkit.default_neuron`; the packaged profile starts on sample `251637` and `004.swc`, which has registered DS00 and 5 µm sources. A valid Sample/Neuron identity, including the configured startup identity, triggers automatic soma lookup unless `--no-autoload` is passed. The highlighted Sample-section status panel reports whether the neuron was found and its portal region. In the GUI, **Neuron list** uses the selected source and shows every API row for the exact sample ID, preserving zero-padded filenames and suffixes; selecting a row fills the Neuron ID and starts the same automatic lookup. The source selector offers Live IONData explicitly alongside a configured dated CSV; on older CSV-only profiles, CSV remains selected unless you choose Live IONData. The compact note lists the eight INS-cohort AnimalIDs from the megatable and separately identifies sample 250432 / AnimalID 747; it does not classify individual neuron rows. **Render** (F5) produces the complete panel set (Soma, Context, Sagittal and TrioPlot); there is no per-panel selection. **Save outputs** beside Render chooses whether the run writes files (unticked = preview only), and **Save Soma NIfTI (.nii.gz)** in Saving controls the soma volume. The **3D brain view** action carries the current sample, neuron ID, and any loaded portal region to the isolated original OpenGL worker, using the configured processed SWC only. **fnt-tracer** uses an explicitly configured matching project first, then an exact VisPa native FNT cache project; its executable is needed only to launch the external tracer. There is no bulk action.
 
 Per-sample `ds00_expected_geometry` declares the expected `shape_ijk`,
 `spacing_mm_ijk`, and `affine_diag` for validation and provenance. A configured
@@ -434,7 +439,7 @@ The optional **3D brain view** action uses `sources.brain_view.mesh_path` and `p
 
 `vispa.sources.IONData()` reads the configured local SWC cache first. A project can register a fallback implementing `getRawNeuronTreeByID(sample_id, neuron_id)` using `set_iondata_provider_factory(factory)`. Without a registered factory, setting `sources.http_host` and `sources.raw_swc_base` enables the built-in portal fetch: it reads the sample's `project_id` from the portal and downloads `<project>/<sample>/swc_raw/<neuron>` into `sources.legacy_raw_swc_root`. The returned tree protocol exposes `root.x/y/z`, `root.xyz`, `points`, and iterable `edges` whose `.data` contains points with `.x/y/z` attributes. The local parser rejects malformed, disconnected, cyclic, and missing-parent trees.
 
-The processed-DS sagittal implementation requires a resolved dataset manifest, `defaults.ds00_root`, a configured per-sample image path and checksum, and local SWC input or cache. It records source identity and geometry. Its A/B mapping choices remain unresolved; successful loading or rendering is not anatomical acceptance.
+The processed-DS sagittal implementation requires a resolved dataset manifest, `defaults.ds00_root`, a configured per-sample image path and checksum, and local SWC input or cache. It records source identity and geometry. The current panel shows only the provisional soma-location marker, without A/B trace overlays; marker placement remains unvalidated, and successful loading or rendering is not anatomical acceptance.
 
 ## API and projectome integration
 

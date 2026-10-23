@@ -1,7 +1,7 @@
 """
 vispa.py - Macaque Brain Hybrid-Resolution Visualization Toolkit
 
-Version: 1.11.0.dev10 (local/unreleased)
+Version: 1.11.0.dev11 (local/unreleased)
 Last updated: 2026-10-23
 Change history: ../../CHANGELOG.md
 Status: candidate (visual review pending)
@@ -1498,7 +1498,8 @@ class VisPa:
             img_final, sx, sy, resolution, neuron_id, suffix,
             volume_3d.shape[0], cmap='gray', marker_color=TARGET_MARKER_COLOR,
             soma_region=soma_region, soma_coords=soma_coords,
-            output_dir=output_dir, scale_bar_um=scale_bar_um)
+            output_dir=output_dir, scale_bar_um=scale_bar_um,
+            show_axes=False, show_legend=False)
         return {
             'display': img_final, 'cmap': 'gray',
             'resolution_um': (float(resolution[0]), float(resolution[1])),
@@ -1509,11 +1510,8 @@ class VisPa:
             'markers': [(sx, sy, TARGET_MARKER_COLOR,
                          20.0 if resolution[0] < 1.0 else 200.0, 'Target Soma')],
             'edge_segments': [], 'traces': [],
-            'axis_labels': ('Source X (crop pixel index; axis unvalidated)',
-                            'Source Y (crop pixel index; axis unvalidated)'),
-            'legend': [('patch', 'gray', 'soma grayscale MIP · 0.65 µm'),
-                       ('marker', TARGET_MARKER_COLOR,
-                        'soma location (box + cross, not to scale)')],
+            'axis_labels': None,
+            'legend': [],
             'notes': ['Legacy SomaBlock gamma 0.5; no SWC overlay.'],
             'role': 'Soma (high-res MIP · 0.65 µm)',
             'suffix': suffix,
@@ -1643,18 +1641,22 @@ class VisPa:
                 segments, colors='red', linewidths=0.7, alpha=0.9, zorder=4))
         return segments
 
-    def _save_plot(self, img_data, sx, sy, resolution, neuron_id, suffix, z_slices, 
-                   cmap, marker_color, soma_region=None, soma_coords=None, output_dir=None, scale_bar_um=30):
+    def _save_plot(self, img_data, sx, sy, resolution, neuron_id, suffix, z_slices,
+                   cmap, marker_color, soma_region=None, soma_coords=None,
+                   output_dir=None, scale_bar_um=30, show_axes=True,
+                   show_legend=True):
         fig, ax = plt.subplots(figsize=(12, 12), facecolor='black')
         ax.imshow(img_data, cmap=cmap, origin='upper')
         return self._finalize_plot(fig, ax, sx, sy, resolution, neuron_id, suffix,
                                    z_slices, marker_color, soma_region=soma_region,
                                    soma_coords=soma_coords, output_dir=output_dir,
-                                   scale_bar_um=scale_bar_um)
+                                   scale_bar_um=scale_bar_um, show_axes=show_axes,
+                                   show_legend=show_legend)
 
     def _finalize_plot(self, fig, ax, sx, sy, resolution, neuron_id, suffix, z_slices,
                        marker_color, soma_region=None, soma_coords=None,
-                       output_dir=None, scale_bar_um=30, extra_title=None, legend_entries=None):
+                       output_dir=None, scale_bar_um=30, extra_title=None,
+                       legend_entries=None, show_axes=True, show_legend=True):
         h, w = ax.images[0].get_size()
         
         target_dir = output_dir if output_dir else self.output_dir
@@ -1681,14 +1683,21 @@ class VisPa:
             title = f"{title} | {extra_title}"
 
         ax.set_title(title, color='white', fontsize=12)
-        ax.set_xlabel('Source X (crop pixel index; axis unvalidated)', color='white', fontsize=9)
-        ax.set_ylabel('Source Y (crop pixel index; axis unvalidated)', color='white', fontsize=9)
-        ax.tick_params(colors='white', labelsize=8)
-        for spine in ax.spines.values():
-            spine.set_visible(False)
-        self._draw_role_legend(fig, ax, legend_entries or [
-            ('patch', 'gray', 'soma grayscale MIP'),
-            ('marker', marker_color or TARGET_MARKER_COLOR, 'soma location (box + cross, not to scale)')])
+        if show_axes:
+            ax.set_xlabel('Source X (crop pixel index; axis unvalidated)',
+                          color='white', fontsize=9)
+            ax.set_ylabel('Source Y (crop pixel index; axis unvalidated)',
+                          color='white', fontsize=9)
+            ax.tick_params(colors='white', labelsize=8)
+            for spine in ax.spines.values():
+                spine.set_visible(False)
+        else:
+            ax.axis('off')
+        if show_legend:
+            self._draw_role_legend(fig, ax, legend_entries or [
+                ('patch', 'gray', 'soma grayscale MIP'),
+                ('marker', marker_color or TARGET_MARKER_COLOR,
+                 'soma location (box + cross, not to scale)')])
         
         # Build filename with soma region (coordinates NOT in filename)
         # Sanitize region name to prevent path issues
@@ -2475,7 +2484,7 @@ def render_sagittal_context(
     *,
     processed_path: str | Path | None = None,
     swc_path: str | Path | None = None,
-    mappings: tuple[str, ...] = ("A", "B"),
+    mappings: tuple[str, ...] = ("A",),
     slab_thickness_mm: float = 0.1,
     crop_half_width_mm: float | None = None,
     source: SagittalDSContext | None = None,
@@ -2520,7 +2529,7 @@ def render_sagittal_context(
         if renamed:
             produced.replace(target)
         provenance = dict(prepared["provenance"])
-        provenance["status"] = "candidate_geometry_rendered_axes_unvalidated"
+        provenance["status"] = "geometry_rendered_mapping_unvalidated"
         provenance["plot"] = {
             "style": "visual_toolkit.plot_sagittal_context",
             "output_png": str(target),
@@ -2580,7 +2589,7 @@ def prepare_sagittal_panel(
     *,
     processed_path: str | Path | None = None,
     swc_path: str | Path | None = None,
-    mappings: tuple[str, ...] = ("A", "B"),
+    mappings: tuple[str, ...] = ("A",),
     slab_thickness_mm: float = 0.1,
     crop_half_width_mm: float | None = None,
     scale_bar_um: float | None = None,
@@ -2592,11 +2601,11 @@ def prepare_sagittal_panel(
 
     Returns ``{"panel": ..., "provenance": ...}``. ``panel`` follows the panel
     schema documented in ``vispa.toolkit`` and is drawn
-    by ``vispa.plot_sagittal_context`` / ``plot_tri_plot``; the two
-    candidate SWC mappings stay separate traces. This prepares data only: the
-    processed DS image, the raw SWC and every mapping remain unchanged. The
-    default panel is the full constant-i plane, which keeps both candidate somas
-    inside the same view; pass ``crop_half_width_mm`` to zoom on candidate A.
+    by ``vispa.plot_sagittal_context`` / ``plot_tri_plot``. The panel shows one
+    soma-location marker and no raw-SWC trace: ``mappings[0]`` selects the
+    provisional placement used for that marker. This prepares data only; the
+    processed DS image and raw SWC remain unchanged. The default panel is the
+    full constant-i plane; pass ``crop_half_width_mm`` to zoom on the marker.
     """
     sample_id = str(sample_id)
     neuron_id = str(neuron_id).removesuffix(".swc")
@@ -2652,20 +2661,19 @@ def prepare_sagittal_panel(
     # display then flips k so the NIfTI k axis points up in the panel.
     full_display = np.flipud(normalized.T)
 
-    # The two candidate mappings place the soma up to ~18 mm apart, so the default
-    # view is the whole constant-i plane. An explicit crop is centred on candidate A.
-    candidate_jk = [_out_ijk(root_xyz, mapping, geometry)[1:] for mapping in mappings]
+    soma_mapping = mappings[0]
+    soma_j, soma_k = _out_ijk(root_xyz, soma_mapping, geometry)[1:]
     if crop_half_width_mm is None:
         j0, j1, k0, k1 = 0, shape_j, 0, shape_k
         center_j, center_k = shape_j / 2.0, shape_k / 2.0
         view_note = f"full constant-i plane {shape_j}x{shape_k} voxels"
     else:
-        center_j, center_k = float(candidate_jk[0][0]), float(candidate_jk[0][1])
+        center_j, center_k = float(soma_j), float(soma_k)
         half_j = int(math.ceil(crop_half_width_mm / spacing_j_mm))
         half_k = int(math.ceil(crop_half_width_mm / spacing_k_mm))
         j0, j1 = max(0, int(center_j) - half_j), min(shape_j, int(center_j) + half_j + 1)
         k0, k1 = max(0, int(center_k) - half_k), min(shape_k, int(center_k) + half_k + 1)
-        view_note = f"{crop_half_width_mm:g} mm crop centred on candidate A"
+        view_note = f"{crop_half_width_mm:g} mm crop centred on the soma marker"
     if j1 <= j0 or k1 <= k0:
         raise ValueError(f"Soma crop is empty for j=[{j0},{j1}) k=[{k0},{k1})")
     display = full_display[shape_k - k1:shape_k - k0, j0:j1]
@@ -2673,54 +2681,15 @@ def prepare_sagittal_panel(
     low_i = center_i - (slab_thickness_mm / 2) / spacing_i_mm
     high_i = center_i + (slab_thickness_mm / 2) / spacing_i_mm
     markers: list[tuple[float, float, str, float | None, str]] = []
-    traces: list[tuple[np.ndarray, str, str, float, float]] = []
-    mapping_meta: list[dict[str, Any]] = []
-    for mapping in mappings:
-        color = TRACE_COLORS.get(mapping, "#ff8c00")
-        pieces: list[tuple[tuple[float, float], tuple[float, float]]] = []
-        for node in nodes:
-            parent = by_id.get(node["parent"])
-            if parent is None:
-                continue
-            segment = _clip_segment_i(_out_ijk(node["xyz_um"], mapping, geometry),
-                                      _out_ijk(parent["xyz_um"], mapping, geometry), low_i, high_i)
-            if segment is None:
-                continue
-            (aj, ak), (bj, bk) = segment
-            if max(aj, bj) < j0 or min(aj, bj) > j1 or max(ak, bk) < k0 or min(ak, bk) > k1:
-                continue
-            pieces.append(((aj - j0, (k1 - 1) - ak), (bj - j0, (k1 - 1) - bk)))
-        if pieces:
-            # One polyline with NaN breaks: a single draw call for the whole trace.
-            stacked = np.full((3 * len(pieces) - 1, 2), np.nan)
-            for index, (start, stop) in enumerate(pieces):
-                stacked[3 * index] = start
-                stacked[3 * index + 1] = stop
-            # Dashed so the candidate traces stay distinguishable from the solid
-            # red raw-SWC edges drawn in the WideField panel of the same figure.
-            traces.append((stacked, color, "dashed", 1.2, 0.9))
-        soma_j, soma_k = _out_ijk(root_xyz, mapping, geometry)[1:]
-        soma_inside = bool(j0 <= soma_j < j1 and k0 <= soma_k < k1)
-        if soma_inside and not markers:
-            # The same cyan/turquoise target marker as the Soma and Context panels:
-            # an open square plus a cross, both centred on the exact mapped position.
-            # Only the drawn size grows so the target reads at whole-hemisphere zoom;
-            # the unresolved B candidate keeps its dashed trace.
-            style = _marker_style()
-            markers.append((
-                soma_j - j0, (k1 - 1) - soma_k, style["color"], None, "Target Soma",
-                {"min_px": style["min_px"] * 2, "crosshair_px": style["crosshair_px"],
-                 "label_fontsize": style["label_fontsize"] + 1,
-                 "label_offset_px": style["label_offset_px"]},
-            ))
-        mapping_meta.append({
-            "mapping": mapping, "mapping_name": MAPPINGS[mapping]["name"],
-            "basis": MAPPINGS[mapping]["basis"],
-            "equation_output_ijk": MAPPINGS[mapping]["equation_output_ijk"],
-            "soma_output_jk": [round(float(soma_j), 3), round(float(soma_k), 3)],
-            "soma_inside_crop": soma_inside,
-            "trace_edges_in_crop_and_slab": len(pieces),
-        })
+    soma_inside = bool(j0 <= soma_j < j1 and k0 <= soma_k < k1)
+    if soma_inside:
+        style = _marker_style()
+        markers.append((
+            soma_j - j0, (k1 - 1) - soma_k, style["color"], None, "Target Soma",
+            {"min_px": style["min_px"] * 2, "crosshair_px": style["crosshair_px"],
+             "label_fontsize": style["label_fontsize"] + 1,
+             "label_offset_px": style["label_offset_px"]},
+        ))
 
     hemisphere = _hemisphere_from_index(root_xyz, geometry)
     declared_name = {"L": "Left", "LEFT": "Left", "R": "Right", "RIGHT": "Right"}.get(
@@ -2736,30 +2705,22 @@ def prepare_sagittal_panel(
         "scale_bar_um": None if scale_bar_um is None else float(scale_bar_um),
         "markers": markers,
         "edge_segments": [],
-        "traces": traces,
+        "traces": [],
         "axis_labels": (f"NIfTI j | {spacing_j_mm:.2f} mm/voxel",
                         f"NIfTI k | {spacing_k_mm:.2f} mm/voxel"),
-        "legend": ([("patch", "#9a9a9a", "DS00 N4 intensity (gray)")]
-                   + [("line", TRACE_COLORS.get(mapping, "#ff8c00"),
-                       MAPPINGS[mapping].get("short_label", f"trace + soma {mapping}"),
-                       "dashed")
-                      for mapping in mappings]
-                   + [("marker", _marker_style()["color"],
-                       "soma location: box + cross (at candidate A)")]),
+        "legend": [("patch", "#9a9a9a", "DS00 N4 intensity (gray)")],
         "notes": [f"Whole-plane p1–p99.5 gray; {view_note}; {slab_thickness_mm:.2f} mm i slab; "
-                  "target square and crosshair are centred on the exact candidate-A position "
-                  "(drawn larger for visibility, not to scale); candidate B position remains "
-                  "unresolved."
+                  "target square and crosshair mark the provisional soma position "
+                  "(drawn larger for visibility, not to scale); no raw-SWC trace is drawn."
                   + (f" Hemisphere label follows the volume i convention ({'large' if hemisphere == 'Left' else 'small'} i = "
                      f"{hemisphere}); workbook Soma_Side comparison is recorded in the manifest, "
                      "and laterality is not visually confirmed." if hemisphere else "")]
-                  + ([f"candidate {row['mapping']} soma lies outside this panel"]
-                     if not all(row["soma_inside_crop"] for row in mapping_meta) else []),
+                  + ([] if soma_inside else ["the soma marker lies outside this panel"]),
         "role": "Sagittal context (DS00 N4)",
         "suffix": "Sagittal",
     }
     provenance = {
-        "status": "candidate_geometry_rendered_axes_unvalidated",
+        "status": "geometry_rendered_mapping_unvalidated",
         "sample_id": sample_id, "monkey_id": config["monkey"], "neuron_id": neuron_id,
         "processed_ds00": ds_record,
         "nifti_geometry": geometry,
@@ -2772,7 +2733,14 @@ def prepare_sagittal_panel(
         "crop_jk": [j0, j1, k0, k1],
         "crop_center_jk": [round(center_j, 3), round(center_k, 3)],
         "display_percentiles_positive": [1.0, 99.5],
-        "mapping_hypotheses": mapping_meta,
+        "soma_mapping": {
+            "mapping": soma_mapping,
+            "mapping_name": MAPPINGS[soma_mapping]["name"],
+            "basis": MAPPINGS[soma_mapping]["basis"],
+            "equation_output_ijk": MAPPINGS[soma_mapping]["equation_output_ijk"],
+            "soma_output_jk": [round(float(soma_j), 3), round(float(soma_k), 3)],
+            "soma_inside_crop": soma_inside,
+        },
         "hemisphere": {
             "derived_from_i": hemisphere,
             "declared_workbook_side": declared_side,
@@ -2785,7 +2753,7 @@ def prepare_sagittal_panel(
         "panel_style": "vispa review panel style (Soma/Context/Sagittal)",
         "limits": [
             "The live CH00DS manifest and image hash bind the processed source; this confirms source identity, not anatomical correctness.",
-            "A and B reuse the two documented NRRD/SWC axis hypotheses; neither is accepted by in-bounds or signal plausibility alone.",
+            "The single soma marker uses a provisional NRRD/SWC mapping; it is not accepted by in-bounds or signal plausibility alone.",
             "The constant-i plane is a nominal sagittal candidate; SWC-to-image origin and anatomical laterality remain unvalidated.",
             "Panel markers are enlarged for visibility and are not to scale; the white bar carries the physical scale.",
             "Acquisition dates are unknown. No transform, resampling, SWC edit, or scientific acceptance is implied.",

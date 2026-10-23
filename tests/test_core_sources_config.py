@@ -1,6 +1,6 @@
 """Focused regression checks for the standalone extraction seams.
 
-Version: 1.11.0.dev10 (local/unreleased)
+Version: 1.11.0.dev11 (local/unreleased)
 Last updated: 2026-10-23
 Change history: ../CHANGELOG.md
 """
@@ -1223,7 +1223,7 @@ class MarkerLabelPresentationTests(unittest.TestCase):
             toolkit._parse_setting_value('marker.label_mode', 'unknown', 'none')
         self.assertEqual(toolkit._parse_setting_value('marker.label_mode', 'short', 'none'), 'short')
 
-    def test_standalone_role_legends_clear_index_labels_and_preserve_image_extent(self):
+    def test_soma_is_furniture_free_while_context_retains_role_explanation(self):
         import matplotlib.pyplot as plt
         import numpy as np
         from vispa import toolkit
@@ -1235,17 +1235,29 @@ class MarkerLabelPresentationTests(unittest.TestCase):
                 with mock.patch.object(plt.Figure, 'savefig'), mock.patch.object(plt, 'close'):
                     soma = tool.plot_soma_block(volume, (0, 0, 0), (1, 1, 1), (60, 60, 1), '001')
                     figures = [plt.gcf()]
-                    tool.plot_widefield_context(volume, (0, 0, 0), (5, 5, 3), (300, 300, 3), '001')
+                    context = tool.plot_widefield_context(
+                        volume, (0, 0, 0), (5, 5, 3), (300, 300, 3), '001')
                     figures.append(plt.gcf())
-                    tool.plot_sagittal_context(dict(soma), '001')
+                    tool.plot_sagittal_context(dict(context), '001')
                     figures.append(plt.gcf())
-                for fig in figures:
+                soma_fig = figures[0]
+                soma_fig.canvas.draw()
+                self.assertEqual(len(soma_fig.legends), 0)
+                self.assertFalse(soma_fig.axes[0].axison)
+                self.assertEqual(
+                    tuple(soma_fig.axes[0].images[0].get_extent()),
+                    (-0.5, 119.5, 119.5, -0.5))
+
+                for fig in figures[1:]:
                     fig.canvas.draw()
                     renderer = fig.canvas.get_renderer()
                     self.assertEqual(len(fig.legends), 1)
-                    self.assertGreater(fig.axes[0].get_tightbbox(renderer).y0,
-                                       fig.legends[0].get_window_extent(renderer).y1)
-                    self.assertEqual(tuple(fig.axes[0].images[0].get_extent()), (-0.5, 119.5, 119.5, -0.5))
+                    self.assertGreater(
+                        fig.axes[0].get_tightbbox(renderer).y0,
+                        fig.legends[0].get_window_extent(renderer).y1)
+                    self.assertEqual(
+                        tuple(fig.axes[0].images[0].get_extent()),
+                        (-0.5, 119.5, 119.5, -0.5))
                     self.assertIn('Source X', fig.axes[0].get_xlabel())
             finally:
                 for fig in locals().get('figures', []):

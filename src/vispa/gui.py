@@ -1,7 +1,7 @@
 """
 vispa_gui.py - GUI for NeuroVis Visual Toolkit
 
-Version: 1.11.0.dev10 (local/unreleased)
+Version: 1.11.0.dev11 (local/unreleased)
 Last updated: 2026-10-23
 Change history: ../../CHANGELOG.md
 Status: candidate (visual review pending)
@@ -40,7 +40,7 @@ USAGE NOTES:
     3. Basic Workflow:
         - Sample ID (e.g., '251637') and Neuron ID (e.g., '003.swc') are pre-filled
         - If auto-load succeeded, coordinates are already populated
-        - Click 'Load & Auto-Fill Soma' to manually reload or load different neuron
+    - Enter a valid Sample ID and Neuron ID to trigger soma lookup automatically
         - Adjust the Soma Plot / Context Plot settings if needed
         - Tick the panels in the Plot lane and press 'Render' (F5); tick the
           review-figure option only when you want the combined trio as well
@@ -146,8 +146,8 @@ from dataclasses import dataclass
 from ._version import __version__
 
 EMPTY_PREVIEW_TEXT = (
-    "No figure yet\n\nEnter Sample ID and Neuron ID, click Load & Auto-Fill Soma, "
-    "then choose plots and click Render."
+    "No figure yet\n\nEnter Sample ID and Neuron ID; soma coordinates load "
+    "automatically. Then click Render."
 )
 
 try:  # preview pane only; the rest of the GUI works without Pillow
@@ -406,7 +406,7 @@ class NeuroVisGUI:
     
     def __init__(self, root, sample_id=None, neuron_id=None,
                  auto_load=None, review_session=None, watch_session=False,
-                 config_path=None):
+                 config_path=None, auto_fill_on_identity=True):
         """Initialize GUI window and widgets."""
         from .dataset_config import load
         configuration = load(config_path)
@@ -428,9 +428,9 @@ class NeuroVisGUI:
         # === 1. Processing Variables ===
         self.sample_id = tk.StringVar(value=sample_id)
         self.neuron_id = tk.StringVar(value=neuron_id)
-        self.x_coord = tk.StringVar(value="0")
-        self.y_coord = tk.StringVar(value="0")
-        self.z_coord = tk.StringVar(value="0")
+        self.x_coord = tk.StringVar(value="")
+        self.y_coord = tk.StringVar(value="")
+        self.z_coord = tk.StringVar(value="")
         self.grid_radius = tk.IntVar(value=1)
         # Context/widefield defaults come from the shared review settings so the GUI
         # and the bulk runners cannot disagree.
@@ -493,7 +493,10 @@ class NeuroVisGUI:
         self.ion = None
         self._operation_running = False
         self._autofill_identity = None
-        self._no_autoload = not auto_load
+        self._neuron_lookup_state = "idle"
+        self._neuron_lookup_error = None
+        self._auto_fill_on_identity = bool(auto_fill_on_identity)
+        self._soma_autofill_after = None
         self.review_session_path = review_session.path if review_session else None
         self.watch_review_session = bool(watch_session)
         self._review_event_key = review_session.key if review_session else None
@@ -520,9 +523,11 @@ class NeuroVisGUI:
         self.neuron_id.trace_add('write', lambda *_: self._refresh_portal_region())
         self._refresh_portal_region()
         
-        # Start only after the form has been built; dry-run never reaches this path.
-        if auto_load and sample_id and neuron_id:
-            self.root.after(500, self.auto_load_default_neuron)
+        # Start the identity lookup before the later resource-check callback so
+        # the sample-section status and coordinates populate without waiting
+        # for the data-check prompt to close.
+        if self._auto_fill_on_identity and sample_id and neuron_id:
+            self.root.after(500, self._auto_fill_current_identity)
         if self.watch_review_session:
             self.root.after(500, self._poll_review_session)
     
@@ -543,14 +548,47 @@ class NeuroVisGUI:
 
     def _on_identity_change(self, *args):
         """Clear coordinates when identity changes, preventing silent stale reuse."""
+        after_id = getattr(self, '_soma_autofill_after', None)
+        if after_id:
+            try:
+                self.root.after_cancel(after_id)
+            except Exception:
+                pass
+            self._soma_autofill_after = None
         identity = (self.sample_id.get().strip(), self.neuron_id.get().strip())
         if identity != self._selected_identity:
             self._selected_identity = identity
             self._autofill_identity = None
+            self._neuron_lookup_state = "waiting" if all(identity) else "idle"
+            self._neuron_lookup_error = None
             self.x_coord.set("")
             self.y_coord.set("")
             self.z_coord.set("")
             self._clear_identity_preview()
+            self._update_neuron_status()
+            if getattr(self, '_auto_fill_on_identity', True):
+                try:
+                    normalize_review_identity(*identity)
+                except ValueError:
+                    return
+                self._soma_autofill_after = self.root.after(
+                    650, self._auto_fill_current_identity)
+
+    def _auto_fill_current_identity(self):
+        """Fetch soma coordinates after a valid identity stops changing."""
+        self._soma_autofill_after = None
+        identity = (self.sample_id.get().strip(), self.neuron_id.get().strip())
+        try:
+            normalize_review_identity(*identity)
+        except ValueError:
+            return
+        if self._operation_running:
+            self._soma_autofill_after = self.root.after(
+                350, self._auto_fill_current_identity)
+            return
+        if self._autofill_identity == identity:
+            return
+        self.load_and_autofill(silent_success=True, silent_failure=True)
 
     def _clear_identity_preview(self):
         """Drop any prior identity's displayed and cached panel references."""
@@ -647,17 +685,19 @@ class NeuroVisGUI:
         body = self._card(inner, "Sample")
         self._field(body, "Sample ID", self.sample_id, 0, width=16)
         self._field(body, "Neuron ID", self.neuron_id, 1, width=16)
-        self.portal_region_var = tk.StringVar(value="Portal region: —")
-        tk.Label(body, textvariable=self.portal_region_var, bg=C['card'],
-                 fg=C['muted'], font=('Segoe UI', 9), anchor='w').grid(
-                     row=2, column=0, columnspan=3, sticky='w', pady=(P(2), P(2)))
-        self._flat_button(body, "Load & Auto-Fill Soma", self.load_and_autofill,
-                          primary=True).grid(
-            row=3, column=0, columnspan=3, sticky='ew', pady=(P(8), P(2)))
+        self.neuron_status_var = tk.StringVar(value="Neuron: not loaded")
+        status_box = tk.Frame(body, bg=C['accent_soft'], highlightthickness=1,
+                              highlightbackground=C['border'])
+        status_box.grid(row=2, column=0, columnspan=3, sticky='ew',
+                        pady=(P(4), P(2)))
+        tk.Label(status_box, textvariable=self.neuron_status_var,
+                 bg=C['accent_soft'], fg=C['text'], anchor='w',
+                 font=('Segoe UI', 9, 'bold'), justify='left',
+                 wraplength=P(270)).pack(fill='x', padx=P(8), pady=P(5))
         self.neuron_catalog_open_button = self._flat_button(
             body, "Neuron list", self._open_neuron_catalog, primary=True)
         self.neuron_catalog_open_button.grid(
-            row=4, column=0, columnspan=3, sticky='ew', pady=(P(4), P(2)))
+            row=3, column=0, columnspan=3, sticky='ew', pady=(P(4), P(2)))
 
         # Review steps: one row per stage, all six visible without scrolling.
         steps_body = self._card(inner, "Step guide")
@@ -683,9 +723,9 @@ class NeuroVisGUI:
                 '<MouseWheel>',
                 lambda event: steps_canvas.yview_scroll(int(-event.delta / 120), 'units'))
         steps = (
-            ("LOAD", "Load & Auto-Fill Soma",
-             "Or pick from Neuron list. Reads the raw SWC root; if the neuron is "
-             "absent locally, it is fetched from the portal into the VisPa download cache."),
+            ("IDENTITY", "Sample + Neuron",
+             "A valid identity loads the raw SWC root automatically. The status "
+             "bar reports whether the neuron was found and its portal region."),
             ("TARGET", "Target soma coordinate (µm)",
              "The SWC root fills X/Y/Z in micrometres. Edit the triplet if the "
              "marker sits off the soma."),
@@ -863,7 +903,7 @@ class NeuroVisGUI:
         tab_grid.pack(side='left')
         for index, (role, label) in enumerate((('Soma', 'Soma'), ('Context', 'Context'),
                                                ('Sagittal', 'Sagittal'), ('TrioPlot', 'TrioPlot'),
-                                               ('PublicNeuron', 'Public SWC'))):
+                                               ('SWC3D', '3D SWC'))):
             button = tk.Button(tab_grid, text=label,
                                command=lambda r=role: self._show_role(r),
                                relief='flat', bd=0, bg=C['card'], fg=C['text'],
@@ -898,7 +938,7 @@ class NeuroVisGUI:
         # Bottom action bar
         actions = tk.Frame(self.root, bg=C['card'], highlightbackground=C['border'],
                            highlightthickness=1)
-        actions.grid(row=2, column=0, columnspan=2, sticky='ew')
+        actions.grid(row=3, column=0, columnspan=2, sticky='ew')
         action_row = tk.Frame(actions, bg=C['card'])
         action_row.pack(fill='x', padx=P(14), pady=P(10))
         render_button = self._flat_button(
@@ -930,7 +970,7 @@ class NeuroVisGUI:
         # Status strip
         strip = tk.Frame(self.root, bg=C['strip'], highlightbackground=C['border'],
                          highlightthickness=1)
-        strip.grid(row=3, column=0, columnspan=2, sticky='ew')
+        strip.grid(row=2, column=0, columnspan=2, sticky='ew')
         tk.Label(strip, textvariable=self.status_text, bg=C['strip'], fg=C['text'],
                  font=('Segoe UI', 9), anchor='w').pack(
                      side='left', padx=P(14), pady=P(5))
@@ -943,7 +983,11 @@ class NeuroVisGUI:
         self.root.update_idletasks()
         self.root.minsize(self._px(980), self._px(760))
         # Quick reload of already-rendered figures (also available as a button).
-        self.root.after(1500, lambda: self._reload_existing(quiet=True))
+        self.root.after(
+            1500,
+            lambda: self._reload_existing(
+                quiet=True, prompt=False, prompt_on_difference=False),
+        )
         self.root.after(700, self._start_resource_check)
 
     def _review_step(self, parent, row, number, name, headline, detail,
@@ -1275,6 +1319,11 @@ class NeuroVisGUI:
         if not sample_id or not neuron_id:
             self.update_status("Enter a sample and neuron ID before opening the template view")
             return
+        portal_region = self._current_portal_region(sample_id, neuron_id)
+        self.launch_template_brain_view(sample_id, neuron_id, portal_region)
+
+    def _current_portal_region(self, sample_id, neuron_id):
+        """Return the current cached catalog region when its snapshot is valid."""
         portal_region = ""
         snapshot = self._catalog_snapshot
         if (self._catalog_sample_id == sample_id and snapshot is not None
@@ -1282,7 +1331,7 @@ class NeuroVisGUI:
             portal_region = next((
                 row["portal_region"] for row in self._catalog_rows_by_iid.values()
                 if row["neuron_id"] == neuron_id), "")
-        self.launch_template_brain_view(sample_id, neuron_id, portal_region)
+        return portal_region
 
     def _on_fnt_tracer(self):
         """Open this neuron's exact FNT project beside the 3D view."""
@@ -1411,16 +1460,17 @@ class NeuroVisGUI:
         self.load_selected_catalog_row()
 
     def _refresh_portal_region(self):
-        """Show the configured catalog's region for the current neuron."""
+        """Resolve the configured catalog region for the current neuron."""
         sample = self.sample_id.get().strip()
         neuron = self.neuron_id.get().strip()
         if not sample or not neuron:
-            self.portal_region_var.set("Portal region: —")
+            self._update_neuron_status()
             return
         mapping = self._portal_region_cache.get(sample)
         if mapping is not None:
             self._apply_portal_region(neuron, mapping)
             return
+        self._update_neuron_status()
 
         def worker():
             try:
@@ -1430,9 +1480,7 @@ class NeuroVisGUI:
                     str(row["neuron_id"]): (row.get("portal_region") or "Unassigned")
                     for row in result["rows"]}
             except Exception as exc:
-                self._ui_call(
-                    self.portal_region_var.set,
-                    f"Portal region: unavailable ({exc})")
+                self._ui_call(self._set_neuron_status, f"Neuron: region unavailable ({exc})")
                 return
             self._ui_call(self._store_portal_regions, sample, mapping)
 
@@ -1444,12 +1492,35 @@ class NeuroVisGUI:
             self._apply_portal_region(self.neuron_id.get().strip(), mapping)
 
     def _apply_portal_region(self, neuron, mapping):
-        if not neuron:
-            self.portal_region_var.set("Portal region: —")
-        elif neuron in mapping:
-            self.portal_region_var.set(f"Portal region: {mapping[neuron]}")
+        self._update_neuron_status()
+
+    def _set_neuron_status(self, message):
+        variable = getattr(self, "neuron_status_var", None)
+        if variable is not None:
+            variable.set(message)
+
+    def _update_neuron_status(self):
+        """Show lookup state and portal region in the Sample-section status panel."""
+        sample = self.sample_id.get().strip()
+        neuron = self.neuron_id.get().strip()
+        if not sample or not neuron:
+            self._set_neuron_status("Neuron: not loaded")
+            return
+        mapping = self._portal_region_cache.get(sample) or {}
+        region = mapping.get(neuron)
+        region_text = f" · {region}" if region else ""
+        state = getattr(self, "_neuron_lookup_state", "idle")
+        if state == "found":
+            self._set_neuron_status(f"Neuron: found{region_text}")
+        elif state == "not_found":
+            self._set_neuron_status("Neuron: not found")
+        elif state == "error":
+            detail = getattr(self, "_neuron_lookup_error", None)
+            self._set_neuron_status(f"Neuron: lookup failed{(': ' + str(detail)) if detail else ''}")
+        elif state in {"checking", "waiting"}:
+            self._set_neuron_status(f"Neuron: {'checking' if state == 'checking' else 'waiting to load'}{region_text}")
         else:
-            self.portal_region_var.set("Portal region: not in catalog")
+            self._set_neuron_status(f"Neuron: not loaded{region_text}")
 
     def _refresh_dataset_sources(self):
         sample = self.sample_id.get().strip() or 'sample'
@@ -1584,8 +1655,8 @@ class NeuroVisGUI:
                 role = 'Sagittal'
             elif 'TriPlot' in name or 'PairPlot' in name:
                 role = 'TrioPlot'
-            elif name == 'public-macaque-neuron-morphology.png':
-                role = 'PublicNeuron'
+            elif name.endswith('_3D_SWC.png'):
+                role = 'SWC3D'
             else:
                 continue
             mapping[role] = os.path.abspath(path)
@@ -1619,7 +1690,7 @@ class NeuroVisGUI:
                     pass
         self.preview_files.update(mapping)
         self._refresh_preview_tabs()
-        for role in ('PublicNeuron', 'Soma', 'Context', 'Sagittal', 'TrioPlot'):
+        for role in ('SWC3D', 'Soma', 'Context', 'Sagittal', 'TrioPlot'):
             if role in mapping:
                 self._show_role(role)
                 break
@@ -1629,6 +1700,88 @@ class NeuroVisGUI:
         if path:
             self.current_role = role
             self.show_preview(path, role=role)
+        elif role == 'SWC3D':
+            self._render_swc3d()
+
+    def _render_swc3d(self):
+        """Render the current processed SWC on the configured template mesh."""
+        if self._operation_running:
+            messagebox.showwarning("Busy", "A VisPa operation is already running.")
+            return
+        sample = self.sample_id.get().strip()
+        neuron = self.neuron_id.get().strip()
+        if not sample or not neuron:
+            messagebox.showwarning("3D SWC", "Choose a sample and neuron first.")
+            return
+        portal_region = self._current_portal_region(sample, neuron)
+        save = bool(self.save_outputs.get())
+        folder = self.output_dir.get().strip()
+        if not folder:
+            folder = self._generate_default_path(sample)
+            self.output_dir.set(folder)
+        if save:
+            os.makedirs(folder, exist_ok=True)
+        else:
+            folder = os.path.join(
+                tempfile.gettempdir(), 'visual_toolkit_preview',
+                ''.join(ch if ch.isalnum() or ch in '-_.' else '_'
+                        for ch in f"{sample}_{neuron}"))
+            os.makedirs(folder, exist_ok=True)
+        snapshot = os.path.join(
+            folder,
+            f"{sample}_{neuron.removesuffix('.swc')}_{_stamp()}_{time.time_ns() % 1000000:06d}_3D_SWC.png")
+        self.update_status("3D SWC · rendering template mesh and trace…")
+
+        def worker():
+            try:
+                self._ui_call(self._show_progress)
+                from .opengl import render_configured_snapshot
+                receipt = render_configured_snapshot(
+                    sample, neuron, snapshot,
+                    portal_region=portal_region, config_path=self.config_path)
+            except Exception as exc:
+                self._ui_call(self._hide_progress)
+                self._ui_call(messagebox.showerror, "3D SWC", f"Could not render:\n{exc}")
+                self._ui_call(self.update_status, f"3D SWC failed: {exc}")
+            else:
+                self._ui_call(
+                    self._finish_swc3d, sample, neuron, snapshot,
+                    receipt.get("receipt"), save)
+
+        self._launch_processing(worker)
+
+    def _finish_swc3d(self, sample, neuron, image_path, receipt_path, save):
+        """Publish a completed 3D SWC snapshot to the preview tab."""
+        self._hide_progress()
+        if not identity_matches(
+                (sample, neuron), self.sample_id.get(), self.neuron_id.get()):
+            for path in (image_path, receipt_path):
+                if path:
+                    try:
+                        os.remove(path)
+                    except OSError:
+                        pass
+            self.update_status("Discarded stale 3D SWC result")
+            return
+        self._ephemeral_images = getattr(self, '_ephemeral_images', {})
+        if not save and Image is not None:
+            try:
+                with Image.open(image_path) as image:
+                    self._ephemeral_images['SWC3D'] = image.copy()
+            except Exception:
+                pass
+        self.preview_files['SWC3D'] = os.path.abspath(image_path)
+        self._refresh_preview_tabs()
+        self._show_role('SWC3D')
+        if not save:
+            for path in (image_path, receipt_path):
+                if path:
+                    try:
+                        os.remove(path)
+                    except OSError:
+                        pass
+        self.update_status(f"3D SWC rendered for {sample}/{neuron}")
+        self._append_log(f"3D SWC rendered: {image_path}")
 
     def show_preview(self, path, role=None):
         if getattr(self, 'preview_label', None) is None:
@@ -1671,7 +1824,8 @@ class NeuroVisGUI:
             except Exception:
                 pass
         self._preview_after = self.root.after(
-            150, lambda: self.show_preview(self.current_preview))
+            150, lambda: self.show_preview(
+                self.current_preview, role=self.current_role))
 
     def _refresh_preview_tabs(self):
         files = getattr(self, 'preview_files', {})
@@ -1679,7 +1833,11 @@ class NeuroVisGUI:
             try:
                 if not button.winfo_exists():
                     continue
-                state = 'normal' if role in files else 'disabled'
+                available = role in files or (
+                    role == 'SWC3D'
+                    and bool(self.sample_id.get().strip())
+                    and bool(self.neuron_id.get().strip()))
+                state = 'normal' if available else 'disabled'
                 button.configure(state=state,
                                  fg=self.COLORS['text'] if state == 'normal'
                                  else self.COLORS['disabled'])
@@ -2412,16 +2570,148 @@ class NeuroVisGUI:
             self._append_log(line)
         if report["ready"]:
             self.update_status(f"All configured resources ready ({report['checked']}/{report['checked']})")
-            messagebox.showinfo(
-                "VisPa data check",
-                f"{report['summary']}\n\n" + "\n".join(display_lines),
-            )
         else:
             self.update_status(f"Resource check: {report['issues']} required item(s) need attention")
-            messagebox.showwarning(
-                "VisPa data check",
-                f"{report['summary']}\n\n" + "\n".join(display_lines),
-            )
+        self._show_data_check(report)
+        if (getattr(self, '_auto_fill_on_identity', True)
+                and not getattr(self, '_autofill_identity', None)
+                and self.sample_id.get().strip()
+                and self.neuron_id.get().strip()):
+            self.root.after(100, self._auto_fill_current_identity)
+
+    def _show_data_check(self, report):
+        """Render a readable, scrollable resource checklist on the Tk thread."""
+        C = self.COLORS
+        window = tk.Toplevel(self.root)
+        window.title("VisPa resource check")
+        window.configure(bg=C['page'])
+        window.transient(self.root)
+        width = min(self._px(760), self.root.winfo_screenwidth() - self._px(48))
+        height = min(self._px(720), self.root.winfo_screenheight() - self._px(72))
+        x = self.root.winfo_rootx() + max(0, (self.root.winfo_width() - width) // 2)
+        y = self.root.winfo_rooty() + max(0, (self.root.winfo_height() - height) // 2)
+        window.geometry(f"{width}x{height}+{x}+{y}")
+        window.minsize(self._px(620), self._px(520))
+        window.columnconfigure(0, weight=1)
+        window.rowconfigure(2, weight=1)
+
+        ready = bool(report.get("ready"))
+        status_color = C['accent'] if ready else '#b34a4a'
+        header = tk.Frame(window, bg=C['header'], padx=self._px(20),
+                          pady=self._px(14))
+        header.grid(row=0, column=0, sticky='ew')
+        header.grid_columnconfigure(0, weight=1)
+        tk.Label(header, text="Resource check", bg=C['header'],
+                 fg=C['header_text'], font=('Segoe UI', 14, 'bold'),
+                 anchor='w').grid(row=0, column=0, sticky='ew')
+        identity = " / ".join(
+            value for value in (report.get("sample_id"), report.get("neuron_id"))
+            if value
+        )
+        tk.Label(header, text=identity or "Current VisPa identity",
+                 bg=C['header'], fg=C['header_muted'],
+                 font=('Segoe UI', 9), anchor='w').grid(
+                     row=1, column=0, sticky='ew', pady=(self._px(2), 0))
+        tk.Label(header, text=f"{report.get('checked', 0)} checks",
+                 bg=C['header'], fg=C['header_text'],
+                 font=('Segoe UI', 9, 'bold')).grid(
+                     row=0, column=1, rowspan=2, sticky='e')
+
+        summary = tk.Frame(window, bg=status_color, padx=self._px(20),
+                           pady=self._px(10))
+        summary.grid(row=1, column=0, sticky='new')
+        summary_text = ("All configured resources ready"
+                        if ready else
+                        f"{report.get('issues', 0)} required resource(s) need attention")
+        tk.Label(summary, text=summary_text, bg=status_color, fg='white',
+                 font=('Segoe UI', 11, 'bold'), anchor='w').pack(
+                     fill='x')
+
+        body = tk.Frame(window, bg=C['card'], highlightthickness=1,
+                        highlightbackground=C['border'])
+        body.grid(row=2, column=0, sticky='nsew',
+                  padx=self._px(18), pady=(self._px(14), self._px(8)))
+        body.columnconfigure(0, weight=1)
+        body.rowconfigure(0, weight=1)
+
+        canvas = tk.Canvas(body, bg=C['card'], highlightthickness=0,
+                           bd=0)
+        scrollbar = ttk.Scrollbar(body, orient='vertical',
+                                  command=canvas.yview)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.grid(row=0, column=0, sticky='nsew')
+        scrollbar.grid(row=0, column=1, sticky='ns')
+        rows = tk.Frame(canvas, bg=C['card'])
+        rows_window = canvas.create_window((0, 0), window=rows, anchor='nw')
+        rows.columnconfigure(1, weight=1)
+        rows.bind(
+            '<Configure>',
+            lambda event: canvas.configure(scrollregion=canvas.bbox('all')))
+        canvas.bind(
+            '<Configure>',
+            lambda event: canvas.itemconfigure(rows_window, width=event.width))
+        for widget in (canvas, rows):
+            widget.bind(
+                '<MouseWheel>',
+                lambda event: canvas.yview_scroll(int(-event.delta / 120), 'units'))
+
+        for index, item in enumerate(report.get("checks") or []):
+            item_ready = item.get("status") in {"ready", "configured"}
+            row = tk.Frame(rows, bg=C['card'])
+            row.grid(row=index, column=0, sticky='ew')
+            row.columnconfigure(1, weight=1)
+            tk.Label(
+                row, text="✓" if item_ready else "!",
+                bg=C['accent_soft'] if item_ready else '#f8e9e9',
+                fg=C['accent_dark'] if item_ready else '#9d3030',
+                font=('Segoe UI', 10, 'bold'), width=3,
+                padx=self._px(2), pady=self._px(3),
+            ).grid(row=0, column=0, rowspan=2, sticky='n',
+                   padx=(self._px(12), self._px(10)),
+                   pady=(self._px(10), self._px(8)))
+            tk.Label(
+                row, text=item.get("label") or item.get("role") or "Resource",
+                bg=C['card'], fg=C['text'],
+                font=('Segoe UI', 9, 'bold'), anchor='w',
+            ).grid(row=0, column=1, sticky='ew',
+                   padx=(0, self._px(14)), pady=(self._px(9), 0))
+            detail = item.get("detail") or item.get("status") or ""
+            tk.Label(
+                row, text=detail, bg=C['card'], fg=C['muted'],
+                font=('Segoe UI', 8), anchor='w', justify='left',
+                wraplength=max(self._px(390), width - self._px(170)),
+            ).grid(row=1, column=1, sticky='ew',
+                   padx=(0, self._px(14)), pady=(self._px(1), 0))
+            path = item.get("path")
+            if path:
+                tk.Label(
+                    row, text=str(path), bg=C['card'], fg=C['muted'],
+                    font=('Consolas', 8), anchor='w', justify='left',
+                    wraplength=max(self._px(390), width - self._px(170)),
+                ).grid(row=2, column=1, sticky='ew',
+                       padx=(0, self._px(14)),
+                       pady=(self._px(3), self._px(9)))
+            else:
+                row.grid_rowconfigure(2, minsize=self._px(9))
+            tk.Frame(row, bg=C['border'], height=1).grid(
+                row=3, column=0, columnspan=2, sticky='ew')
+
+        footer = tk.Frame(window, bg=C['page'], padx=self._px(18),
+                          pady=self._px(10))
+        footer.grid(row=3, column=0, sticky='ew')
+        footer.columnconfigure(0, weight=1)
+        tk.Label(
+            footer,
+            text="Remote services are verified when their data is first requested.",
+            bg=C['page'], fg=C['muted'], font=('Segoe UI', 8),
+            anchor='w', justify='left', wraplength=width - self._px(160),
+        ).grid(row=0, column=0, sticky='ew')
+        close_button = self._flat_button(footer, "Close", window.destroy,
+                                         primary=True)
+        close_button.grid(row=0, column=1, sticky='e')
+        window.bind('<Escape>', lambda event: window.destroy())
+        window.grab_set()
+        close_button.focus_set()
 
     def _append_log(self, line):
         """Append one line to the process log and mirror it in the status strip."""
@@ -2453,7 +2743,7 @@ class NeuroVisGUI:
             raw = variable.get().strip()
             if not raw:
                 raise ValueError(
-                    f"{label} is empty. Load & Auto-Fill Soma or type a value.")
+                    f"{label} is empty. Wait for automatic neuron lookup or type a value.")
             try:
                 value = cast(raw)
             except ValueError:
@@ -2475,6 +2765,29 @@ class NeuroVisGUI:
 
     def validate_inputs(self):
         """Validate numeric inputs and report the exact offending field."""
+        identity = (self.sample_id.get().strip(), self.neuron_id.get().strip())
+        raw_soma = (
+            self.x_coord.get().strip(),
+            self.y_coord.get().strip(),
+            self.z_coord.get().strip(),
+        )
+        if not all(raw_soma):
+            messagebox.showwarning(
+                "Load soma first",
+                "Enter a valid Sample ID and Neuron ID; soma coordinates load automatically.",
+            )
+            return False
+        try:
+            placeholder = all(float(value) == 0 for value in raw_soma)
+        except ValueError:
+            placeholder = False
+        if placeholder and self._autofill_identity != identity:
+            messagebox.showwarning(
+                "Load soma first",
+                "Soma coordinates still contain the placeholder (0, 0, 0).\n"
+                "Wait for automatic neuron lookup or type the coordinates.",
+            )
+            return False
         try:
             _x, _y, _z, _w, _h, _d, cubes = self._numeric_values()
             limit = float(REVIEW_SETTINGS['soma_window']['max_cubes_xy'])
@@ -2517,13 +2830,14 @@ class NeuroVisGUI:
         self._on_identity_change()
         self._reload_existing(quiet=True, prompt=False, prompt_on_difference=False)
         self._review_session_error = None
-        if self._no_autoload:
+        if not self._auto_fill_on_identity:
             self.update_status(
                 f"Review session selected {event.sample_id}/{event.neuron_id}; "
-                "automatic soma loading is off.")
+                "automatic soma loading is disabled.")
         else:
-            self.update_status(f"Selected {event.sample_id}/{event.neuron_id}; loading soma…")
-            self.load_and_autofill(silent_success=True)
+            self.update_status(
+                f"Selected {event.sample_id}/{event.neuron_id}; loading soma automatically…")
+            self.load_and_autofill(silent_success=True, silent_failure=True)
 
     def _poll_review_session(self):
         """Poll the local JSON handoff; all identity and widget changes stay on Tk."""
@@ -2584,31 +2898,45 @@ class NeuroVisGUI:
         return path
 
     def auto_load_default_neuron(self):
-        """Automatically loads the default neuron (003.swc) on GUI startup.
-        
-        Called via root.after() to ensure GUI is fully rendered before
-        starting the potentially slow network operation.
-        """
-        self.update_status("🔄 Auto-loading default neuron...")
-        self.load_and_autofill(silent_success=True)
+        """Compatibility entry point for the current live identity lookup."""
+        self._auto_fill_current_identity()
     
-    def load_and_autofill(self, silent_success=False):
+    def load_and_autofill(self, silent_success=False, silent_failure=False):
         """Loads the neuron and automatically fills soma coordinates.
         
         Args:
             silent_success: If True, don't show success messagebox (for auto-load)
+            silent_failure: If True, report lookup failure in the status panel only
         """
         sample_id = self.sample_id.get().strip()
         neuron_id = self.neuron_id.get().strip()
+        after_id = getattr(self, '_soma_autofill_after', None)
+        if after_id:
+            try:
+                self.root.after_cancel(after_id)
+            except Exception:
+                pass
+            self._soma_autofill_after = None
+        self._neuron_lookup_state = "checking"
+        self._neuron_lookup_error = None
+        self._update_neuron_status()
 
         def worker():
+            self._ui_call(self._show_progress)
             try:
                 self.update_status(f"Loading {sample_id}/{neuron_id}…")
                 tree = IT.IONData().getRawNeuronTreeByID(sample_id, neuron_id)
                 if tree is None:
                     detail = (f"Could not load raw SWC for {sample_id}/{neuron_id}. "
                               "Check the local cache or the portal settings.")
-                    self.root.after(0, lambda d=detail: messagebox.showwarning("Not Found", d))
+                    def report_missing():
+                        self._neuron_lookup_state = "not_found"
+                        self._update_neuron_status()
+                        if silent_failure:
+                            self.update_status(detail)
+                        else:
+                            messagebox.showwarning("Not Found", detail)
+                    self.root.after(0, report_missing)
                     return
                 soma_xyz = tuple(float(value) for value in (tree.root.x, tree.root.y, tree.root.z))
 
@@ -2620,13 +2948,28 @@ class NeuroVisGUI:
                     self.y_coord.set(str(soma_xyz[1]))
                     self.z_coord.set(str(soma_xyz[2]))
                     self._autofill_identity = (sample_id, neuron_id)
+                    self._neuron_lookup_state = "found"
+                    self._neuron_lookup_error = None
+                    self._update_neuron_status()
                     self.update_status(f"✅ Loaded: {soma_xyz[0]:g}, {soma_xyz[1]:g}, {soma_xyz[2]:g}")
                     if not silent_success:
                         messagebox.showinfo("Success", "Neuron Loaded & Coordinates Auto-filled!")
                 self.root.after(0, apply_if_current)
             except Exception as e:
                 status = f"⚠️ Auto-load failed: {e}" if silent_success else f"⚠️ Load failed: {e}"
-                self.root.after(0, lambda: self.update_status(status))
+                error_text = str(e)
+                def report_failure():
+                    self._autofill_identity = None
+                    self._neuron_lookup_state = "error"
+                    self._neuron_lookup_error = error_text
+                    self._update_neuron_status()
+                    if silent_failure:
+                        self.update_status(status)
+                    else:
+                        messagebox.showerror("Load failed", status)
+                self.root.after(0, report_failure)
+            finally:
+                self._ui_call(self._hide_progress)
 
         self._launch_processing(worker)
 
@@ -3017,7 +3360,8 @@ def main(argv=None):
                       auto_load=effective_auto_load,
                       review_session=session_event,
                       watch_session=args.watch_session,
-                      config_path=args.config)
+                      config_path=args.config,
+                      auto_fill_on_identity=not args.no_autoload)
     app.identity_source = identity_source
     root.mainloop()
     return 0

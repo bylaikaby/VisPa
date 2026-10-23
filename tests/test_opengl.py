@@ -1,6 +1,6 @@
 """Contract tests for the lazy original-engine OpenGL worker.
 
-Version: 1.11.0.dev10 (local/unreleased)
+Version: 1.11.0.dev11 (local/unreleased)
 Last updated: 2026-10-18
 Change history: ../CHANGELOG.md
 Status: candidate
@@ -188,6 +188,24 @@ class LegacyOpenGLPlanningTests(unittest.TestCase):
             plan = opengl.plan_configured_view(
                 "251637", "001.swc", config_path=self.config)
         self.assertEqual(Path(plan["worker_python"]), Path(sys.executable).resolve())
+
+    def test_snapshot_worker_returns_hash_verified_receipt(self):
+        snapshot = self.root / "swc3d.png"
+
+        def fake_run(command, **kwargs):
+            output = Path(command[command.index("--snapshot") + 1])
+            output.write_bytes(b"synthetic-png")
+            output.with_suffix(".json").write_text(json.dumps({
+                "status": "rendered_candidate",
+                "output_png_sha256": opengl._sha256(output),
+            }), encoding="utf-8")
+            return opengl.subprocess.CompletedProcess(command, 0, "", "")
+
+        with mock.patch.object(opengl.subprocess, "run", side_effect=fake_run):
+            receipt = opengl.render_configured_snapshot(
+                "251637", "001.swc", snapshot, config_path=self.config)
+        self.assertEqual(receipt["status"], "rendered_candidate")
+        self.assertTrue(snapshot.is_file())
 
     def test_snapshot_collision_rejected_without_overwrite(self):
         target = self.root / "review.png"
