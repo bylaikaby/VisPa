@@ -22,6 +22,13 @@ param(
     [switch]$LaunchOnly
 )
 $ErrorActionPreference = 'Stop'
+function Get-Sha256File([string]$Path) {
+    # Windows PowerShell hosts need no module autoload for installer integrity checks.
+    $stream = [IO.File]::OpenRead($Path)
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try { return [BitConverter]::ToString($sha.ComputeHash($stream)).Replace('-', '').ToLowerInvariant() }
+    finally { $stream.Dispose(); $sha.Dispose() }
+}
 $repo = Split-Path -Parent $PSScriptRoot
 $environmentFile = Join-Path $repo 'environment.yml'
 $launcher = Join-Path $repo 'VisPa.cmd'
@@ -141,7 +148,7 @@ if ($bootstrap) {
     }
     $expected = $Matches['hash'].ToLowerInvariant()
     Invoke-WebRequest -Uri $url -OutFile $downloadPath -UseBasicParsing
-    $actual = (Get-FileHash -LiteralPath $downloadPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $actual = Get-Sha256File $downloadPath
     if ($actual -ne $expected) { throw "Miniforge SHA256 mismatch: expected $expected, received $actual" }
     New-Item -ItemType Directory -Path (Split-Path $bootstrapRoot) -Force | Out-Null
     $arguments = @('/InstallationType=JustMe', '/AddToPath=0', '/RegisterPython=0', '/S', "/D=$bootstrapRoot")
@@ -202,7 +209,7 @@ if ($sourceMode) {
         $relative = $sourceFile.FullName.Substring((Join-Path $stage 'src').Length + 1)
         $installedFile = Join-Path $installedRoot $relative
         if (-not (Test-Path -LiteralPath $installedFile -PathType Leaf)) { throw "Installed file is missing: $relative. Staging retained: $stage" }
-        if ((Get-FileHash -LiteralPath $sourceFile.FullName -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $installedFile -Algorithm SHA256).Hash) {
+        if ((Get-Sha256File $sourceFile.FullName) -ne (Get-Sha256File $installedFile)) {
             throw "Installed file differs from source: $relative. Staging retained: $stage"
         }
     }

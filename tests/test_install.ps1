@@ -11,9 +11,22 @@ $launcher = Join-Path $repo 'VisPa.cmd'
 $environmentFile = Join-Path $repo 'environment.yml'
 $tokens = $null
 $errors = $null
-[System.Management.Automation.Language.Parser]::ParseFile($installer,[ref]$tokens,[ref]$errors) | Out-Null
+$installerAst = [System.Management.Automation.Language.Parser]::ParseFile($installer,[ref]$tokens,[ref]$errors)
 if ($errors.Count) { throw "Installer syntax errors: $($errors -join '; ')" }
 Write-Host 'PASS: installer parses in Windows PowerShell.'
+$shaAst = $installerAst.Find({ param($node)
+    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Get-Sha256File'
+}, $true)
+if (-not $shaAst) { throw 'Installer is missing the module-free SHA256 helper.' }
+Invoke-Expression $shaAst.Extent.Text
+$hashFixture = Join-Path $env:TEMP ('VisPa-hash-' + [guid]::NewGuid().ToString('N'))
+try {
+    [IO.File]::WriteAllBytes($hashFixture, [Text.Encoding]::ASCII.GetBytes('abc'))
+    if ((Get-Sha256File $hashFixture) -ne 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad') {
+        throw 'Module-free SHA256 helper returned the wrong digest.'
+    }
+} finally { if (Test-Path -LiteralPath $hashFixture) { Remove-Item -LiteralPath $hashFixture -Force } }
+Write-Host 'PASS: streaming SHA256 helper hashes a known fixture without Get-FileHash.'
 foreach ($path in @($launcher,$environmentFile)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Missing entry point: $path" }
 }
@@ -53,6 +66,10 @@ if ($launcherText -notmatch 'LaunchOnly' -or $launcherText -notmatch 'VISPA_ARG_
     throw 'Launcher does not pass arguments to the installed runtime.'
 }
 $installerText = Get-Content -LiteralPath $installer -Raw
+if ($installerText -match '\bGet-FileHash\b' -or $installerText -notmatch 'function Get-Sha256File' -or
+        $installerText -notmatch 'SHA256\]::Create\(') {
+    throw 'Installer hashing must use streaming .NET SHA256 without module autoload.'
+}
 if ($installerText -notmatch 'install.json' -or $installerText -notmatch 'UTF8Encoding' -or $installerText -notmatch 'Library\\bin') {
     throw 'Launcher handle does not preserve Unicode prefix/config or Conda DLL path.'
 }
