@@ -1,6 +1,6 @@
 """Generic DS00 five-view volume renderer, extracted without changing its defaults.
 
-Version: 1.11.0.dev8 (local/unreleased)
+Version: 1.11.0.dev9 (local/unreleased)
 Last updated: 2026-10-23
 Change history: ../../CHANGELOG.md
 Status: candidate

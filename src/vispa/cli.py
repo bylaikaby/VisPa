@@ -1,6 +1,6 @@
 """Bounded command line for one local VisPa review render or montage.
 
-Version: 1.11.0.dev8 (local/unreleased)
+Version: 1.11.0.dev9 (local/unreleased)
 Last updated: 2026-10-23
 Change history: CHANGELOG.md
 """
@@ -556,6 +556,24 @@ def _catalog_check(args):
     return 0
 
 
+def _data_check(args):
+    from .readiness import data_check
+
+    report = data_check(
+        config=args.config,
+        sample_id=args.sample,
+        neuron_id=args.neuron,
+    )
+    if args.json:
+        print(json.dumps(report, indent=2, ensure_ascii=False, sort_keys=True))
+    else:
+        print(f"VisPa data check - {report['sample_id']}/{report['neuron_id']}")
+        print("\n".join(report["checklist"]))
+        print()
+        print(report["summary"])
+    return 0 if report["ready"] else 1
+
+
 def _parser():
     parser = argparse.ArgumentParser(prog="vispa", description=f"VisPa {VERSION} command line")
     parser.add_argument("--version", action="version", version=VERSION)
@@ -614,6 +632,13 @@ def _parser():
                               help="select live portal or dated CSV snapshot when both are configured")
     config_check.add_argument("--dry-run", action="store_true", help="read-only preflight (config-check never writes)")
     config_check.add_argument("--fnt", action="store_true", help="require executable AND matching neuron project; never launch")
+    data_check = commands.add_parser(
+        "check", aliases=["data-check"],
+        help="check configured dataset, cache, dependency, brain-view and FNT readiness")
+    data_check.add_argument("--config", help="VisPa JSON/YAML settings config")
+    data_check.add_argument("--sample", help="exact sample ID; defaults to the configured startup sample")
+    data_check.add_argument("--neuron", help="exact neuron ID; defaults to the configured startup neuron")
+    data_check.add_argument("--json", action="store_true", help="emit the complete machine-readable report")
     fnt_fetch = commands.add_parser("fnt-fetch", help="fetch one exact native FNT into the verified per-user cache")
     fnt_fetch.add_argument("--config", help="VisPa JSON/YAML settings config")
     fnt_fetch.add_argument("--sample", required=True, help="one exact SampleID")
@@ -693,6 +718,11 @@ def main(argv=None):
         if args.config:
             check_argv.extend(("--config", args.config))
         return config_main(check_argv)
+    if args.command in {"check", "data-check"}:
+        try:
+            return _data_check(args)
+        except (OSError, RuntimeError, ValueError, KeyError, TypeError) as exc:
+            parser.error(str(exc))
     if args.command == "fnt-fetch":
         try:
             return _fnt_fetch(args)

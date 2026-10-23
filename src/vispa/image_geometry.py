@@ -1,6 +1,6 @@
 """Native microscopy coordinate arithmetic; no anatomical orientation inferred.
 
-Version: 1.11.0.dev8 (local/unreleased)
+Version: 1.11.0.dev9 (local/unreleased)
 Last updated: 2026-10-23
 Change history: ../../CHANGELOG.md
 """

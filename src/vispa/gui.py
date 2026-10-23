@@ -1,7 +1,7 @@
 """
 vispa_gui.py - GUI for NeuroVis Visual Toolkit
 
-Version: 1.11.0.dev8 (local/unreleased)
+Version: 1.11.0.dev9 (local/unreleased)
 Last updated: 2026-10-23
 Change history: ../../CHANGELOG.md
 Status: candidate (visual review pending)
@@ -500,6 +500,7 @@ class NeuroVisGUI:
         self._current_review_event = review_session
         self._pending_review_event = None
         self._review_session_error = None
+        self.last_data_check = None
         self._catalog_request_id = 0
         self._catalog_observed_sample_id = self.sample_id.get().strip()
         self._catalog_sample_id = None
@@ -924,6 +925,8 @@ class NeuroVisGUI:
         fnt_button.pack(side='left', padx=(P(10), 0))
         self._flat_button(action_row, "FNT setup…", self._on_fnt_setup).pack(
             side='left', padx=(P(6), 0))
+        self._flat_button(action_row, "Check data", self._start_resource_check).pack(
+            side='left', padx=(P(6), 0))
         # Status strip
         strip = tk.Frame(self.root, bg=C['strip'], highlightbackground=C['border'],
                          highlightthickness=1)
@@ -941,6 +944,7 @@ class NeuroVisGUI:
         self.root.minsize(self._px(980), self._px(760))
         # Quick reload of already-rendered figures (also available as a button).
         self.root.after(1500, lambda: self._reload_existing(quiet=True))
+        self.root.after(700, self._start_resource_check)
 
     def _review_step(self, parent, row, number, name, headline, detail,
                      highlight=False):
@@ -2339,13 +2343,85 @@ class NeuroVisGUI:
             return False
         return True
 
-    def _show_progress(self):
+    def _show_progress(self, maximum=None):
+        self.progress.stop()
+        if maximum is None:
+            self.progress.configure(mode='indeterminate')
+        else:
+            self.progress.configure(mode='determinate', maximum=max(1, int(maximum)), value=0)
         self.progress.pack(side='right', padx=14, pady=6)
-        self.progress.start()
+        if maximum is None:
+            self.progress.start()
 
     def _hide_progress(self):
         self.progress.stop()
         self.progress.pack_forget()
+        self.progress.configure(value=0)
+
+    def _set_progress(self, completed, total):
+        """Update the determinate startup checklist bar on the Tk thread."""
+        self.progress.configure(
+            mode='determinate', maximum=max(1, int(total)),
+            value=min(max(0, int(completed)), max(1, int(total))))
+        self.root.update_idletasks()
+
+    def _start_resource_check(self):
+        """Run the shared data check without blocking startup or rendering."""
+        if self._operation_running:
+            self.root.after(500, self._start_resource_check)
+            return
+        identity = (self.sample_id.get().strip(), self.neuron_id.get().strip())
+        self.update_status("Checking VisPa resources…")
+        self._show_progress(maximum=100)
+
+        def worker():
+            try:
+                from .readiness import data_check
+                report = data_check(
+                    config=self.config_path,
+                    sample_id=identity[0],
+                    neuron_id=identity[1],
+                    progress=lambda done, total: self._ui_call(
+                        self._set_progress, done, total),
+                )
+            except Exception as exc:
+                self._ui_call(self._finish_resource_check, identity, None, exc)
+            else:
+                self._ui_call(self._finish_resource_check, identity, report, None)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _finish_resource_check(self, identity, report, error):
+        """Show the startup checklist after the background readiness pass."""
+        self._hide_progress()
+        current = (self.sample_id.get().strip(), self.neuron_id.get().strip())
+        if current != identity:
+            self.update_status("Resource check discarded for a stale identity")
+            return
+        if error is not None:
+            message = f"Resource check failed: {error}"
+            self._append_log(message)
+            messagebox.showwarning("VisPa data check", message)
+            return
+        self.last_data_check = report
+        display_lines = [
+            line.replace("[OK]", "✓", 1).replace("[MISSING]", "!", 1)
+            for line in report["checklist"]
+        ]
+        for line in display_lines:
+            self._append_log(line)
+        if report["ready"]:
+            self.update_status(f"All configured resources ready ({report['checked']}/{report['checked']})")
+            messagebox.showinfo(
+                "VisPa data check",
+                f"{report['summary']}\n\n" + "\n".join(display_lines),
+            )
+        else:
+            self.update_status(f"Resource check: {report['issues']} required item(s) need attention")
+            messagebox.showwarning(
+                "VisPa data check",
+                f"{report['summary']}\n\n" + "\n".join(display_lines),
+            )
 
     def _append_log(self, line):
         """Append one line to the process log and mirror it in the status strip."""

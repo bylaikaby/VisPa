@@ -1,7 +1,7 @@
 # VisPa — Visual Projectome Analysis tool
 
 VisPa reviews macaque neuron and microscopy data from configured lab sources.
-This `simplified` branch is version 1.11.0.dev8, a Python-only development
+This `simplified` branch is version 1.11.0.dev9, a Python-only development
 candidate without a release tag. Install Miniforge or another Conda
 distribution before following this guide.
 
@@ -26,6 +26,7 @@ After activating the environment, the same installed CLI is available directly:
 conda activate vispa
 vispa --version
 vispa gui
+vispa check
 ```
 
 TIFF reading is included in the core installation. The Conda environment adds
@@ -76,6 +77,7 @@ Use these run configurations:
 |---|---|---|
 | GUI | `vispa gui` | `--config D:\VisPa\config\vispa_config.yaml` |
 | Version | `vispa` | `--version` |
+| Data check | `vispa check` | `--config PATH [--sample SAMPLE --neuron NEURON.swc] [--json]` |
 | Config check | `vispa` | `config-check --validate-only --config D:\VisPa\config\vispa_config.yaml` |
 | Tests | `unittest` | `discover -s tests -v` |
 
@@ -93,6 +95,14 @@ interactive 3D, and scientific acceptance remain separate.
 2. Click **Load & Auto-Fill Soma**.
 3. Click **Render**; review the output folder shown in **Saving**.
 4. Use **3D brain view** when a processed SWC and mesh are configured. **fnt-tracer** uses the exact shared project when available; the default DEB profile points to the shared FNT executable and project folder.
+
+At startup, VisPa runs `vispa.check()` in the background and presents a checklist
+prompt. **Check data** repeats the check after changing configuration. The
+check verifies the DS00 and 5 µm datasets, Soma/raw-SWC source configuration,
+download-cache writability, brain-view mesh/processed SWC, FNT executable and
+project, and required Python image modules. The same report is available as a
+Python API through `vispa.check(...)`; remote service reachability is first
+tested when its data is requested.
 
 An optional local one-neuron demo is available at `demo/demo.yaml` with source
 evidence in `demo/README.md`. Launch it with
@@ -122,7 +132,7 @@ New standalone run receipts, builds and candidate outputs live under `D:/VisPa/w
 
 VisPa includes a live per-sample IONData neuron list for the configured lab intranet and review panels for configured local microscopy resources. The live list is fetched from the neuron API; image cubes, raw SWCs, and microscopy files use separate configured hosts or shares. The package contains only server addresses and candidate sample-resource links, not source data, credentials, or local project tools. These links and checksums do not establish current share availability or scientific acceptance.
 
-This checkout is **1.11.0.dev8, without a release tag**. It preserves the
+This checkout is **1.11.0.dev9, without a release tag**. It preserves the
 existing rendering and source-verification algorithms while removing the
 retired `Visual_toolkit` compatibility namespace. The DS00 sagittal panel
 retains its two documented axis hypotheses and its manifest, hash, geometry,
@@ -293,7 +303,7 @@ vector relationship; add `--config PATH` to include configured current values.
 
 ## Sources and configuration
 
-The packaged `config_deb.yaml` profile configures live IONData catalog access,
+The packaged `config_deb.yaml` profile starts on `251637/003.swc` and configures live IONData catalog access,
 separate BAP image-cube and raw-SWC hosts, the shared DEB microscopy dataset
 roots, brain-view dependencies, FNT executable/projects, and per-user VisPa
 caches/outputs. Its sample-to-AnimalID and dataset links are candidate resource
@@ -321,7 +331,7 @@ Passing `--output` selects the packaged same-intranet template; it never overwri
 
 All lab server addresses and source roots live in the editable profile. In the packaged profile, each sample's `ds00_relative` is resolved under `defaults.ds00_root`, and `sources.dataset_manifest_relative` follows the same root. The `resample_5um` entries follow `defaults.resample_5um_root`. Changing these roots redirects the declared paths without editing ten per-sample UNC strings; existing profiles that use `ds00_processed` keep their original path meaning. Relative child paths must stay within their declared root. The sample filenames and SHA-256 declarations remain candidate provenance; changing a root does not verify that files or geometry match. The optional `vispa example` CLI owns its checksum-pinned public source defaults and does not add example fields to the GUI profile.
 
-For SSH sections, set `ssh_sample_id` alongside `ssh_remote_base`; that remote root is only eligible for the matching sample. `low_res_ssh_base=` is an explicit per-instance override. The GUI identity and auto-load behavior is selected from `visual_toolkit.default_sample`, `visual_toolkit.default_neuron`, and `visual_toolkit.auto_load`. The packaged profile starts on sample `250432` (AnimalID `747`) and `001.swc` with auto-load disabled; explicit CLI/constructor identities take precedence, and `--no-autoload` always disables startup loading. In the GUI, **Neuron list** uses the selected source and shows every API row for the exact sample ID, preserving zero-padded filenames and suffixes; selecting a row fills only the Neuron ID field. The source selector offers Live IONData explicitly alongside a configured dated CSV; on older CSV-only profiles, CSV remains selected unless you choose Live IONData. The compact note lists the eight INS-cohort AnimalIDs from the megatable and separately identifies sample 250432 / AnimalID 747; it does not classify individual neuron rows. **Render** (F5) produces the complete panel set (Soma, Context, Sagittal and TrioPlot); there is no per-panel selection. **Save outputs** beside Render chooses whether the run writes files (unticked = preview only), and **Save Soma NIfTI (.nii.gz)** in Saving controls the soma volume. The **3D brain view** action carries the current sample, neuron ID, and any loaded portal region to the isolated original OpenGL worker, using the configured processed SWC only. **fnt-tracer** uses an explicitly configured matching project first, then an exact VisPa native FNT cache project; its executable is needed only to launch the external tracer. There is no bulk action.
+For SSH sections, set `ssh_sample_id` alongside `ssh_remote_base`; that remote root is only eligible for the matching sample. `low_res_ssh_base=` is an explicit per-instance override. The GUI identity and auto-load behavior is selected from `visual_toolkit.default_sample`, `visual_toolkit.default_neuron`, and `visual_toolkit.auto_load`. The packaged profile starts on sample `251637` and `003.swc` with auto-load disabled; this sample has registered DS00 and 5 µm sources. Explicit CLI/constructor identities take precedence, and `--no-autoload` always disables startup loading. In the GUI, **Neuron list** uses the selected source and shows every API row for the exact sample ID, preserving zero-padded filenames and suffixes; selecting a row fills only the Neuron ID field. The source selector offers Live IONData explicitly alongside a configured dated CSV; on older CSV-only profiles, CSV remains selected unless you choose Live IONData. The compact note lists the eight INS-cohort AnimalIDs from the megatable and separately identifies sample 250432 / AnimalID 747; it does not classify individual neuron rows. **Render** (F5) produces the complete panel set (Soma, Context, Sagittal and TrioPlot); there is no per-panel selection. **Save outputs** beside Render chooses whether the run writes files (unticked = preview only), and **Save Soma NIfTI (.nii.gz)** in Saving controls the soma volume. The **3D brain view** action carries the current sample, neuron ID, and any loaded portal region to the isolated original OpenGL worker, using the configured processed SWC only. **fnt-tracer** uses an explicitly configured matching project first, then an exact VisPa native FNT cache project; its executable is needed only to launch the external tracer. There is no bulk action.
 
 Per-sample `ds00_expected_geometry` declares the expected `shape_ijk`,
 `spacing_mm_ijk`, and `affine_diag` for validation and provenance. A configured

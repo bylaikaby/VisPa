@@ -1,5 +1,27 @@
 # VisPa change log
 
+## 1.11.0.dev9 — 2026-10-23 (local/unreleased)
+- Add the public `vispa.check()` / `data_check()` API and `vispa check`
+  (`data-check` alias). It reports configuration, Python image dependencies,
+  DS00, 5 µm, Soma source, raw-SWC retrieval, writable cache, brain-view mesh
+  and SWC, and FNT executable/project readiness as an explicit checklist.
+- Run the same check in a background thread when the GUI loads and from a
+  visible **Check data** button. Show the checklist in a completion prompt and
+  status strip without blocking initial window construction.
+- Drive the startup check with the existing Tk progress bar in determinate
+  mode, while render work retains the existing indeterminate mode. Cache
+  readiness is verified with a temporary write/delete probe.
+- Start the packaged profile on `251637/003.swc`, which has registered DS00 and
+  5 µm Context sources. The prior `250432` startup has no 5 µm dataset.
+- Validation: the full **139/139** source suite passes. The shared server
+  config reports **15/15** resources ready; portable cache write probing,
+  low-resolution in-memory reuse/eviction, real downloaded cube reuse with
+  network forced unavailable, direct CLI JSON/checklist output, and GUI
+  checklist formatting pass. Desktop review showed the startup prompt, a
+  visible rendering progress bar, successful Soma and Context panels, the 3D
+  brain window, and the shared `251637_003.fnt` opening in Fast Neurite
+  Tracer. No anatomical or scientific acceptance is implied.
+
 ## 1.11.0.dev8 — 2026-10-23 (local/unreleased)
 - Make TIFF microscopy support part of the core installation. `tifffile` is
   now a base dependency, the Conda environment includes `imagecodecs`, and
