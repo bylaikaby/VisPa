@@ -15,22 +15,25 @@
   the named Conda environment, or the running interpreter. The Projectome
   process client applies the same fallback instead of failing on a retired
   `D:/VisPa/runtime` path.
-- Correct the local active brain-view profile to use the preserved
-  `neuron-vis/resource/macaqueallobj/root.obj` mesh and
-  `neuron-vis/resource/swc` processed-SWC folder, and set its worker to the
-  current Conda interpreter. The previous profile used incomplete copied
-  cache assets and a removed `.venv`.
+- Replace the local active brain-view paths with the complete shared
+  `resources/dependencies/brain_view` mesh and processed-SWC tree, and resolve
+  the worker to the active Conda interpreter. The previous profile used
+  incomplete copied cache assets and a removed `.venv`.
 - Rename the packaged default profile to `config_deb.yaml` and point it at the
   shared lab layout under
   `\\10.102.8.200\microscopy_data\fMOST\resources`: `key_datasets` for DS00
   and 5 µm data, `dependencies/brain_view` for the mesh and processed SWCs,
   and `dependencies/fnt` for the FNT application and projects.
-- Validation: missing-`tifffile` Pillow TIFF fallback passed; stale worker
-  resolution passed; Projectome client protocol tests passed 11/11; a real
-  251637 Context acquisition read a 10,120×11,711 `uint16` native section and
-  produced a bounded `1×200×200` crop; brain-view preflight resolved the
-  preserved mesh and `251637/003.swc`. No anatomical or scientific acceptance
-  is implied.
+- Validation: a clean Conda environment passed the full **133/133** suite and
+  exposes `vispa` plus `vispa gui`; its wheel contains `config_deb.yaml` and
+  the console entry point. The missing-`tifffile` Pillow fallback and stale
+  worker resolution passed. A real 251637 Context acquisition read the
+  10,120×11,711 `uint16` z=6994 section and produced a bounded `1×200×200`
+  crop. Brain-view preflight and an actual technical snapshot resolved the
+  shared mesh and `251637/003.swc`; FNT executable/project preflight passed.
+  Hosted Windows Conda
+  [run 39923455540](https://github.com/bylaikaby/VisPa/actions/runs/39923455540)
+  passed. No anatomical or scientific acceptance is implied.
 
 ## 1.11.0.dev7 — 2026-10-23 (local/unreleased)
 - Remove the `Visual_toolkit` Python compatibility namespace, `Visual_toolkit`
