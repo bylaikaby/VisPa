@@ -195,6 +195,15 @@ try {
             $steps.opengl_context_render = 'unavailable_or_failed'
             $glStatus = 'unavailable_or_failed'
         }
+        foreach ($gate in @('clean_process_profile','anonymous_http_commit_zip','installer_dry_run',
+                'conda_bootstrap_and_install','launcher_from_other_directory',
+                'public_swc_download_and_3d_morphology','repeat_install_preservation',
+                'installed_gui_lifecycle','tk_settings_callbacks','installed_unittest_no_skips')) {
+            if ($steps[$gate] -ne 'pass') { throw "Mandatory VM gate did not pass: $gate" }
+        }
+        $glDiagnostic = ($glOutput | Out-String).Trim()
+        if (-not $glDiagnostic) { $glDiagnostic = 'No diagnostic output from GL probe' }
+        if ($glDiagnostic.Length -gt 1600) { $glDiagnostic = $glDiagnostic.Substring(0,1600) + ' [truncated]' }
         $receipt = [ordered]@{
             schema = 'vispa.windows-vm-e2e.v1'; commit = $Commit.ToLowerInvariant(); source_url = $plan.source_url
             source_zip_sha256 = $zipHash; guest_os = (Get-CimInstance Win32_OperatingSystem | Select-Object Caption,Version,BuildNumber)
@@ -209,7 +218,7 @@ try {
             steps = $steps; opengl_context_render = $glStatus
             opengl_context_output = if ($glStatus -eq 'pass') { (Get-FileHash $glPng -Algorithm SHA256).Hash.ToLowerInvariant() } else { $null }
             opengl_context_version = if ($glStatus -eq 'pass') { ($glOutput | Out-String).Trim() } else { $null }
-            opengl_context_failure = if ($glStatus -eq 'pass') { $null } else { 'context_or_render_unavailable; see hosted job diagnostics' }
+            opengl_context_failure = if ($glStatus -eq 'pass') { $null } else { "exit=$glExit; $glDiagnostic" }
             vispa_brain_view_real_operation = 'pending_real_demo_assets_and_visible_review'
             status = if ($glStatus -eq 'pass') { 'partial_real_3d_operation_unverified' } else { 'partial_graphics_unverified' }
         }
@@ -223,3 +232,4 @@ try {
 } finally {
     foreach ($name in $variables) { [Environment]::SetEnvironmentVariable($name,$saved[$name],'Process') }
 }
+exit 0
