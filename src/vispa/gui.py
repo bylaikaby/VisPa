@@ -1,7 +1,7 @@
 """
 vispa_gui.py - GUI for NeuroVis Visual Toolkit
 
-Version: 1.11.0.dev4 (local/unreleased)
+Version: 1.11.0.dev6 (local/unreleased)
 Last updated: 2026-10-23
 Change history: ../../CHANGELOG.md
 Status: candidate (visual review pending)
@@ -144,6 +144,11 @@ import subprocess
 from pathlib import Path
 from dataclasses import dataclass
 from ._version import __version__
+
+EMPTY_PREVIEW_TEXT = (
+    "No figure yet\n\nEnter Sample ID and Neuron ID, click Load & Auto-Fill Soma, "
+    "then choose plots and click Render."
+)
 
 try:  # preview pane only; the rest of the GUI works without Pillow
     from PIL import Image, ImageTk
@@ -564,7 +569,7 @@ class NeuroVisGUI:
             self._preview_after = None
         label = getattr(self, "preview_label", None)
         if label is not None:
-            label.configure(image="", text="No figure yet\n\nSoma Plot · Context Plot · Sagittal · TrioPlot")
+            label.configure(image="", text=EMPTY_PREVIEW_TEXT)
         caption = getattr(self, "preview_caption", None)
         if caption is not None:
             caption.set("Run a plot to see it here")
@@ -654,13 +659,6 @@ class NeuroVisGUI:
             body, "Neuron list", self._open_neuron_catalog, primary=True)
         self.neuron_catalog_open_button.grid(
             row=4, column=0, columnspan=3, sticky='ew', pady=(P(4), P(2)))
-        self._public_example_button = self._flat_button(
-            body, "Public neuron example", self._start_public_example, primary=False)
-        self._public_example_button.grid(
-            row=5, column=0, columnspan=3, sticky='ew', pady=(P(5), P(2)))
-        tk.Label(body, text="Public macaque neuron · morphology only",
-                 bg=C['card'], fg=C['muted'], font=('Segoe UI', 8), anchor='w').grid(
-                     row=6, column=0, columnspan=3, sticky='w', pady=(0, P(2)))
 
         # Review steps: one row per stage, all six visible without scrolling.
         steps_body = self._card(inner, "Step guide")
@@ -853,17 +851,9 @@ class NeuroVisGUI:
         self.preview_holder = tk.Frame(preview_card, bg=C['preview_bg'],
                                        highlightbackground='#0b141c', highlightthickness=1)
         self.preview_holder.pack(fill='both', expand=True, padx=P(14), pady=(0, P(8)))
-        if self._startup_mode == "public-example":
-            empty_preview_text = (
-                "No figure yet\n\nClick Public neuron example for a public SWC morphology preview.\n"
-                "No image context, atlas, or registration is included.")
-        else:
-            empty_preview_text = (
-                "No figure yet\n\nLoad a configured Sample ID / Neuron ID, or click "
-                "Public neuron example for a morphology-only preview.")
         self.preview_label = tk.Label(
             self.preview_holder, bg=C['preview_bg'], fg='#c9d6de', justify='center',
-            font=('Segoe UI', 11), text=empty_preview_text)
+            font=('Segoe UI', 11), text=EMPTY_PREVIEW_TEXT)
         self.preview_label.pack(fill='both', expand=True)
         self.preview_holder.bind('<Configure>', self._on_preview_resize)
         tabs = tk.Frame(preview_card, bg=C['card'])
@@ -1323,8 +1313,8 @@ class NeuroVisGUI:
         self._append_log(f"fnt-tracer opened: {plan['project']}")
 
     def _on_fnt_setup(self):
-        """Open common settings for the optional fnt-tracer program."""
-        self._open_config_yaml()
+        """Open the FNT section for the optional fnt-tracer program."""
+        self._open_config_yaml(section='FNT')
 
     def launch_template_brain_view(self, sample_id: str, neuron_id: str,
                                    portal_region: str = ""):
@@ -1953,34 +1943,75 @@ class NeuroVisGUI:
         except Exception as exc:
             messagebox.showerror("Open folder", f"Could not open {folder}:\n{exc}")
 
-    def _open_config_yaml(self):
+    def _open_config_yaml(self, section=None):
         import hashlib
+        from importlib.resources import files
         from .dataset_config import config_path
         from .config_editor import FIELDS, parse_text, dump_text, field_value, apply_fields
         path = str(Path(self.config_path or config_path()).resolve())
+        raw_label = 'Raw JSON' if Path(path).suffix.lower() == '.json' else 'Raw YAML'
         window = getattr(self, '_config_window', None)
         if window is not None and window.winfo_exists():
+            if section in {group for group, _, _, _ in FIELDS}:
+                window._settings_section.set(section)
+                window._settings_tabs.select(0)
             window.lift()
             window.focus_force()
             return
+        packaged_default = files('vispa').joinpath('default_config.yaml').read_bytes()
+        default_path = Path(path).with_name('vispa_config.default.yaml')
+        default_warning = ''
+        try:
+            with default_path.open('xb') as stream:
+                stream.write(packaged_default)
+        except FileExistsError:
+            pass
+        except OSError as exc:
+            default_warning = f'Local default copy unavailable ({exc}); showing installed profile.'
+        try:
+            default_content = default_path.read_text(encoding='utf-8')
+            parse_text(default_content, default_path)
+            default_source = str(default_path)
+        except Exception as exc:
+            default_content = packaged_default.decode('utf-8')
+            default_source = 'Installed VisPa profile (local copy unavailable)'
+            default_warning = f'Local default copy could not be used ({exc}); showing installed profile.'
         window = tk.Toplevel(self.root)
         self._config_window = window
-        window.title(f"VisPa settings — {Path(path).name}")
+        window.title(f"VisPa {__version__} settings — {Path(path).name}")
         window.geometry("920x700")
         window.configure(bg=self.COLORS['page'])
         header = tk.Frame(window, bg=self.COLORS['header'])
         header.pack(fill='x')
-        tk.Label(header, text="Active configuration", bg=self.COLORS['header'],
+        tk.Label(header, text=f"VisPa {__version__} settings · active configuration", bg=self.COLORS['header'],
                  fg=self.COLORS['header_text'], font=('Segoe UI', 11, 'bold')).pack(anchor='w', padx=12, pady=(8, 0))
         tk.Label(header, text=path, bg=self.COLORS['header'],
                  fg=self.COLORS['header_text'], font=('Consolas', 9),
                  wraplength=880, justify='left').pack(anchor='w', padx=12, pady=(0, 8))
         tabs = ttk.Notebook(window)
+        window._settings_tabs = tabs
         tabs.pack(fill='both', expand=True, padx=8, pady=8)
         form_outer = ttk.Frame(tabs)
-        tabs.add(form_outer, text='Common settings')
-        form_canvas = tk.Canvas(form_outer, highlightthickness=0)
-        form_scroll = ttk.Scrollbar(form_outer, orient='vertical', command=form_canvas.yview)
+        tabs.add(form_outer, text='Organized editor')
+        section_names = tuple(dict.fromkeys(group for group, _, _, _ in FIELDS))
+        editor_body = ttk.Frame(form_outer)
+        editor_body.pack(fill='both', expand=True, padx=8, pady=8)
+        section_bar = ttk.Frame(editor_body)
+        section_bar.pack(side='left', fill='y', padx=(0, 8))
+        ttk.Label(section_bar, text='Sections').pack(anchor='w', padx=4, pady=(2, 6))
+        selected_section = tk.StringVar(value=section if section in section_names else section_names[0])
+        window._settings_section = selected_section
+        section_list = tk.Listbox(section_bar, exportselection=False, width=19,
+                                  height=len(section_names), font=('Segoe UI', 10),
+                                  bg=self.COLORS['card'], fg=self.COLORS['text'],
+                                  selectbackground=self.COLORS['accent'],
+                                  selectforeground=self.COLORS['header_text'],
+                                  highlightthickness=0, relief='flat')
+        for name in section_names:
+            section_list.insert('end', name)
+        section_list.pack(fill='x')
+        form_canvas = tk.Canvas(editor_body, highlightthickness=0)
+        form_scroll = ttk.Scrollbar(editor_body, orient='vertical', command=form_canvas.yview)
         form_canvas.configure(yscrollcommand=form_scroll.set)
         form_canvas.pack(side='left', fill='both', expand=True)
         form_scroll.pack(side='right', fill='y')
@@ -1989,8 +2020,8 @@ class NeuroVisGUI:
         form.bind('<Configure>', lambda event: form_canvas.configure(scrollregion=form_canvas.bbox('all')))
         form_canvas.bind('<Configure>', lambda event: form_canvas.itemconfigure(form_id, width=event.width))
         advanced = ttk.Frame(tabs)
-        tabs.add(advanced, text='Advanced YAML')
-        ttk.Label(advanced, text="Edit the complete configuration here. Apply YAML to update the form before saving.",
+        tabs.add(advanced, text=raw_label)
+        ttk.Label(advanced, text="Edit the complete configuration here. Switching to Organized editor updates its fields; Save settings writes the file.",
                   wraplength=850).pack(anchor='w', padx=8, pady=8)
         frame = ttk.Frame(advanced)
         frame.pack(fill='both', expand=True, padx=8, pady=4)
@@ -2005,6 +2036,28 @@ class NeuroVisGUI:
         text.grid(row=0, column=0, sticky='nsew')
         scroll_y.grid(row=0, column=1, sticky='ns')
         scroll_x.grid(row=1, column=0, sticky='ew')
+        default_tab = ttk.Frame(tabs)
+        tabs.add(default_tab, text='Default YAML')
+        ttk.Label(default_tab, text=f'Read-only reference · {default_source}',
+                  wraplength=850).pack(anchor='w', padx=8, pady=(8, 2))
+        ttk.Label(default_tab, text='Reset to default stages this profile in the editor; Save settings writes only the active configuration.',
+                  wraplength=850).pack(anchor='w', padx=8, pady=(0, 6))
+        default_frame = ttk.Frame(default_tab)
+        default_frame.pack(fill='both', expand=True, padx=8, pady=4)
+        default_frame.grid_rowconfigure(0, weight=1)
+        default_frame.grid_columnconfigure(0, weight=1)
+        default_text = tk.Text(default_frame, wrap='none', font=('Consolas', 9),
+                               bg=self.COLORS['field'], fg=self.COLORS['text'])
+        default_text.insert('1.0', default_content)
+        default_text.configure(state='disabled')
+        default_scroll = ttk.Scrollbar(default_frame, orient='vertical', command=default_text.yview)
+        default_scroll_x = ttk.Scrollbar(default_frame, orient='horizontal', command=default_text.xview)
+        default_text.configure(yscrollcommand=default_scroll.set,
+                               xscrollcommand=default_scroll_x.set)
+        default_text.grid(row=0, column=0, sticky='nsew')
+        default_scroll.grid(row=0, column=1, sticky='ns')
+        default_scroll_x.grid(row=1, column=0, sticky='ew')
+        window._default_text = default_text
 
         variables = {}
         widgets = {}
@@ -2012,12 +2065,12 @@ class NeuroVisGUI:
         for group, dotted, label, kind in FIELDS:
             if group not in sections:
                 box = ttk.LabelFrame(form, text=group)
-                box.pack(fill='x', padx=12, pady=(8, 2))
                 box.grid_columnconfigure(1, weight=1)
                 sections[group] = [box, 0]
             box, row = sections[group]
             sections[group][1] += 1
-            ttk.Label(box, text=label).grid(row=row, column=0, sticky='w', padx=8, pady=5)
+            ttk.Label(box, text=label, wraplength=255, justify='left').grid(
+                row=row, column=0, sticky='w', padx=8, pady=5)
             var = tk.BooleanVar() if kind == 'bool' else tk.StringVar()
             variables[dotted] = var
             if kind == 'bool':
@@ -2036,13 +2089,42 @@ class NeuroVisGUI:
                     if selected:
                         variables[field].set(selected)
                 ttk.Button(box, text='Browse…', command=browse).grid(row=row, column=2, padx=8)
-        ttk.Label(form, text="Sample-specific paths, geometry, provenance and display parameters remain in Advanced YAML.",
-                  wraplength=820).pack(anchor='w', padx=16, pady=12)
+        def show_section(*_):
+            index = section_names.index(selected_section.get())
+            if section_list.curselection() != (index,):
+                section_list.selection_clear(0, 'end')
+                section_list.selection_set(index)
+            for group, (box, _) in sections.items():
+                box.pack_forget()
+                if group == selected_section.get():
+                    box.pack(fill='x', padx=12, pady=(8, 2))
+            form_canvas.yview_moveto(0)
+
+        section_list.bind('<<ListboxSelect>>', lambda _event: (
+            selected_section.set(section_names[section_list.curselection()[0]])
+            if section_list.curselection() else None))
+        selected_section.trace_add('write', show_section)
+        show_section()
+        ttk.Label(form_outer, text=f"Sample-specific paths, geometry, provenance and display parameters remain in {raw_label}.",
+                  wraplength=820).pack(anchor='w', padx=16, pady=8)
         error = tk.StringVar(value='')
         ttk.Label(window, textvariable=error, foreground='#b45309', wraplength=850).pack(anchor='w', padx=12)
-        state = {'hash': None, 'raw': None, 'text': None}
+        state = {'hash': None, 'raw': None, 'text': None, 'saved_raw': None,
+                 'saved_text': None, 'tab': 'form', 'switching': False}
 
         def fill_form(raw):
+            import math
+            for _, dotted, _, kind in FIELDS:
+                value = field_value(raw, dotted)
+                if kind == 'bool' and value is not None and not isinstance(value, bool):
+                    raise ValueError(f'{dotted}: use a YAML boolean (true or false)')
+                if kind == 'positive_number' and value is not None and (
+                        isinstance(value, bool) or not isinstance(value, (int, float))
+                        or not math.isfinite(value) or value <= 0):
+                    raise ValueError(f'{dotted}: use a positive YAML number')
+                if kind == 'positive_int' and value is not None and (
+                        isinstance(value, bool) or not isinstance(value, int) or value <= 0):
+                    raise ValueError(f'{dotted}: use a positive YAML whole number')
             for _, dotted, _, kind in FIELDS:
                 value = field_value(raw, dotted)
                 variables[dotted].set(bool(value) if kind == 'bool' else '' if value is None else str(value))
@@ -2051,43 +2133,110 @@ class NeuroVisGUI:
             try:
                 raw_bytes = Path(path).read_bytes()
                 content = raw_bytes.decode('utf-8')
-                raw = parse_text(content, path)
             except Exception as exc:
                 error.set(f"Could not read configuration: {exc}")
                 return
-            state.update(hash=hashlib.sha256(raw_bytes).hexdigest(), raw=raw, text=content)
+            state.update(hash=hashlib.sha256(raw_bytes).hexdigest(), raw=None,
+                         text=content, saved_raw=None, saved_text=content)
             text.delete('1.0', 'end')
             text.insert('1.0', content)
-            fill_form(raw)
-            error.set('')
-
-        def apply_yaml():
-            content = text.get('1.0', 'end-1c')
             try:
                 raw = parse_text(content, path)
+                fill_form(raw)
             except Exception as exc:
-                error.set(f"Advanced YAML is invalid: {exc}")
+                state['tab'] = 'raw'
                 tabs.select(advanced)
+                error.set(f"Configuration needs correction in {raw_label}: {exc}")
                 return
-            state['raw'] = raw
-            state['text'] = content
-            fill_form(raw)
-            error.set('YAML applied to form; save to write the file.')
-            tabs.select(form_outer)
+            state.update(raw=raw, saved_raw=raw)
+            if tabs.select() != str(default_tab):
+                state['tab'] = 'raw' if tabs.select() == str(advanced) else 'form'
+            error.set(default_warning)
+
+        def on_tab_changed(_event):
+            if state['switching'] or tabs.select() == str(default_tab):
+                return
+            target = 'raw' if tabs.select() == str(advanced) else 'form'
+            if target == state['tab']:
+                return
+            try:
+                if target == 'raw':
+                    if state['raw'] is None:
+                        raise ValueError(f'Correct {raw_label} before using the organized editor.')
+                    if text.get('1.0', 'end-1c') != state['text']:
+                        raise ValueError(f'{raw_label} has unsaved edits; review them in {raw_label} before editing the form.')
+                    raw = apply_fields(state['raw'], {key: var.get() for key, var in variables.items()})
+                    if raw != state['raw']:
+                        content = dump_text(raw, path)
+                        text.delete('1.0', 'end')
+                        text.insert('1.0', content)
+                        state.update(raw=raw, text=content)
+                else:
+                    content = text.get('1.0', 'end-1c')
+                    raw = parse_text(content, path)
+                    fill_form(raw)
+                    state.update(raw=raw, text=content)
+                state['tab'] = target
+                error.set('')
+            except Exception as exc:
+                state['switching'] = True
+                tabs.select(advanced if state['tab'] == 'raw' else form_outer)
+                state['switching'] = False
+                error.set(str(exc))
+
+        tabs.bind('<<NotebookTabChanged>>', on_tab_changed)
+
+        def stage_content(content, source_path, label):
+            try:
+                raw = parse_text(content, source_path)
+                fill_form(raw)
+                staged = (content if Path(source_path).suffix.lower() == Path(path).suffix.lower()
+                          else dump_text(raw, path))
+            except Exception as exc:
+                error.set(f'Could not stage {label}: {exc}')
+                return
+            text.delete('1.0', 'end')
+            text.insert('1.0', staged)
+            state.update(raw=raw, text=staged, tab='raw')
+            tabs.select(advanced)
+            error.set(f'{label} staged in {raw_label}; Save settings to write the active file.')
+
+        def reset_to_default():
+            stage_content(default_content, default_path, 'Default profile')
+
+        def restore_backup():
+            selected = filedialog.askopenfilename(
+                parent=window, title='Restore a VisPa configuration backup',
+                initialdir=str(Path(path).parent / 'config_backups'),
+                filetypes=[('Configuration', '*.yaml *.yml *.json'), ('All files', '*.*')])
+            if not selected:
+                return
+            try:
+                content = Path(selected).read_text(encoding='utf-8')
+            except Exception as exc:
+                error.set(f'Could not read backup: {exc}')
+                return
+            stage_content(content, selected, f'Backup {Path(selected).name}')
 
         def save():
             try:
+                if tabs.select() == str(default_tab):
+                    raise ValueError('Default YAML is read-only. Choose Organized editor or Raw YAML before saving.')
                 if hashlib.sha256(Path(path).read_bytes()).hexdigest() != state['hash']:
                     raise ValueError('The file changed outside this window. Reload it before saving.')
-                if tabs.index(tabs.select()) == 1 and text.get('1.0', 'end-1c') != state['text']:
-                    raw = parse_text(text.get('1.0', 'end-1c'), path)
+                if tabs.select() == str(advanced):
                     content = text.get('1.0', 'end-1c')
+                    raw = parse_text(content, path)
                     fill_form(raw)
                 else:
                     if text.get('1.0', 'end-1c') != state['text']:
-                        raise ValueError('YAML has unapplied edits. Apply YAML before saving the form.')
+                        raise ValueError(f'{raw_label} has unsaved edits. Switch to {raw_label} to review them.')
                     raw = apply_fields(state['raw'], {key: var.get() for key, var in variables.items()})
                     content = state['text'] if raw == state['raw'] else dump_text(raw, path)
+                if (raw == state['saved_raw'] and
+                        content.replace('\r\n', '\n') == state['saved_text'].replace('\r\n', '\n')):
+                    error.set('No changes to save.')
+                    return
             except Exception as exc:
                 error.set(str(exc))
                 return
@@ -2100,8 +2249,9 @@ class NeuroVisGUI:
         buttons = tk.Frame(window)
         buttons.pack(pady=(0, 8))
         ttk.Button(buttons, text="Save settings", command=save).pack(side='left', padx=4)
-        ttk.Button(buttons, text="Apply YAML to form", command=apply_yaml).pack(side='left', padx=4)
         ttk.Button(buttons, text="Reload", command=load).pack(side='left', padx=4)
+        ttk.Button(buttons, text="Reset to default", command=reset_to_default).pack(side='left', padx=4)
+        ttk.Button(buttons, text="Restore backup…", command=restore_backup).pack(side='left', padx=4)
         tk.Label(window, text="Saving validates the complete configuration. Restart VisPa after changing source folders.",
                  bg=self.COLORS['page'], fg=self.COLORS['muted'],
                  font=('Segoe UI', 8)).pack(pady=(0, 6))
@@ -2109,7 +2259,13 @@ class NeuroVisGUI:
     def _save_config_text(self, path, content, expected_sha256=None):
         """Validate scoped settings, preserve JSON/YAML format, and atomically replace."""
         import json
+        from importlib.resources import files
         from .dataset_config import load as load_config
+        protected = Path(path).name.casefold() == 'vispa_config.default.yaml'
+        installed_default = Path(str(files('vispa').joinpath('default_config.yaml'))).resolve()
+        if protected or Path(path).resolve() == installed_default:
+            messagebox.showerror('Config', 'Default YAML is read-only; select an active configuration to save.')
+            return False
         suffix = Path(path).suffix.lower()
         is_json = suffix == '.json'
         try:
@@ -2132,7 +2288,7 @@ class NeuroVisGUI:
                 messagebox.showerror('Config', f'Could not recheck configuration: {exc}')
                 return False
         temp_suffix = '.json' if is_json else '.yaml'
-        temp = os.path.join(folder, f".visual_toolkit_config_{os.getpid()}.tmp{temp_suffix}")
+        temp = os.path.join(folder, f".vispa_config_{os.getpid()}.tmp{temp_suffix}")
         try:
             with open(temp, 'w', encoding='utf-8') as stream:
                 stream.write(content)
@@ -2150,16 +2306,39 @@ class NeuroVisGUI:
             except OSError:
                 pass
             return False
-        backups = os.path.join(folder, 'config_backups')
-        os.makedirs(backups, exist_ok=True)
-        if os.path.isfile(path):
-            stamp = time.strftime('%Y%m%d-%H%M%S')
-            shutil.copy2(path, os.path.join(
-                backups, f"visual_toolkit_config_{stamp}{suffix or '.yaml'}"))
-            default_copy = os.path.join(folder, f"visual_toolkit_config.default{suffix or '.yaml'}")
-            if not os.path.exists(default_copy):
-                shutil.copy2(path, default_copy)
-        os.replace(temp, path)
+        backup = None
+        backup_created = False
+        try:
+            backups = os.path.join(folder, 'config_backups')
+            os.makedirs(backups, exist_ok=True)
+            if os.path.isfile(path):
+                from datetime import datetime
+                stamp = datetime.now().strftime('%Y%m%d-%H%M%S-%f')
+                backup = os.path.join(backups, f'{Path(path).stem}_{stamp}{suffix or ".yaml"}')
+                with open(path, 'rb') as original, open(backup, 'xb') as saved:
+                    backup_created = True
+                    shutil.copyfileobj(original, saved)
+        except OSError as exc:
+            messagebox.showerror('Config', f'Could not preserve the previous configuration: {exc}')
+            if backup_created:
+                try:
+                    os.remove(backup)
+                except OSError:
+                    pass
+            try:
+                os.remove(temp)
+            except OSError:
+                pass
+            return False
+        try:
+            os.replace(temp, path)
+        except OSError as exc:
+            messagebox.showerror('Config', f'Could not save configuration: {exc}')
+            try:
+                os.remove(temp)
+            except OSError:
+                pass
+            return False
         return True
 
     def _show_progress(self):

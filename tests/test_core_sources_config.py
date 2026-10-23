@@ -1,6 +1,6 @@
 """Focused regression checks for the standalone extraction seams.
 
-Version: 1.11.0.dev4 (local/unreleased)
+Version: 1.11.0.dev6 (local/unreleased)
 Last updated: 2026-10-23
 Change history: ../CHANGELOG.md
 """
@@ -1056,6 +1056,39 @@ class ConfigTests(unittest.TestCase):
                                    side_effect=tifffile.TiffFileError("bad cached TIFF")):
                 self.assertEqual(source(Toolkit(), 1, 2, 3), "replacement")
             Toolkit._download_http_block.assert_called_once_with(1, 2, 3)
+
+    def test_cached_cube_precedes_http_configuration_and_invalid_cache_stays_explicit(self):
+        import numpy as np
+        from vispa import toolkit
+
+        with tempfile.TemporaryDirectory() as temp:
+            cache_root = Path(temp) / "high_res_http"
+            cube = cache_root / "3" / "1_2_3.tif"
+            cube.parent.mkdir(parents=True)
+            cube.write_bytes(b"cached source bytes")
+
+            class LocalToolkit:
+                sample_id = "0007"
+                cache_http_dir = str(cache_root)
+                _block_errors = {}
+
+            local = LocalToolkit()
+            valid = np.zeros((90, 360, 360), dtype=np.uint8)
+            with mock.patch.object(toolkit, "HTTP_HOST", None), \
+                    mock.patch.object(toolkit, "_read_highres_cube", return_value=valid) as decode, \
+                    mock.patch.object(toolkit.urllib.request, "urlopen") as network:
+                self.assertIs(toolkit.Visual_toolkit._download_http_block(local, 1, 2, 3), valid)
+                decode.assert_called_once_with(str(cube))
+                network.assert_not_called()
+                cube.unlink()
+                with self.assertRaisesRegex(RuntimeError, "No cached cube or HTTP cube source"):
+                    toolkit.Visual_toolkit._download_http_block(local, 1, 2, 3)
+                cube.write_bytes(b"corrupt")
+                decode.side_effect = ValueError("bad TIFF")
+                with self.assertRaisesRegex(RuntimeError, "Cached cube is invalid.*bad TIFF"):
+                    toolkit.Visual_toolkit._download_http_block(local, 1, 2, 3)
+                self.assertEqual(local._block_errors[(1, 2, 3)], "bad TIFF")
+                network.assert_not_called()
 
 
 class SWCProviderTests(unittest.TestCase):

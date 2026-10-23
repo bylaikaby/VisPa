@@ -1,6 +1,6 @@
-include CHANGELOG.md README.md install.cmd
+include CHANGELOG.md README.md install.cmd VisPa.cmd environment.yml
 include requirements-runtime-win-py313.lock requirements-legacy-gl-win-py313.lock
-include tools/install.ps1
+include tools/install.ps1 tools/windows_vm_e2e.ps1
 recursive-include src *.py *.yaml
 recursive-include tests *.py *.ps1
 exclude extraction_manifest.json

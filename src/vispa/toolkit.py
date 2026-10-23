@@ -1,8 +1,8 @@
 """
 vispa.py - Macaque Brain Hybrid-Resolution Visualization Toolkit
 
-Version: 1.11.0.dev4 (local/unreleased)
-Last updated: 2026-10-22
+Version: 1.11.0.dev6 (local/unreleased)
+Last updated: 2026-10-23
 Change history: ../../CHANGELOG.md
 Status: candidate (visual review pending)
 
@@ -702,8 +702,6 @@ class VisPa:
     # SOURCE 1: HIGH RES (HTTP)
     # ==========================================
     def _download_http_block(self, idx_x, idx_y, idx_z):
-        if not HTTP_HOST:
-            raise RuntimeError("No HTTP cube source configured; set sources.http_base_url (and http_path if needed)")
         if any(not isinstance(index, (int, np.integer)) or index < 0 for index in (idx_x, idx_y, idx_z)):
             raise ValueError("Cube indices must be nonnegative integers")
         filename = f"{idx_x}_{idx_y}_{idx_z}.tif"
@@ -721,6 +719,12 @@ class VisPa:
             except Exception as exc:
                 self._block_errors[(idx_x, idx_y, idx_z)] = str(exc)
                 # Keep corrupt cache evidence; a failed replacement stays explicit.
+
+        if not HTTP_HOST:
+            cached_error = self._block_errors.get((idx_x, idx_y, idx_z))
+            if cached_error:
+                raise RuntimeError(f"Cached cube is invalid and no HTTP cube source is configured: {cached_error}")
+            raise RuntimeError("No cached cube or HTTP cube source configured; set sources.http_host (and http_path if needed)")
 
         path_prefix = f"/{HTTP_PATH.strip('/')}" if HTTP_PATH else ""
         url = f"{HTTP_HOST.rstrip('/')}{path_prefix}/{self.sample_id}/cube/{idx_z}/{filename}"

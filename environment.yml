@@ -1,0 +1,27 @@
+name: vispa
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python=3.13
+  - pip
+  - tk
+  - numpy
+  - matplotlib<3.11.1
+  - pillow
+  - pyyaml
+  - scipy
+  - scikit-image
+  - nibabel
+  - tifffile
+  - imageio
+  - networkx
+  - lazy_loader
+  - trimesh=5.1.1
+  - vispy=0.17.0
+  - pyopengl=3.1.10
+  - freetype-py
+  - hsluv
+  - pip:
+      - PyGLM==2.8.3
+      - glfw==2.11.0

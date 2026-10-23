@@ -1,7 +1,7 @@
 """Lossless form projection for the common VisPa configuration fields.
 
-Version: 1.11.0.dev4 (local/unreleased)
-Last updated: 2026-10-22
+Version: 1.11.0.dev6 (local/unreleased)
+Last updated: 2026-10-23
 Change history: ../../CHANGELOG.md
 Status: candidate
 """
@@ -39,15 +39,19 @@ FIELDS = (
     ("FNT", "visual_toolkit.fnt_tracer.server_base_url", "FNT server address", "text"),
     ("FNT", "visual_toolkit.fnt_tracer.catalog_base_url", "FNT catalog address", "text"),
     ("FNT", "visual_toolkit.fnt_tracer.timeout_seconds", "FNT timeout (seconds)", "positive_int"),
-    ("Public example", "sources.public_example.source_url", "Public SWC address", "text"),
-    ("Public example", "sources.public_example.metadata_url", "Source record address", "text"),
-    ("Public example", "sources.public_example.record_id", "Source record ID", "text"),
-    ("Public example", "sources.public_example.record_file", "Source record filename", "text"),
-    ("Public example", "sources.public_example.sha256", "SWC SHA-256 check", "sha256"),
     ("Startup", "visual_toolkit.default_sample", "Default sample ID", "text"),
     ("Startup", "visual_toolkit.default_neuron", "Default neuron ID", "text"),
     ("Startup", "visual_toolkit.auto_load", "Load default on startup", "bool"),
 )
+
+# Existing profile keys stay writable through Raw YAML and the form projection API.
+LEGACY_EDITABLE_FIELDS = {
+    "sources.public_example.source_url": "text",
+    "sources.public_example.metadata_url": "text",
+    "sources.public_example.record_id": "text",
+    "sources.public_example.record_file": "text",
+    "sources.public_example.sha256": "sha256",
+}
 
 
 def parse_text(content: str, path: str | Path) -> dict:
@@ -89,7 +93,7 @@ def _field_exists(raw: dict, dotted: str) -> bool:
 def apply_fields(raw: dict, values: dict[str, object]) -> dict:
     """Copy and change only exposed leaf values; all other YAML data survives."""
     result = copy.deepcopy(raw)
-    allowed = {field[1]: field[3] for field in FIELDS}
+    allowed = {field[1]: field[3] for field in FIELDS} | LEGACY_EDITABLE_FIELDS
     relative_key = "sources.dataset_manifest_relative"
     explicit_key = "sources.dataset_manifest"
     relative_changed = (relative_key in values and

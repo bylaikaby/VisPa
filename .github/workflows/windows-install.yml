@@ -1,4 +1,4 @@
-# Version: 1.11.0.dev4 (local/unreleased)
+# Version: 1.11.0.dev6 (local/unreleased)
 # Last updated: 2026-10-23
 # Change history: ../../CHANGELOG.md
 name: Windows fresh install
@@ -11,154 +11,23 @@ permissions:
 jobs:
   fresh-install:
     runs-on: windows-2022
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-          architecture: x64
-      - name: Install and operate VisPa from a fresh source ZIP
+      - name: Anonymous source ZIP and Conda-first end-to-end install
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
-          $evidence = Join-Path $env:GITHUB_WORKSPACE 'windows-install-evidence'
-          New-Item -ItemType Directory -Path $evidence -Force | Out-Null
-          Start-Transcript -LiteralPath (Join-Path $evidence 'windows-install.log') | Out-Null
-          try {
-            $sourceRoot = Join-Path $env:RUNNER_TEMP 'VisPa fresh PC'
-            $zip = Join-Path $env:RUNNER_TEMP 'vispa-source.zip'
-            if (Test-Path -LiteralPath $sourceRoot) { throw 'Expected a fresh extraction target' }
-            git archive --format=zip --output=$zip $env:GITHUB_SHA
-            if ($LASTEXITCODE -ne 0) { throw 'git archive failed' }
-            Expand-Archive -LiteralPath $zip -DestinationPath $sourceRoot
-            $archiveHash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
-            $python = (Get-Command python -ErrorAction Stop).Source
-            $config = Join-Path $env:APPDATA 'VisPa\vispa_config.yaml'
-            $cache = Join-Path $env:LOCALAPPDATA 'VisPa\cache'
-            $runtime = Join-Path $env:LOCALAPPDATA 'VisPa\venv'
-            $vispa = Join-Path $runtime 'Scripts\vispa.exe'
-            $runtimePython = Join-Path $runtime 'Scripts\python.exe'
-            if ((Test-Path -LiteralPath $config) -or (Test-Path -LiteralPath $runtime)) { throw 'Expected a fresh VisPa user profile' }
-            Remove-Item Env:\VISPA_CONFIG,Env:\VISPA_PYTHON,Env:\VISUAL_TOOLKIT_CONFIG,Env:\PROJECTOME_DATASETS -ErrorAction SilentlyContinue
-            Set-Location -LiteralPath $sourceRoot
-            $plan = & .\install.cmd -NoLaunch -Python $python -DryRun | ConvertFrom-Json
-            if ($LASTEXITCODE -ne 0 -or $plan.install_dir -ne $runtime -or $plan.config -ne $config) { throw 'Unexpected installer dry-run paths' }
-            & .\install.cmd -NoLaunch -Python $python
-            if ($LASTEXITCODE -ne 0) { throw 'Production install failed' }
-            if (-not (Test-Path -LiteralPath $config)) { throw 'Per-user config missing after install' }
-            $version = (& $vispa --version).Trim()
-            if ($LASTEXITCODE -ne 0) { throw 'Installed CLI version failed' }
-            & $runtimePython -m pip check
-            if ($LASTEXITCODE -ne 0) { throw 'Installed dependency check failed' }
-            $modulePath = (& $runtimePython -c 'import vispa; print(vispa.__file__)').Trim()
-            if ($LASTEXITCODE -ne 0 -or -not $modulePath.StartsWith($runtime, [StringComparison]::OrdinalIgnoreCase)) { throw "Import came from outside installed runtime: $modulePath" }
-            $payloadCode = 'from pathlib import Path; import hashlib,json,sys,vispa; src=Path(sys.argv[1])/"src"; dst=Path(vispa.__file__).resolve().parent.parent; files=sorted(p for p in src.rglob("*") if p.is_file() and p.suffix in (".py",".yaml")); entries=[(p.relative_to(src).as_posix(),hashlib.sha256(p.read_bytes()).hexdigest(),hashlib.sha256((dst/p.relative_to(src)).read_bytes()).hexdigest() if (dst/p.relative_to(src)).is_file() else None) for p in files]; print(json.dumps({"count":len(entries),"mismatch":[r for r,s,d in entries if s!=d],"aggregate_sha256":hashlib.sha256("".join(r+":"+s+";" for r,s,d in entries).encode()).hexdigest()}))'
-            $payloadBefore = & $runtimePython -c $payloadCode $sourceRoot | ConvertFrom-Json
-            if ($LASTEXITCODE -ne 0 -or $payloadBefore.count -lt 1 -or $payloadBefore.mismatch.Count) { throw 'Installed Python/YAML payload differs from extracted source' }
-            & $vispa config-check --config $config --validate-only | Out-Null
-            if ($LASTEXITCODE -ne 0) { throw 'Config dry run failed' }
-            & $vispa example --config $config --dry-run | Out-Null
-            if ($LASTEXITCODE -ne 0) { throw 'Public example dry run failed' }
-            & $runtimePython -m vispa.gui --config $config --dry-run | Out-Null
-            if ($LASTEXITCODE -ne 0) { throw 'GUI launch dry run failed' }
-            $guiExe = Join-Path $runtime 'Scripts\vispa-gui.exe'
-            if (-not (Test-Path -LiteralPath $guiExe -PathType Leaf)) { throw 'GUI executable missing' }
-            $shortcutPath = Join-Path ([Environment]::GetFolderPath('Desktop')) 'VisPa.lnk'
-            if (-not (Test-Path -LiteralPath $shortcutPath -PathType Leaf)) { throw 'Desktop shortcut missing' }
-            $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcutPath)
-            $expectedArgs = '--config ' + [char]34 + $config + [char]34
-            if ($shortcut.TargetPath -ne $guiExe -or $shortcut.Arguments -ne $expectedArgs) { throw 'Desktop shortcut target or config differs' }
-            if ([Environment]::GetEnvironmentVariable('VISPA_CONFIG','User') -ne $config -or
-                [Environment]::GetEnvironmentVariable('VISPA_PYTHON','User') -ne $runtimePython) { throw 'Per-user VisPa environment registration differs' }
-            $savedProcessPath = $env:Path
-            try {
-              $env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')
-              if ((Get-Command vispa -ErrorAction Stop).Source -ne $vispa) { throw 'Fresh user PATH did not resolve installed VisPa' }
-            } finally { $env:Path = $savedProcessPath }
-            $syntheticInput = Join-Path $evidence 'synthetic_native_yx.npy'
-            & $runtimePython -c 'import numpy as np,sys; np.save(sys.argv[1],np.arange(64*64,dtype=np.float32).reshape(64,64))' $syntheticInput
-            if ($LASTEXITCODE -ne 0) { throw 'Synthetic input creation failed' }
-            $output = Join-Path $evidence 'render'
-            $renderArgs = @('render','--input',$syntheticInput,'--sample','synthetic-01','--neuron','0001','--soma','32','32','0','--origin','0','0','0','--resolution','1','1','1','--coordinate-frame','synthetic-native-XYZ','--role','soma','--output-dir',$output)
-            & $vispa @renderArgs --dry-run | Out-Null
-            if ($LASTEXITCODE -ne 0) { throw 'Render dry run failed' }
-            & $vispa @renderArgs | Out-Null
-            if ($LASTEXITCODE -ne 0) { throw 'Synthetic render failed' }
-            $png = @(Get-ChildItem -LiteralPath $output -Filter '*.png' -File)
-            $receipt = @(Get-ChildItem -LiteralPath $output -Filter '*.json' -File)
-            if ($png.Count -ne 1 -or $receipt.Count -ne 1 -or $png[0].Length -lt 1000) { throw 'Expected one nonempty PNG and one receipt' }
-            $renderReceipt = Get-Content -LiteralPath $receipt[0].FullName -Raw | ConvertFrom-Json
-            $sourceHash = (Get-FileHash -LiteralPath $syntheticInput -Algorithm SHA256).Hash.ToLowerInvariant()
-            $pngHash = (Get-FileHash -LiteralPath $png[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-            if ($renderReceipt.input_sha256 -ne $sourceHash -or $renderReceipt.output_sha256 -ne $pngHash) { throw 'Render receipt hashes differ from files' }
-            if (($renderReceipt.input_stat_before | ConvertTo-Json -Compress) -ne ($renderReceipt.input_stat_after | ConvertTo-Json -Compress)) { throw 'Render receipt reports changed input stat' }
-            if (-not $renderReceipt.render_labels.legend) { throw 'Rendered role legend missing' }
-            $configHash = (Get-FileHash -LiteralPath $config -Algorithm SHA256).Hash
-            New-Item -ItemType Directory -Path $cache -Force | Out-Null
-            $marker = Join-Path $cache 'ci-preservation-marker.txt'
-            Set-Content -LiteralPath $marker -Value 'VisPa clean guest cache preservation' -NoNewline
-            $markerHash = (Get-FileHash -LiteralPath $marker -Algorithm SHA256).Hash
-            $userPath = [Environment]::GetEnvironmentVariable('Path','User')
-            & .\install.cmd -NoLaunch -Python $python
-            if ($LASTEXITCODE -ne 0) { throw 'Repeat install failed' }
-            if ((Get-FileHash -LiteralPath $config -Algorithm SHA256).Hash -ne $configHash) { throw 'Repeat install changed config' }
-            if ((Get-FileHash -LiteralPath $marker -Algorithm SHA256).Hash -ne $markerHash) { throw 'Repeat install changed cache marker' }
-            if ([Environment]::GetEnvironmentVariable('Path','User') -ne $userPath) { throw 'Repeat install changed user PATH' }
-            if ((& $vispa --version).Trim() -ne $version) { throw 'Repeat install changed version' }
-            $payloadAfter = & $runtimePython -c $payloadCode $sourceRoot | ConvertFrom-Json
-            if ($LASTEXITCODE -ne 0 -or $payloadAfter.mismatch.Count -or $payloadAfter.count -ne $payloadBefore.count -or $payloadAfter.aggregate_sha256 -ne $payloadBefore.aggregate_sha256) { throw 'Repeat install changed installed Python/YAML payload' }
-            $tk = 'not_checked'
-            try {
-              & $runtimePython -c 'import sys,tkinter as tk; from vispa.gui import NeuroVisGUI; root=tk.Tk(); app=NeuroVisGUI(root,auto_load=False,config_path=sys.argv[1]); root.update_idletasks(); assert "VisPa "+sys.argv[2] in root.title(); print(root.title()); root.destroy()' $config $version
-              if ($LASTEXITCODE -eq 0) { $tk = 'vispa_window_created_and_destroyed' }
-              else { $tk = 'unavailable_in_hosted_runner_session' }
-            } catch { $tk = 'unavailable_in_hosted_runner_session' }
-            $os = Get-CimInstance Win32_OperatingSystem | Select-Object Caption,Version,BuildNumber
-            [ordered]@{
-              schema = 'vispa.windows-install-smoke.v1'
-              runner = $env:RUNNER_NAME
-              image = 'windows-2022 hosted VM'
-              os = $os
-              commit = $env:GITHUB_SHA
-              source_zip_sha256 = $archiveHash
-              source_path = $sourceRoot
-              python = $python
-              installer_plan = $plan
-              installed_version = $version
-              installed_module_path = $modulePath
-              installed_payload_file_count = $payloadAfter.count
-              installed_payload_aggregate_sha256 = $payloadAfter.aggregate_sha256
-              installed_payload_matches_extracted_source = $true
-              config_path = $config
-              config_sha256_after_repeat = $configHash.ToLowerInvariant()
-              cache_marker_sha256_after_repeat = $markerHash.ToLowerInvariant()
-              render_input_sha256 = $sourceHash
-              render_png_sha256 = $pngHash
-              render_receipt_sha256 = (Get-FileHash -LiteralPath $receipt[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-              cli_config_example_gui_dry_runs = 'passed'
-              repeat_install_preserved_config_cache_user_path = $true
-              tk_widget = $tk
-              visible_gui_review = 'not_performed_on_hosted_runner'
-              lab_network_checks = 'not_performed'
-            } | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $evidence 'run_receipt.json') -Encoding UTF8
-          } finally {
-            Stop-Transcript | Out-Null
-          }
-      - name: Source unit tests
-        shell: pwsh
-        run: |
-          $env:PYTHONPATH = Join-Path (Get-Location).Path 'src'
-          & (Join-Path $env:LOCALAPPDATA 'VisPa\venv\Scripts\python.exe') -m unittest discover -s tests
-          if ($LASTEXITCODE -ne 0) { throw 'Source unit tests failed' }
-          powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/test_install.ps1
-          if ($LASTEXITCODE -ne 0) { throw 'Installer stub harness failed' }
+          ./tools/windows_vm_e2e.ps1 -Commit $env:GITHUB_SHA -EvidenceDir (Join-Path $env:RUNNER_TEMP 'vispa-windows-e2e')
       - name: Upload Windows guest evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: windows-install-evidence
-          path: windows-install-evidence/
+          path: |
+            ${{ runner.temp }}/vispa-windows-e2e/run_receipt.json
+            ${{ runner.temp }}/vispa-windows-e2e/public-example/*.png
+            ${{ runner.temp }}/vispa-windows-e2e/public-example/*.json
+            ${{ runner.temp }}/vispa-windows-e2e/opengl-context-render.png
           if-no-files-found: warn

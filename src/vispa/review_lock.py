@@ -1,7 +1,7 @@
 """Shared OS ownership for regional production and candidate manifest replacement.
 
-Version: 1.11.0.dev4 (local/unreleased)
-Last updated: 2026-10-22
+Version: 1.11.0.dev6 (local/unreleased)
+Last updated: 2026-10-23
 Change history: ../../CHANGELOG.md
 """
 from contextlib import contextmanager

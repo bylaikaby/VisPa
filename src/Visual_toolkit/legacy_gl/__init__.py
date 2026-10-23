@@ -1,6 +1,6 @@
 """Legacy GL namespace; leaf wrappers share canonical VisPa module objects.
-Version: 1.11.0.dev4 (local/unreleased)
-Last updated: 2026-10-22
+Version: 1.11.0.dev6 (local/unreleased)
+Last updated: 2026-10-23
 Change history: ../../../CHANGELOG.md
 """
 # Intentionally retain this wrapper package path: aliasing the parent package

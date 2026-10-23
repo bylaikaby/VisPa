@@ -1,13 +1,17 @@
 """Focused lossless common-settings checks.
 
-Version: 1.11.0.dev4 (local/unreleased)
-Last updated: 2026-10-22
+Version: 1.11.0.dev6 (local/unreleased)
+Last updated: 2026-10-23
 Change history: ../CHANGELOG.md
 """
 import unittest
+import tempfile
+from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 from vispa.config_editor import FIELDS, apply_fields, field_value
+from vispa._version import __version__
 
 
 class ConfigEditorTests(unittest.TestCase):
@@ -26,10 +30,8 @@ class ConfigEditorTests(unittest.TestCase):
             'visual_toolkit.fnt_tracer.server_base_url',
             'visual_toolkit.fnt_tracer.catalog_base_url',
             'visual_toolkit.fnt_tracer.cache_root',
-            'sources.public_example.source_url', 'sources.public_example.metadata_url',
-            'sources.public_example.record_id', 'sources.public_example.record_file',
-            'sources.public_example.sha256',
         }.issubset(paths))
+        self.assertFalse(any(section == 'Public example' for section, *_ in FIELDS))
         self.assertFalse(any('10.10.' in label for _, _, label, _ in FIELDS))
 
     def test_form_round_trip_preserves_unexposed_scientific_values(self):
@@ -58,6 +60,9 @@ class ConfigEditorTests(unittest.TestCase):
             apply_fields({'version': 1}, {'sources.neuron_catalog.mode': 'mystery'})
         with self.assertRaisesRegex(ValueError, '64 hexadecimal'):
             apply_fields({'version': 1}, {'sources.public_example.sha256': 'not-a-hash'})
+        source = {'sources': {'public_example': {'record_id': 'kept'}}}
+        self.assertEqual(apply_fields(source, {'sources.public_example.record_id': 'edited'})
+                         ['sources']['public_example']['record_id'], 'edited')
 
     def test_fnt_controls_keep_own_cache_and_other_data(self):
         source = {'version': 1, 'visual_toolkit': {'fnt_tracer': {
@@ -120,6 +125,269 @@ class ConfigEditorTests(unittest.TestCase):
             apply_fields({'version': 1, 'sources': {}}, {
                 'sources.dataset_manifest_relative': 'manifest.json',
                 'sources.dataset_manifest': r'D:\Data\manifest.json'})
+
+
+class SettingsWindowTests(unittest.TestCase):
+    def test_sections_raw_roundtrip_and_external_change_guard(self):
+        import tkinter as tk
+        from tkinter import ttk
+        from vispa.gui import NeuroVisGUI
+
+        try:
+            root = tk.Tk()
+        except tk.TclError as exc:
+            self.skipTest(f'Tk display unavailable: {exc}')
+        root.withdraw()
+        try:
+            work = Path(__file__).parents[1] / 'work'
+            work.mkdir(exist_ok=True)
+            with tempfile.TemporaryDirectory(dir=work) as folder:
+                path = Path(folder) / 'vispa_config.yaml'
+                source = Path(__file__).parents[1] / 'src' / 'vispa' / 'default_config.yaml'
+                path.write_bytes(source.read_bytes())
+                gui = NeuroVisGUI.__new__(NeuroVisGUI)
+                gui.root, gui.config_path = root, str(path)
+                gui._refresh_dataset_sources = lambda: None
+                gui.update_status = lambda _message: None
+                gui._open_config_yaml()
+                root.update()
+                window = gui._config_window
+
+                def descendants(widget):
+                    for child in widget.winfo_children():
+                        yield child
+                        yield from descendants(child)
+
+                widgets = list(descendants(window))
+                tabs = next(item for item in widgets if isinstance(item, ttk.Notebook))
+                section_list = next(item for item in widgets if isinstance(item, tk.Listbox))
+                raw_text = next(item for item in widgets if isinstance(item, tk.Text))
+                buttons = {item.cget('text'): item for item in widgets
+                           if isinstance(item, ttk.Button)}
+                self.assertEqual([tabs.tab(tab, 'text') for tab in tabs.tabs()],
+                                 ['Organized editor', 'Raw YAML', 'Default YAML'])
+                self.assertEqual(tabs.tab(tabs.select(), 'text'), 'Organized editor')
+                self.assertEqual(section_list.get(0, 'end'),
+                                 ('Data folders', 'Sources', 'Brain view', 'FNT', 'Startup'))
+                self.assertIn(__version__, window.title())
+                self.assertNotIn('Apply YAML to form', buttons)
+                gui._on_fnt_setup()
+                self.assertEqual(window._settings_section.get(), 'FNT')
+                window._settings_section.set('Data folders')
+
+                original = path.read_bytes()
+                buttons['Save settings'].invoke()
+                self.assertEqual(path.read_bytes(), original)
+
+                folders = next(item for item in widgets if isinstance(item, ttk.LabelFrame)
+                               and item.cget('text') == 'Data folders')
+                entries = [item for item in folders.winfo_children()
+                           if isinstance(item, ttk.Entry)]
+                output_entry = next(item for item in entries if item.grid_info()['row'] == 5)
+                root.setvar(output_entry.cget('textvariable'), 'D:/test_output')
+                tabs.select(1)
+                root.update()
+                self.assertIn('output_root: D:/test_output', raw_text.get('1.0', 'end-1c'))
+                edited = raw_text.get('1.0', 'end-1c').replace(
+                    'output_root: D:/test_output', 'output_root: D:/another_output', 1)
+                raw_text.delete('1.0', 'end')
+                raw_text.insert('1.0', edited)
+                tabs.select(0)
+                root.update()
+                self.assertEqual(root.getvar(output_entry.cget('textvariable')),
+                                 'D:/another_output')
+                buttons['Save settings'].invoke()
+                self.assertIn(b'D:/another_output', path.read_bytes())
+                self.assertIn(b'250432', path.read_bytes())
+
+                tabs.select(1)
+                root.update()
+                invalid = raw_text.get('1.0', 'end-1c').replace(
+                    'auto_download: true', 'auto_download: "false"', 1)
+                raw_text.delete('1.0', 'end')
+                raw_text.insert('1.0', invalid)
+                tabs.select(0)
+                root.update()
+                self.assertEqual(tabs.tab(tabs.select(), 'text'), 'Raw YAML')
+                self.assertNotIn(b'auto_download: "false"', path.read_bytes())
+                buttons['Reload'].invoke()
+                root.update()
+                path.write_bytes(path.read_bytes() + b'\n# external edit\n')
+                tabs.select(0)
+                root.update()
+                root.setvar(output_entry.cget('textvariable'), 'D:/third_output')
+                buttons['Save settings'].invoke()
+                self.assertIn(b'# external edit', path.read_bytes())
+                self.assertNotIn(b'D:/third_output', path.read_bytes())
+
+                window.destroy()
+                path.write_bytes(original.replace(b'auto_download: true',
+                                                  b'auto_download: "false"', 1))
+                gui._open_config_yaml()
+                root.update()
+                repaired_window = gui._config_window
+                repaired_widgets = list(descendants(repaired_window))
+                repaired_tabs = next(item for item in repaired_widgets
+                                     if isinstance(item, ttk.Notebook))
+                repaired_text = next(item for item in repaired_widgets
+                                     if isinstance(item, tk.Text))
+                self.assertEqual(repaired_tabs.tab(repaired_tabs.select(), 'text'),
+                                 'Raw YAML')
+                self.assertIn('auto_download: "false"', repaired_text.get('1.0', 'end-1c'))
+                error_labels = [root.getvar(item.cget('textvariable'))
+                                for item in repaired_widgets if isinstance(item, ttk.Label)
+                                and item.cget('textvariable')]
+                self.assertTrue(any('needs correction' in value for value in error_labels))
+                repaired_text.delete('1.0', 'end')
+                repaired_text.insert('1.0', original.decode('utf-8'))
+                repaired_tabs.select(0)
+                root.update()
+                self.assertEqual(repaired_tabs.tab(repaired_tabs.select(), 'text'),
+                                 'Organized editor')
+
+                repaired_window.destroy()
+                path.write_bytes(b'version: [\n')
+                gui._open_config_yaml()
+                root.update()
+                syntax_window = gui._config_window
+                syntax_widgets = list(descendants(syntax_window))
+                syntax_tabs = next(item for item in syntax_widgets
+                                   if isinstance(item, ttk.Notebook))
+                syntax_raw = next(item for item in syntax_widgets if isinstance(item, tk.Text))
+                self.assertEqual(syntax_tabs.tab(syntax_tabs.select(), 'text'), 'Raw YAML')
+                self.assertEqual(syntax_raw.get('1.0', 'end-1c'), 'version: [\n')
+                syntax_raw.delete('1.0', 'end')
+                syntax_raw.insert('1.0', original.decode('utf-8'))
+                syntax_tabs.select(0)
+                root.update()
+                self.assertEqual(syntax_tabs.tab(syntax_tabs.select(), 'text'),
+                                 'Organized editor')
+        finally:
+            root.destroy()
+
+    def test_default_tab_reset_restore_and_distinct_backups(self):
+        import tkinter as tk
+        from tkinter import ttk
+        from vispa.gui import NeuroVisGUI
+
+        try:
+            root = tk.Tk()
+        except tk.TclError as exc:
+            self.skipTest(f'Tk display unavailable: {exc}')
+        root.withdraw()
+        try:
+            work = Path(__file__).parents[1] / 'work'
+            work.mkdir(exist_ok=True)
+            with tempfile.TemporaryDirectory(dir=work) as folder:
+                path = Path(folder) / 'vispa_config.yaml'
+                source = Path(__file__).parents[1] / 'src' / 'vispa' / 'default_config.yaml'
+                original = source.read_bytes()
+                path.write_bytes(original)
+                gui = NeuroVisGUI.__new__(NeuroVisGUI)
+                gui.root, gui.config_path = root, str(path)
+                gui._refresh_dataset_sources = lambda: None
+                gui.update_status = lambda _message: None
+                gui._open_config_yaml()
+                root.update()
+                window = gui._config_window
+
+                def descendants(widget):
+                    for child in widget.winfo_children():
+                        yield child
+                        yield from descendants(child)
+
+                widgets = list(descendants(window))
+                tabs = next(item for item in widgets if isinstance(item, ttk.Notebook))
+                raw = next(item for item in widgets if isinstance(item, tk.Text))
+                readonly = window._default_text
+                buttons = {item.cget('text'): item for item in widgets
+                           if isinstance(item, ttk.Button)}
+                default_path = path.with_name('vispa_config.default.yaml')
+                self.assertEqual(default_path.read_bytes(), original)
+                self.assertEqual(readonly.cget('state'), 'disabled')
+                folders = next(item for item in widgets if isinstance(item, ttk.LabelFrame)
+                               and item.cget('text') == 'Data folders')
+                output_entry = next(item for item in folders.winfo_children()
+                                    if isinstance(item, ttk.Entry)
+                                    and item.grid_info()['row'] == 5)
+                root.setvar(output_entry.cget('textvariable'), 'D:/form_draft')
+                tabs.select(2)
+                root.update()
+                self.assertEqual(path.read_bytes(), original)
+                self.assertEqual(root.getvar(output_entry.cget('textvariable')),
+                                 'D:/form_draft')
+                tabs.select(1)
+                root.update()
+                self.assertIn('output_root: D:/form_draft', raw.get('1.0', 'end-1c'))
+                raw_draft = raw.get('1.0', 'end-1c').replace(
+                    'output_root: D:/form_draft', 'output_root: D:/raw_draft', 1)
+                raw.delete('1.0', 'end')
+                raw.insert('1.0', raw_draft)
+                tabs.select(2)
+                root.update()
+                buttons['Save settings'].invoke()
+                self.assertEqual(path.read_bytes(), original)
+                tabs.select(1)
+                root.update()
+                self.assertEqual(raw.get('1.0', 'end-1c'), raw_draft)
+                buttons['Save settings'].invoke()
+                changed = path.read_bytes()
+                self.assertIn(b'D:/raw_draft', changed)
+                backups = path.parent / 'config_backups'
+                first = list(backups.glob('vispa_config_*.yaml'))
+                self.assertEqual(len(first), 1)
+                self.assertEqual(first[0].read_bytes(), original)
+
+                tabs.select(2)
+                root.update()
+                buttons['Reset to default'].invoke()
+                root.update()
+                self.assertEqual(path.read_bytes(), changed)
+                self.assertEqual(default_path.read_bytes(), original)
+                self.assertEqual(tabs.tab(tabs.select(), 'text'), 'Raw YAML')
+                buttons['Save settings'].invoke()
+                self.assertEqual(path.read_bytes().replace(b'\r\n', b'\n'), original)
+                second = list(backups.glob('vispa_config_*.yaml'))
+                self.assertEqual(len(second), 2)
+                self.assertEqual(len({item.name for item in second}), 2)
+                previous = next(item for item in second if item != first[0])
+                self.assertEqual(previous.read_bytes(), changed)
+
+                with mock.patch('vispa.gui.filedialog.askopenfilename',
+                                return_value=str(previous)):
+                    buttons['Restore backup…'].invoke()
+                self.assertNotIn(b'D:/raw_draft', path.read_bytes())
+                buttons['Save settings'].invoke()
+                self.assertIn(b'D:/raw_draft', path.read_bytes())
+                self.assertEqual(default_path.read_bytes(), original)
+
+                before_failed_save = path.read_bytes()
+                raw.insert('end', '\n# attempted edit')
+                with (mock.patch('vispa.gui.os.makedirs', side_effect=OSError('backup unavailable')),
+                      mock.patch('vispa.gui.messagebox.showerror') as show_error):
+                    buttons['Save settings'].invoke()
+                self.assertEqual(path.read_bytes(), before_failed_save)
+                show_error.assert_called_once()
+
+                window.destroy()
+                default_path.write_bytes(b'version: [\n')
+                gui._open_config_yaml()
+                root.update()
+                fallback_window = gui._config_window
+                self.assertEqual(default_path.read_bytes(), b'version: [\n')
+                self.assertEqual(fallback_window._default_text.get('1.0', 'end-1c'),
+                                 original.decode('utf-8').replace('\r\n', '\n'))
+                fallback_labels = [root.getvar(item.cget('textvariable'))
+                                   for item in descendants(fallback_window)
+                                   if isinstance(item, ttk.Label) and item.cget('textvariable')]
+                self.assertTrue(any('Local default copy could not be used' in value
+                                    for value in fallback_labels))
+                with mock.patch('vispa.gui.messagebox.showerror') as protected_error:
+                    self.assertFalse(gui._save_config_text(default_path, 'version: 1\n'))
+                self.assertEqual(default_path.read_bytes(), b'version: [\n')
+                protected_error.assert_called_once()
+        finally:
+            root.destroy()
 
 
 if __name__ == '__main__':
