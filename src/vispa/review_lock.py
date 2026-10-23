@@ -1,6 +1,6 @@
 """Shared OS ownership for regional production and candidate manifest replacement.
 
-Version: 1.11.0.dev6 (local/unreleased)
+Version: 1.11.0.dev7 (local/unreleased)
 Last updated: 2026-10-23
 Change history: ../../CHANGELOG.md
 """

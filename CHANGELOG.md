@@ -1,5 +1,33 @@
 # VisPa change log
 
+## 1.11.0.dev7 — 2026-10-23 (local/unreleased)
+- Remove the `Visual_toolkit` Python compatibility namespace, `Visual_toolkit`
+  class alias, and `visual-toolkit`/`visual-toolkit-gui` entry points. `vispa`
+  and `vispa-gui` are now the only supported imports and commands. Existing
+  `visual_toolkit` settings blocks and `visual-toolkit.*.v1` receipt schemas
+  remain readable data contracts.
+- Restrict installer and Windows-VM payload verification to `src/vispa`, so a
+  fresh installation can no longer succeed by resolving retired forwarding
+  files. This also reduces the packaged Python/YAML set from 48 to the files
+  actually implemented by VisPa.
+- Remove the public-neuron example from the organized GUI and Settings form.
+  The bounded `vispa example` CLI remains available as a separate optional
+  morphology-only command. Six focused config-editor tests and the real Tk
+  Settings-window regression passed.
+- Convert the normal operator surface to Python modules only. Remove the
+  generated `vispa`/`vispa-gui` console scripts, `install.cmd`, `VisPa.cmd`,
+  custom Miniforge bootstrap, installer harness, and VM launcher. Conda now
+  creates the environment from `environment.yml`; use
+  `python -m vispa` or `python -m vispa.gui` from the IDE or terminal.
+- Validation: the full source and editable-installed suites each pass 131/131
+  with zero skips; Conda environment solve and module/GUI dry runs pass; the
+  editable package imports from `D:/VisPa/src/vispa`, and the Conda environment
+  contains no VisPa/VisualToolkit console scripts. The current 252385/044 demo
+  config, recorded panel hashes and 3D snapshot remain valid.
+- Validation pending in this local candidate: source suite, wheel/runtime
+  payload parity, Projectome caller migration, and a bounded Projectome render
+  with the explicit adapter. No scientific or anatomical acceptance is implied.
+
 ## 1.11.0.dev6 — 2026-10-23 (local/unreleased)
 - Replace the default Windows Python/venv install with a Conda-first source install. When Conda is absent, the installer downloads a pinned Miniforge installer and verifies its official SHA-256 before running it; the dedicated environment includes the review and 3D dependencies. The launcher uses the recorded per-user prefix without PATH edits or activation. Existing user configuration and cache are preserved on repeat installation. These behavior changes require a new environment; the dev5 venv remains historical.
 - Add a bounded Windows VM operator that downloads the exact commit as an anonymous HTTP ZIP, tests bootstrap in an isolated process profile, installed CLI and GUI lifecycle, Settings callbacks, real public SWC technical rendering, and repeat-install preservation. It reports OpenGL context rendering separately from VisPa's actual brain-view operation and leaves the latter pending real local demo assets and visible review. The workflow invokes this operator and uploads its compact receipt and review figures.
@@ -9,8 +37,8 @@
 - Validation so far: PowerShell VM operator parses, its dry-run resolves one bounded case, and the workflow YAML parses. The combined dev6 source suite passed 137/137 with zero skips using the existing dev5 runtime for dependencies. The isolated dev6 Conda environment passed its installed 137/137 suite, launcher/version/config checks from another working directory, and exact 48/48 source/runtime Python/YAML file-set and hash parity; repeat installation preserved the fresh profile and launcher handle hashes. A temporary local cache fixture rendered four panels through the source loader with network calls blocked; that fixture was superseded by a server-connected local example now in preparation and is not packaged. Hosted Windows run 39905581372 downloaded the exact commit ZIP and passed installer dry-run, then failed during fresh Miniforge bootstrap because child Windows PowerShell could not resolve Get-FileHash; a module-free streaming .NET SHA-256 replacement passed the Windows PowerShell 5.1 harness. Hosted run 39906305957 verified the Miniforge download and checksum, then its silent installer exited 2 under a profile path with spaces. Because Miniforge documents limitations for such paths, the installer now rejects an unsafe default bootstrap path before network activity and accepts an explicit writable ASCII no-space `-MiniforgeRoot`; the VisPa environment path remains independently selected. The Windows PowerShell 5.1 installer harness passed 10/10 with that override. Hosted rerun, graphics capability, and visible GUI review remain pending; exit 2's specific cause was not independently established.
 
 - Hosted run 39907361693 bootstrapped Miniforge with the explicit no-space root and completed the Conda package transaction in a spaced VisPa environment, then failed when Conda's pip subsection invoked activation on that spaced prefix. The environment file now leaves pip as a Conda package and the installer runs the pinned PyGLM/glfw wheels through the target Python directly, avoiding Conda's pip activation. Windows PowerShell 5.1 installer harness passed 10/10; hosted rerun and installed validation remain pending.
-
 - Hosted run 39908174068 passed fresh Conda installation, exact 48-file installed payload parity, CLI/config, public SWC technical rendering, repeat preservation, installed Tk Settings callbacks, and 137/137 installed tests without skips. The OpenGL context probe was unavailable or failed; its exact diagnostic was not saved, and actual VisPa brain-view operation remains unverified. The job exited nonzero only because the optional probe left PowerShell's `$LASTEXITCODE` set. The VM operator now returns success only after every mandatory gate passes, while retaining a partial-graphics receipt and bounded GL diagnostic; a hosted rerun of that operator change remains pending.
+- Remove the now unreachable GUI-only Public example worker/queue after its visible control was removed; the `vispa example` CLI and existing preview-file handling remain. Reuse one strict public-source validator for config loading and direct example calls, retaining valid URL/source fields and checksum casing at config load while normalizing the render pin. These refactors do not change scientific render math. The source suite passed 136/136 after removing one obsolete private-GUI test; 71 focused CLI/config/example tests passed. Exact-byte Settings backup/default guards remain, while two display-text assertions now tolerate checkout line endings. Historical pip lockfiles and the CI-only VM runner remain tracked but are excluded from the source distribution; the 48-file wheel payload is unchanged pending a new build check.
 
 ## 1.11.0.dev5 — 2026-10-23 (local/unreleased)
 - Organize Settings into six visible form sections, an editable Raw YAML/JSON tab, and a read-only Default YAML reference. Invalid active YAML remains visible in Raw for correction. On first open, preserve a named local copy of the installed default profile without replacing an existing copy; if unavailable or invalid, show the packaged profile with a warning. Reset and Restore backup stage a draft until Save. Save keeps validation and external-change guards, preserves no-op bytes, and writes unique, byte-identical prior-content backups; a failed backup blocks replacement. Explicit selection of either the frozen local default or packaged default as an active config is refused on Save. Changed form saves keep unknown keys but may reformat YAML comments and whitespace. Switching tabs keeps valid unsaved drafts; FNT setup opens FNT directly. No scientific processing behavior changed. Align current source, wrapper, installer and test headers with dev5. Validation: 8/8 focused config/editor tests and 136/136 final source tests pass without skips, covering startup correction, read-only default, draft preservation, reset/restore, distinct backups, backup failure and protected-default refusal. The final wheel and installed runtime match all 48 source Python/YAML files byte-for-byte, with zero extras or missing files; CLI reports dev5 and `pip check` passes. Installed Settings created a frozen local default copy matching the packaged profile without modifying the active config. Visible desktop review remains pending.

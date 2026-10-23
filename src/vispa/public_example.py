@@ -1,6 +1,6 @@
 """Download and render one explicitly public SWC morphology example.
 
-Version: 1.11.0.dev6 (local/unreleased)
+Version: 1.11.0.dev7 (local/unreleased)
 Last updated: 2026-10-23
 Change history: ../../CHANGELOG.md
 Status: candidate (public source frame and units are unspecified)
@@ -13,7 +13,6 @@ import math
 import os
 from pathlib import Path
 import tempfile
-import urllib.parse
 import urllib.request
 
 from ._version import __version__
@@ -23,6 +22,19 @@ TIMEOUT_SECONDS = 20
 DEFAULT_DPI = 160
 MIN_DPI = 100
 MAX_DPI = 240
+DEFAULT_SOURCE = {
+    "source_url": (
+        "https://mouse.digital-brain.cn/projectome/2/srv/info/monkey/pfc/"
+        "neuron_download/221747_1-qroot433.swc"
+    ),
+    "metadata_url": (
+        "https://mouse.digital-brain.cn/projectome/2/srv/info/monkey/pfc/"
+        "macaque.neuron.info.json"
+    ),
+    "record_id": "1",
+    "record_file": "221747_1-qroot433.swc",
+    "sha256": "c0e4c507368d69703900b0baae3abbc49fd3003ea02b23b6ca739976f24ca1d7",
+}
 
 
 def _user_data_root() -> Path:
@@ -45,22 +57,12 @@ def _configuration(config=None) -> dict:
 
 
 def _source(config: dict) -> dict:
-    source = (config.get("sources") or {}).get("public_example") or {}
-    required = ("source_url", "metadata_url", "record_id", "record_file", "sha256")
-    if not all(isinstance(source.get(key), str) and source[key].strip() for key in required):
-        raise ValueError("configure sources.public_example with source_url, metadata_url, record_id, record_file and sha256")
-    for key in ("source_url", "metadata_url"):
-        parsed = urllib.parse.urlsplit(source[key])
-        if (parsed.scheme not in {"http", "https"} or not parsed.netloc
-                or parsed.username or parsed.password or parsed.fragment):
-            raise ValueError(f"sources.public_example.{key} must be a plain HTTP(S) URL")
-    filename = source["record_file"]
-    if Path(filename).name != filename or filename in {".", ".."} or not filename.lower().endswith(".swc"):
-        raise ValueError("sources.public_example.record_file must be one SWC filename")
-    checksum = source["sha256"].lower()
-    if len(checksum) != 64 or any(char not in "0123456789abcdef" for char in checksum):
-        raise ValueError("sources.public_example.sha256 must be a 64-digit SHA-256")
-    return {**source, "sha256": checksum}
+    from .dataset_config import validate_public_example_source
+    configured = (config.get("sources") or {}).get("public_example") or {}
+    if not isinstance(configured, dict):
+        raise ValueError("sources.public_example must be a mapping")
+    source = validate_public_example_source(configured or DEFAULT_SOURCE)
+    return {**source, "sha256": source["sha256"].lower()}
 
 
 def _source_namespace(source: dict) -> str:
@@ -356,7 +358,8 @@ def run(*, output_dir=None, cache_dir=None, dpi=DEFAULT_DPI, dry_run=False,
     output = Path(output_dir).expanduser() if output_dir else default_output_dir(active)
     cache = Path(cache_dir).expanduser() if cache_dir else default_cache_dir(active)
     cached = cache / _source_namespace(source) / source["record_file"]
-    plan = {"source_url": source["source_url"], "metadata_url": source["metadata_url"],
+    plan = {"source_url": source["source_url"], "source_sha256": source["sha256"],
+            "metadata_url": source["metadata_url"],
             "record_id": source["record_id"], "file": source["record_file"], "cache_path": str(cached),
             "output_png": str(output / "public-macaque-neuron-morphology.png"),
             "output_receipt": str(output / "public-macaque-neuron-morphology.json"),

@@ -1,7 +1,7 @@
 """
 vispa.py - Macaque Brain Hybrid-Resolution Visualization Toolkit
 
-Version: 1.11.0.dev6 (local/unreleased)
+Version: 1.11.0.dev7 (local/unreleased)
 Last updated: 2026-10-23
 Change history: ../../CHANGELOG.md
 Status: candidate (visual review pending)
@@ -2788,6 +2788,3 @@ def __getattr__(name):
         from . import settings as shared_settings
         return getattr(shared_settings, name)
     raise AttributeError(name)
-
-# Legacy class name remains an alias, never a separate implementation.
-Visual_toolkit = VisPa

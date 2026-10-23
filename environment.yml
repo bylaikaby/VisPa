@@ -5,6 +5,8 @@ channels:
 dependencies:
   - python=3.13
   - pip
+  - setuptools>=68
+  - wheel
   - tk
   - numpy
   - matplotlib<3.11.1

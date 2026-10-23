@@ -16,7 +16,7 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
-if os.environ.get("VISUAL_TOOLKIT_TEST_INSTALLED") != "1":
+if os.environ.get("VISPA_TEST_INSTALLED") != "1":
     sys.path.insert(0, str(SRC))
 
 from vispa.dataset_config import load

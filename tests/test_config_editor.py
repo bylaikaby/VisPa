@@ -1,6 +1,6 @@
 """Focused lossless common-settings checks.
 
-Version: 1.11.0.dev6 (local/unreleased)
+Version: 1.11.0.dev7 (local/unreleased)
 Last updated: 2026-10-23
 Change history: ../CHANGELOG.md
 """
@@ -32,6 +32,7 @@ class ConfigEditorTests(unittest.TestCase):
             'visual_toolkit.fnt_tracer.cache_root',
         }.issubset(paths))
         self.assertFalse(any(section == 'Public example' for section, *_ in FIELDS))
+        self.assertFalse(any('public_example' in key for _, key, _, _ in FIELDS))
         self.assertFalse(any('10.10.' in label for _, _, label, _ in FIELDS))
 
     def test_form_round_trip_preserves_unexposed_scientific_values(self):
@@ -58,11 +59,10 @@ class ConfigEditorTests(unittest.TestCase):
             apply_fields({'version': 1}, {'visual_toolkit.fnt_tracer.timeout_seconds': '1.5'})
         with self.assertRaisesRegex(ValueError, 'live-iondata or csv'):
             apply_fields({'version': 1}, {'sources.neuron_catalog.mode': 'mystery'})
-        with self.assertRaisesRegex(ValueError, '64 hexadecimal'):
-            apply_fields({'version': 1}, {'sources.public_example.sha256': 'not-a-hash'})
         source = {'sources': {'public_example': {'record_id': 'kept'}}}
-        self.assertEqual(apply_fields(source, {'sources.public_example.record_id': 'edited'})
-                         ['sources']['public_example']['record_id'], 'edited')
+        with self.assertRaises(KeyError):
+            apply_fields(source, {'sources.public_example.record_id': 'edited'})
+        self.assertEqual(source['sources']['public_example']['record_id'], 'kept')
 
     def test_fnt_controls_keep_own_cache_and_other_data(self):
         source = {'version': 1, 'visual_toolkit': {'fnt_tracer': {
@@ -346,7 +346,8 @@ class SettingsWindowTests(unittest.TestCase):
                 self.assertEqual(default_path.read_bytes(), original)
                 self.assertEqual(tabs.tab(tabs.select(), 'text'), 'Raw YAML')
                 buttons['Save settings'].invoke()
-                self.assertEqual(path.read_bytes().replace(b'\r\n', b'\n'), original)
+                self.assertEqual(path.read_bytes().replace(b'\r\n', b'\n'),
+                                 original.replace(b'\r\n', b'\n'))
                 second = list(backups.glob('vispa_config_*.yaml'))
                 self.assertEqual(len(second), 2)
                 self.assertEqual(len({item.name for item in second}), 2)
@@ -375,7 +376,7 @@ class SettingsWindowTests(unittest.TestCase):
                 root.update()
                 fallback_window = gui._config_window
                 self.assertEqual(default_path.read_bytes(), b'version: [\n')
-                self.assertEqual(fallback_window._default_text.get('1.0', 'end-1c'),
+                self.assertEqual(fallback_window._default_text.get('1.0', 'end-1c').replace('\r\n', '\n'),
                                  original.decode('utf-8').replace('\r\n', '\n'))
                 fallback_labels = [root.getvar(item.cget('textvariable'))
                                    for item in descendants(fallback_window)

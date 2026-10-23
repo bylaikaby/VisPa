@@ -16,7 +16,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
-TEST_INSTALLED = os.environ.get("VISUAL_TOOLKIT_TEST_INSTALLED") == "1"
+TEST_INSTALLED = os.environ.get("VISPA_TEST_INSTALLED") == "1"
 if not TEST_INSTALLED:
     sys.path.insert(0, str(SRC))
 

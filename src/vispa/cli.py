@@ -1,6 +1,6 @@
 """Bounded command line for one local VisPa review render or montage.
 
-Version: 1.11.0.dev6 (local/unreleased)
+Version: 1.11.0.dev7 (local/unreleased)
 Last updated: 2026-10-23
 Change history: CHANGELOG.md
 """
@@ -422,10 +422,6 @@ def _montage(args):
     return 0
 
 
-def _path_parts(value):
-    return [part.strip() for part in str(value or "").split(";") if part.strip()]
-
-
 def fnt_plan(config, sample, neuron):
     """Resolve an exact FNT project without starting an external application."""
     if not sample or not neuron or any(Path(str(v)).name != str(v) or str(v) in {".", ".."}
@@ -560,106 +556,6 @@ def _catalog_check(args):
     return 0
 
 
-def _same_path(left, right):
-    def normalized(value):
-        return os.path.normcase(
-            os.path.normpath(os.path.expandvars(str(value).strip())))
-    return normalized(left) == normalized(right)
-
-
-def merge_user_path(current, entry):
-    """Put this VisPa Scripts path first, preserving unrelated user entries."""
-    parts = _path_parts(current)
-    if parts and _same_path(parts[0], entry) and not any(
-            _same_path(part, entry) for part in parts[1:]):
-        return current, False
-    return ";".join([str(entry)] + [part for part in parts if not _same_path(part, entry)]), True
-
-
-def remove_user_path(current, entry):
-    """Return (new_path, changed) after removing one user-PATH entry."""
-    parts = _path_parts(current)
-    kept = [part for part in parts if not _same_path(part, entry)]
-    return ";".join(kept), len(kept) != len(parts)
-
-
-def _read_user_path():
-    import winreg
-    try:
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment", 0,
-                            winreg.KEY_READ) as key:
-            value, kind = winreg.QueryValueEx(key, "Path")
-        return str(value), kind
-    except FileNotFoundError:
-        return "", winreg.REG_EXPAND_SZ
-
-
-def _write_user_path(value, kind):
-    import winreg
-    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment", 0,
-                        winreg.KEY_SET_VALUE) as key:
-        winreg.SetValueEx(key, "Path", 0, kind or winreg.REG_EXPAND_SZ, value)
-
-
-def _set_user_env(name, value):
-    import winreg
-    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment", 0,
-                        winreg.KEY_SET_VALUE) as key:
-        winreg.SetValueEx(key, name, 0, winreg.REG_SZ, value)
-
-
-def _broadcast_environment_change():
-    import ctypes
-    result = ctypes.c_ulong()
-    ctypes.windll.user32.SendMessageTimeoutW(
-        0xFFFF, 0x001A, 0, "Environment", 0x0002, 5000, ctypes.byref(result))
-
-
-def _install_path(args):
-    """Add or remove this venv's Scripts folder from the current user's PATH."""
-    if os.name != "nt":
-        raise RuntimeError("install-path is Windows-only")
-    scripts = (Path(args.scripts_dir).expanduser().absolute() if args.scripts_dir
-               else Path(sys.executable).resolve().parent)
-    if not (scripts / "vispa.exe").is_file() or not (scripts / "python.exe").is_file():
-        raise RuntimeError(
-            f"{scripts} does not contain vispa.exe; "
-            "run this command from the installed venv")
-    current, kind = _read_user_path()
-    if args.remove:
-        updated, changed = remove_user_path(current, scripts)
-    else:
-        updated, changed = merge_user_path(current, scripts)
-    config_value = None
-    if args.config:
-        config_path = Path(args.config).expanduser().resolve()
-        if not config_path.is_file():
-            raise ValueError(f"Config file not found: {config_path}")
-        config_value = str(config_path)
-    plan = {
-        "scope": "user",
-        "path_entry": str(scripts),
-        "action": "remove" if args.remove else "add",
-        "changed": changed,
-        "previous_path": current,
-        "updated_path": updated,
-        "config_env": config_value,
-        "python_env": str(scripts / "python.exe") if not args.remove else None,
-        "dry_run": bool(args.dry_run),
-    }
-    if not args.dry_run:
-        if changed:
-            _write_user_path(updated, kind)
-        if config_value:
-            _set_user_env("VISPA_CONFIG", config_value)
-        if not args.remove:
-            _set_user_env("VISPA_PYTHON", str(scripts / "python.exe"))
-        if changed or config_value or not args.remove:
-            _broadcast_environment_change()
-    print(json.dumps(plan, indent=2, sort_keys=True))
-    return 0
-
-
 def _parser():
     parser = argparse.ArgumentParser(prog="vispa", description=f"VisPa {VERSION} command line")
     parser.add_argument("--version", action="version", version=VERSION)
@@ -727,16 +623,6 @@ def _parser():
     config_init.add_argument("--output", help="explicit YAML destination; defaults to the per-user config path")
     config_init.add_argument("--from-config", help="explicitly copy an existing JSON/YAML config into the selected VisPa target")
     config_init.add_argument("--dry-run", action="store_true", help="show source/destination hashes and action without writing")
-    install_path = commands.add_parser(
-        "install-path",
-        help="add this venv's Scripts folder to the current user's PATH")
-    install_path.add_argument("--remove", action="store_true",
-                              help="remove the entry instead of adding it")
-    install_path.add_argument("--config",
-                              help="also set VISPA_CONFIG for the current user")
-    install_path.add_argument("--scripts-dir", help="installed Scripts folder; used by the Windows installer when Python reports a redirected path")
-    install_path.add_argument("--dry-run", action="store_true",
-                              help="print the plan without changing the environment")
     return parser
 
 
@@ -819,11 +705,6 @@ def main(argv=None):
                 output=args.output, from_path=args.from_config, dry_run=args.dry_run)
             print(json.dumps(plan, indent=2, sort_keys=True))
             return 0
-        except (OSError, RuntimeError, ValueError, KeyError) as exc:
-            parser.error(str(exc))
-    if args.command == "install-path":
-        try:
-            return _install_path(args)
         except (OSError, RuntimeError, ValueError, KeyError) as exc:
             parser.error(str(exc))
     parser.print_help()

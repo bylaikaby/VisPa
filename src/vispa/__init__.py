@@ -3,7 +3,7 @@
 Importing the package root does not import Matplotlib, acquisition providers, or
 optional image libraries. Public names are loaded on first access.
 
-Version: 1.11.0.dev6 (local/unreleased)
+Version: 1.11.0.dev7 (local/unreleased)
 Last updated: 2026-10-23
 Change history: ../../CHANGELOG.md
 """
@@ -13,7 +13,7 @@ from ._version import __version__
 _SETTINGS_NAMES = {"settings_schema", "resolve_settings", "apply_settings"}
 
 _TOOLKIT_NAMES = {
-    "VisPa", "Visual_toolkit", "REVIEW_SETTINGS", "TARGET_MARKER_COLOR", "apply_setting_overrides",
+    "VisPa", "REVIEW_SETTINGS", "TARGET_MARKER_COLOR", "apply_setting_overrides",
     "review_settings_snapshot", "review_settings_schema", "configure_data_sources", "resolve_widefield_parameters",
     "prepare_sagittal_panel", "render_sagittal_context",
 }

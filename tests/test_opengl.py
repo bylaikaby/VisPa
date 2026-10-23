@@ -16,7 +16,7 @@ import unittest
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
-if os.environ.get("VISUAL_TOOLKIT_TEST_INSTALLED") != "1":
+if os.environ.get("VISPA_TEST_INSTALLED") != "1":
     sys.path.insert(0, str(ROOT / "src"))
 
 from vispa import opengl
@@ -24,6 +24,12 @@ from vispa import opengl
 
 class LegacyOpenGLPlanningTests(unittest.TestCase):
     def setUp(self):
+        environment = mock.patch.dict(
+            os.environ,
+            {"VISPA_PYTHON": sys.executable, "VISUAL_TOOLKIT_PYTHON": ""},
+        )
+        environment.start()
+        self.addCleanup(environment.stop)
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
         self.mesh = self.root / "brain.obj"

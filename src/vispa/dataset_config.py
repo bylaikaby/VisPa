@@ -1,6 +1,6 @@
 """Load explicit, portable VisPa dataset configuration.
 
-Version: 1.11.0.dev6 (local/unreleased)
+Version: 1.11.0.dev7 (local/unreleased)
 Last updated: 2026-10-23
 Change history: ../../CHANGELOG.md
 """
@@ -212,6 +212,33 @@ def _resample_policy(value, sample_id, resample_path):
     return copy.deepcopy(value)
 
 
+def validate_public_example_source(value: dict) -> dict:
+    """Validate one public SWC source without changing valid field casing."""
+    from urllib.parse import urlsplit
+
+    if not isinstance(value, dict):
+        raise ValueError("sources.public_example must be a mapping")
+    example = dict(value)
+    for key in ("source_url", "metadata_url"):
+        url = example.get(key)
+        parsed = urlsplit(url) if isinstance(url, str) else None
+        if (not parsed or parsed.scheme not in {"http", "https"} or not parsed.netloc
+                or parsed.username or parsed.password or parsed.fragment):
+            raise ValueError(f"sources.public_example.{key} must be a plain HTTP(S) URL")
+    record_id = example.get("record_id")
+    if not isinstance(record_id, str) or not record_id.strip():
+        raise ValueError("sources.public_example.record_id must be nonempty text")
+    record_file = example.get("record_file")
+    if (not isinstance(record_file, str) or not record_file.lower().endswith(".swc")
+            or Path(record_file).name != record_file or PureWindowsPath(record_file).name != record_file
+            or ".." in record_file):
+        raise ValueError("sources.public_example.record_file must be a simple .swc basename")
+    sha = example.get("sha256")
+    if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", sha):
+        raise ValueError("sources.public_example.sha256 must be 64 hexadecimal characters")
+    return example
+
+
 def load(path: str | Path | None = None, base_dir: str | Path | None = None) -> dict:
     """Load schema-v1 JSON or YAML and resolve paths against its declared base.
 
@@ -407,28 +434,7 @@ def load(path: str | Path | None = None, base_dir: str | Path | None = None) -> 
         sources["legacy_raw_swc_root"] = defaults["cache_root"] / "swc_raw"
     example = sources.get("public_example")
     if example is not None:
-        from urllib.parse import urlsplit
-        if not isinstance(example, dict):
-            raise ValueError("sources.public_example must be a mapping")
-        example = dict(example)
-        for key in ("source_url", "metadata_url"):
-            value = example.get(key)
-            parsed = urlsplit(value) if isinstance(value, str) else None
-            if (not parsed or parsed.scheme not in {"http", "https"} or not parsed.netloc
-                    or parsed.username or parsed.password or parsed.fragment):
-                raise ValueError(f"sources.public_example.{key} must be a plain HTTP(S) URL")
-        record_id = example.get("record_id")
-        if not isinstance(record_id, str) or not record_id.strip():
-            raise ValueError("sources.public_example.record_id must be nonempty text")
-        record_file = example.get("record_file")
-        if (not isinstance(record_file, str) or not record_file.lower().endswith(".swc")
-                or Path(record_file).name != record_file or PureWindowsPath(record_file).name != record_file
-                or ".." in record_file):
-            raise ValueError("sources.public_example.record_file must be a simple .swc basename")
-        sha = example.get("sha256")
-        if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", sha):
-            raise ValueError("sources.public_example.sha256 must be 64 hexadecimal characters")
-        sources["public_example"] = example
+        sources["public_example"] = validate_public_example_source(example)
     catalog = sources.get("neuron_catalog")
     if catalog is not None:
         if not isinstance(catalog, dict):

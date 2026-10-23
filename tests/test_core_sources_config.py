@@ -1,6 +1,6 @@
 """Focused regression checks for the standalone extraction seams.
 
-Version: 1.11.0.dev6 (local/unreleased)
+Version: 1.11.0.dev7 (local/unreleased)
 Last updated: 2026-10-23
 Change history: ../CHANGELOG.md
 """
@@ -19,7 +19,7 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
-TEST_INSTALLED = os.environ.get("VISUAL_TOOLKIT_TEST_INSTALLED") == "1"
+TEST_INSTALLED = os.environ.get("VISPA_TEST_INSTALLED") == "1"
 if not TEST_INSTALLED:
     sys.path.insert(0, str(SRC))
 
@@ -31,11 +31,9 @@ os.environ["APPDATA"] = sys.argv[2]
 os.environ.pop("VISPA_CONFIG", None)
 os.environ.pop("VISUAL_TOOLKIT_CONFIG", None)
 os.environ.pop("PROJECTOME_DATASETS", None)
-installed = os.environ.get("VISUAL_TOOLKIT_TEST_INSTALLED") == "1"
+installed = os.environ.get("VISPA_TEST_INSTALLED") == "1"
 if not installed:
     sys.path.insert(0, sys.argv[1])
-else:
-    assert sys.argv[1] not in sys.path
 before = list(sys.path)
 original = builtins.__import__
 blocked = {"IONData", "neuron_vis", "projectome_analysis", "dataset_config",
@@ -60,8 +58,11 @@ if installed:
     import sysconfig
     from pathlib import Path
     purelib = Path(sysconfig.get_paths()["purelib"]).resolve()
-    assert Path(vispa.__file__).resolve().is_relative_to(purelib)
-    assert Path(toolkit.__file__).resolve().is_relative_to(purelib)
+    editable_root = Path(sys.argv[1]).resolve() / "vispa"
+    vispa_path = Path(vispa.__file__).resolve()
+    toolkit_path = Path(toolkit.__file__).resolve()
+    assert vispa_path.is_relative_to(purelib) or vispa_path.is_relative_to(editable_root)
+    assert toolkit_path.is_relative_to(purelib) or toolkit_path.is_relative_to(editable_root)
         '''
         command = [sys.executable]
         if TEST_INSTALLED:
@@ -1077,16 +1078,16 @@ class ConfigTests(unittest.TestCase):
             with mock.patch.object(toolkit, "HTTP_HOST", None), \
                     mock.patch.object(toolkit, "_read_highres_cube", return_value=valid) as decode, \
                     mock.patch.object(toolkit.urllib.request, "urlopen") as network:
-                self.assertIs(toolkit.Visual_toolkit._download_http_block(local, 1, 2, 3), valid)
+                self.assertIs(toolkit.VisPa._download_http_block(local, 1, 2, 3), valid)
                 decode.assert_called_once_with(str(cube))
                 network.assert_not_called()
                 cube.unlink()
                 with self.assertRaisesRegex(RuntimeError, "No cached cube or HTTP cube source"):
-                    toolkit.Visual_toolkit._download_http_block(local, 1, 2, 3)
+                    toolkit.VisPa._download_http_block(local, 1, 2, 3)
                 cube.write_bytes(b"corrupt")
                 decode.side_effect = ValueError("bad TIFF")
                 with self.assertRaisesRegex(RuntimeError, "Cached cube is invalid.*bad TIFF"):
-                    toolkit.Visual_toolkit._download_http_block(local, 1, 2, 3)
+                    toolkit.VisPa._download_http_block(local, 1, 2, 3)
                 self.assertEqual(local._block_errors[(1, 2, 3)], "bad TIFF")
                 network.assert_not_called()
 

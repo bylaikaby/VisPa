@@ -1,6 +1,6 @@
 """Bounded live IONData catalog and dated-snapshot selection contracts.
 
-Version: 1.11.0.dev6 (local/unreleased)
+Version: 1.11.0.dev7 (local/unreleased)
 Last updated: 2026-10-23
 Change history: ../CHANGELOG.md
 """
@@ -15,7 +15,7 @@ import unittest
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
-if os.environ.get("VISUAL_TOOLKIT_TEST_INSTALLED") != "1":
+if os.environ.get("VISPA_TEST_INSTALLED") != "1":
     sys.path.insert(0, str(ROOT / "src"))
 
 from vispa.cli import main

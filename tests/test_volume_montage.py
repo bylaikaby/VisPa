@@ -22,7 +22,7 @@ import numpy as np
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
-if os.environ.get("VISUAL_TOOLKIT_TEST_INSTALLED") != "1":
+if os.environ.get("VISPA_TEST_INSTALLED") != "1":
     sys.path.insert(0, str(ROOT / "src"))
 
 from vispa import volume_montage as montage

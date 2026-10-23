@@ -235,12 +235,6 @@ visual_toolkit:
       green_channel_scale: 0.985
       blue_channel_scale: 0.94
 sources:
-  public_example:
-    source_url: https://mouse.digital-brain.cn/projectome/2/srv/info/monkey/pfc/neuron_download/221747_1-qroot433.swc
-    metadata_url: https://mouse.digital-brain.cn/projectome/2/srv/info/monkey/pfc/macaque.neuron.info.json
-    record_id: '1'
-    record_file: 221747_1-qroot433.swc
-    sha256: c0e4c507368d69703900b0baae3abbc49fd3003ea02b23b6ca739976f24ca1d7
   neuron_catalog:
     mode: live-iondata
     host: http://10.10.48.110

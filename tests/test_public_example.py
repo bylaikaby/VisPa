@@ -15,8 +15,6 @@ import tempfile
 import unittest
 from pathlib import Path
 import sys
-import queue
-import time
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -37,6 +35,11 @@ def example_config(*, source_url="https://example.org/221747_1-qroot433.swc"):
 
 
 class PublicExampleTests(unittest.TestCase):
+    def test_cli_example_uses_builtin_source_when_profile_has_no_example_block(self):
+        plan = example.run(dry_run=True, config={"defaults": {}, "sources": {}})["plan"]
+        self.assertEqual(plan["source_url"], example.DEFAULT_SOURCE["source_url"])
+        self.assertEqual(plan["source_sha256"], example.DEFAULT_SOURCE["sha256"])
+
     def test_swc_parser_rejects_invalid_tree_and_html(self):
         self.assertEqual(len(example.parse_swc(FIXTURE)), 3)
         for invalid in (
@@ -86,6 +89,11 @@ class PublicExampleTests(unittest.TestCase):
             del config["sources"]["public_example"]["sha256"]
             with self.assertRaisesRegex(ValueError, "sources.public_example"):
                 example.run(config=config, cache_dir=Path(folder) / "cache")
+            self.assertFalse((Path(folder) / "cache").exists())
+            config = example_config()
+            config["sources"]["public_example"]["record_file"] = r"..\other.swc"
+            with self.assertRaisesRegex(ValueError, "record_file"):
+                example.run(config=config, dry_run=True, cache_dir=Path(folder) / "cache")
             self.assertFalse((Path(folder) / "cache").exists())
 
     def test_cached_source_validates_hash_and_render_receipt(self):
@@ -188,50 +196,6 @@ class PublicExampleTests(unittest.TestCase):
                 _parse_launch_args(["--help"])
         self.assertEqual(gui_help.exception.code, 0)
         self.assertIn(__version__, gui_output.getvalue())
-
-    def test_gui_public_job_result_is_drained_on_main_poll(self):
-        from vispa.gui import NeuroVisGUI
-
-        class Button:
-            def __init__(self):
-                self.states = []
-
-            def configure(self, **kwargs):
-                self.states.append(kwargs["state"])
-
-        class Root:
-            def __init__(self):
-                self.callbacks = []
-
-            def after(self, delay, callback):
-                self.callbacks.append((delay, callback))
-
-        gui = NeuroVisGUI.__new__(NeuroVisGUI)
-        gui._operation_running = False
-        gui._public_example_button = Button()
-        gui._public_example_queue = queue.Queue()
-        gui._log_queue = queue.Queue()
-        gui.root = Root()
-        gui.preview_label = object()
-        gui._register_outputs = mock.Mock()
-        gui._show_role = mock.Mock()
-        gui.update_status = mock.Mock()
-        gui._append_log = mock.Mock()
-        value = {"png": "preview.png", "receipt": "receipt.json",
-                 "node_count": 14086, "source_sha256": "a" * 64}
-        with mock.patch("vispa.public_example.run", return_value=value):
-            gui._start_public_example()
-            deadline = time.monotonic() + 2
-            while gui._public_example_queue.empty() and time.monotonic() < deadline:
-                time.sleep(0.01)
-        self.assertFalse(gui._public_example_queue.empty())
-        gui._drain_log()
-        self.assertFalse(gui._operation_running)
-        self.assertEqual(gui._public_example_button.states, ["disabled", "normal"])
-        gui._register_outputs.assert_called_once_with(["preview.png"])
-        gui._show_role.assert_called_once_with("PublicNeuron")
-        self.assertEqual(gui.root.callbacks[0][0], 150)
-
 
 if __name__ == "__main__":
     unittest.main()

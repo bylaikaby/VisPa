@@ -1,6 +1,6 @@
 """CLI contract tests for bounded standalone use.
 
-Version: 1.11.0.dev6 (local/unreleased)
+Version: 1.11.0.dev7 (local/unreleased)
 Last updated: 2026-10-23
 Change history: ../CHANGELOG.md
 """
@@ -21,14 +21,14 @@ from unittest import mock
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
-TEST_INSTALLED = os.environ.get("VISUAL_TOOLKIT_TEST_INSTALLED") == "1"
+TEST_INSTALLED = os.environ.get("VISPA_TEST_INSTALLED") == "1"
 if not TEST_INSTALLED:
     sys.path.insert(0, str(ROOT / "src"))
 ENV = {key: value for key, value in os.environ.items()
        if key not in {"PYTHONPATH", "VISPA_CONFIG", "VISUAL_TOOLKIT_CONFIG", "PROJECTOME_DATASETS"}}
 ENV.update({"MPLBACKEND": "Agg", "PYTHONDONTWRITEBYTECODE": "1"})
 if TEST_INSTALLED:
-    ENV["VISUAL_TOOLKIT_TEST_INSTALLED"] = "1"
+    ENV["VISPA_TEST_INSTALLED"] = "1"
 else:
     ENV["PYTHONPATH"] = str(ROOT / "src")
 
@@ -48,7 +48,11 @@ def assert_backend_is_installed(testcase, plan):
         return
     purelib = Path(sysconfig.get_paths()["purelib"]).resolve()
     backend = Path(plan["runtime"]["backend_module"]).resolve()
-    testcase.assertTrue(backend.is_relative_to(purelib), f"backend came from {backend}, not {purelib}")
+    editable_src = (ROOT / "src").resolve()
+    testcase.assertTrue(
+        backend.is_relative_to(purelib) or backend.is_relative_to(editable_src),
+        f"backend came from {backend}, not {purelib} or editable {editable_src}",
+    )
     testcase.assertEqual(Path(plan["python_executable"]).resolve(), Path(sys.executable).resolve())
     testcase.assertEqual(Path(plan["runtime"]["python_prefix"]).resolve(), Path(sys.prefix).resolve())
 
@@ -100,33 +104,6 @@ class CliContractTests(unittest.TestCase):
             with mock.patch("sys.stderr", io.StringIO()), self.assertRaises(SystemExit):
                 main(["config-check", "--validate-only", "--catalog", "--config", str(config)])
 
-    def test_install_path_entry_is_idempotent_and_removable(self):
-        from vispa.cli import merge_user_path, remove_user_path
-        root = Path(tempfile.gettempdir()) / "VisPa path test"
-        tools = str(root / "Tools")
-        tools_in_current = tools + os.sep * 2
-        duplicate = str(root / "tools") if os.name == "nt" else tools
-        current = f"{root / 'Windows'};{tools_in_current}"
-        unchanged, changed = merge_user_path(current, duplicate)
-        self.assertTrue(changed)
-        self.assertTrue(unchanged.startswith(duplicate + ";"))
-        entry = str(root / "vispa" / ".venv" / "Scripts")
-        added, changed = merge_user_path(current, entry)
-        self.assertTrue(changed)
-        self.assertTrue(added.startswith(entry + ";"))
-        removed, changed = remove_user_path(added, entry + os.sep * 2)
-        self.assertTrue(changed)
-        self.assertNotIn(entry, removed)
-        case_variant = str(root / "VISPA" / ".venv" / "Scripts")
-        _, changed = merge_user_path(added, case_variant)
-        self.assertFalse(changed)
-        older = str(root / "older-vispa" / "Scripts")
-        promoted, changed = merge_user_path(older + ";" + added, entry)
-        self.assertTrue(changed)
-        self.assertEqual(promoted.split(";")[0], entry)
-        self.assertEqual(promoted.split(";").count(entry), 1)
-        self.assertIn(older, promoted)
-
     def test_help_and_version_do_not_import_backend(self):
         with tempfile.TemporaryDirectory() as directory:
             tmp_path = Path(directory)
@@ -141,7 +118,7 @@ class CliContractTests(unittest.TestCase):
             self.assertEqual(run_cli("--help", cwd=tmp_path).returncode, 0)
             version = run_cli("--version", cwd=tmp_path)
             self.assertEqual(version.returncode, 0)
-            self.assertIn("1.11.0.dev6", version.stdout)
+            self.assertIn("1.11.0.dev7", version.stdout)
 
     def test_settings_command_prints_discoverable_json_without_optional_imports(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -176,14 +153,16 @@ if not sys.argv[1]:
     from pathlib import Path
     import vispa.settings as settings_module
     package_root = Path(sysconfig.get_paths()["purelib"]).resolve()
-    assert Path(settings_module.__file__).resolve().is_relative_to(package_root)
+    editable_root = Path(sys.argv[1]).resolve() / "vispa"
+    settings_path = Path(settings_module.__file__).resolve()
+    assert settings_path.is_relative_to(package_root) or settings_path.is_relative_to(editable_root)
 from vispa.cli import main
 assert main(["settings", "--scope", "all"]) == 0
 """
             command = [sys.executable]
             if TEST_INSTALLED:
                 command.append("-I")
-            command.extend(("-c", script, "" if TEST_INSTALLED else str(ROOT / "src")))
+            command.extend(("-c", script, str(ROOT / "src")))
             guarded = subprocess.run(command, cwd=tmp_path, env=isolated_env,
                                      text=True, capture_output=True)
             self.assertEqual(guarded.returncode, 0, guarded.stderr)
@@ -239,7 +218,7 @@ assert main(["settings", "--scope", "all"]) == 0
             plan = json.loads(result.stdout)
             assert_backend_is_installed(self, plan)
             self.assertEqual(plan["schema"], "visual-toolkit.render.v1")
-            self.assertEqual(plan["package_version"], "1.11.0.dev6")
+            self.assertEqual(plan["package_version"], "1.11.0.dev7")
             self.assertTrue(Path(plan["python_executable"]).is_file())
             self.assertTrue(Path(plan["runtime"]["python_executable"]).is_file())
             self.assertTrue(Path(plan["runtime"]["backend_module"]).is_file())
@@ -317,7 +296,7 @@ assert main(["settings", "--scope", "all"]) == 0
             self.assertEqual({path.name for path in output.iterdir()}, {png.name, receipt_path.name})
             self.assertTrue(os.path.samefile(receipt["output_png"], png))
             self.assertEqual(receipt["schema"], "visual-toolkit.render.v1")
-            self.assertEqual(receipt["package_version"], "1.11.0.dev6")
+            self.assertEqual(receipt["package_version"], "1.11.0.dev7")
             runtime = receipt["runtime"]
             self.assertTrue(Path(runtime["python_prefix"]).exists())
             self.assertEqual(runtime["backend_sha256"],

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vispa"
-version = "1.11.0.dev6"
+version = "1.11.0.dev7"
 description = "VisPa — Visual Projectome Analysis tool for microscopy visualization and review"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -27,14 +27,6 @@ dependencies = ["numpy", "matplotlib<3.11.1", "Pillow", "PyYAML"]
     "trimesh==5.1.1",
     "vispy==0.17.0",
 ]
-
-[project.scripts]
-vispa = "vispa.cli:main"
-visual-toolkit = "vispa.cli:main"
-
-[project.gui-scripts]
-vispa-gui = "vispa.gui:main"
-visual-toolkit-gui = "vispa.gui:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

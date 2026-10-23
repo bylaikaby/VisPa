@@ -1,0 +1,38 @@
+# Version: 1.11.0.dev7 (local/unreleased)
+# Last updated: 2026-10-23
+# Change history: ../../CHANGELOG.md
+name: Windows Conda Python-only check
+on:
+  push:
+    branches: [main, simplified, 'codex/**']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  conda-python:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          activate-environment: vispa
+          environment-file: environment.yml
+          miniforge-version: latest
+          channels: conda-forge,nodefaults
+      - name: Install the Python package without console scripts
+        shell: pwsh
+        run: |
+          python -m pip install --no-deps -e .
+      - name: Verify module entry points and dry runs
+        shell: pwsh
+        run: |
+          python -m vispa --version
+          python -m vispa config-check --validate-only --config src/vispa/default_config.yaml
+          python -m vispa example --dry-run --config src/vispa/default_config.yaml
+          python -m vispa.gui --dry-run --config src/vispa/default_config.yaml --no-autoload
+      - name: Run source tests
+        shell: pwsh
+        run: python -m unittest discover -s tests -v

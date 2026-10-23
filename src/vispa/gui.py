@@ -1,7 +1,7 @@
 """
 vispa_gui.py - GUI for NeuroVis Visual Toolkit
 
-Version: 1.11.0.dev6 (local/unreleased)
+Version: 1.11.0.dev7 (local/unreleased)
 Last updated: 2026-10-23
 Change history: ../../CHANGELOG.md
 Status: candidate (visual review pending)
@@ -469,8 +469,6 @@ class NeuroVisGUI:
         self._ephemeral_images = {}
         self._log_queue = queue.Queue()
         self._log_stream = _LogStream(self._log_queue)
-        self._public_example_queue = queue.Queue()
-        self._public_example_button = None
         self._startup_mode = configuration.get("visual_toolkit", {}).get(
             "startup_mode", "configured")
         
@@ -2371,49 +2369,8 @@ class NeuroVisGUI:
                 self._append_log(self._log_queue.get_nowait())
         except queue.Empty:
             pass
-        try:
-            while True:
-                state, value = self._public_example_queue.get_nowait()
-                self._operation_running = False
-                if self._public_example_button is not None:
-                    self._public_example_button.configure(state='normal')
-                if state == "ok":
-                    self._register_outputs([value["png"]])
-                    self._show_role("PublicNeuron")
-                    self.update_status(
-                        f"Public morphology preview ready · {value['node_count']:,} SWC nodes; "
-                        "frame and units unspecified; no image context or atlas.")
-                    self._append_log(f"Public SWC source SHA-256: {value['source_sha256']}")
-                    self._append_log(f"Preview saved: {value['png']}")
-                    self._append_log(f"Provenance receipt: {value['receipt']}")
-                else:
-                    self.update_status("Public morphology preview failed.")
-                    self._append_log(f"Public morphology preview failed: {value}")
-                    messagebox.showerror("Public neuron example", str(value))
-        except queue.Empty:
-            pass
         self.root.after(150, self._drain_log)
 
-    def _start_public_example(self):
-        """Fetch and render one public SWC; all Tk work stays in _drain_log."""
-        if self._operation_running:
-            return
-        self._operation_running = True
-        if self._public_example_button is not None:
-            self._public_example_button.configure(state='disabled')
-        self.update_status("Fetching one public neuron morphology…")
-
-        def worker():
-            try:
-                from .public_example import run
-                from .dataset_config import load
-                result = run(config=load(getattr(self, 'config_path', None)))
-                self._public_example_queue.put(("ok", result))
-            except Exception as exc:
-                self._public_example_queue.put(("error", f"{type(exc).__name__}: {exc}"))
-
-        threading.Thread(target=worker, name="vispa-public-example", daemon=True).start()
-    
     def _numeric_values(self):
         """Parse the numeric form, naming the field in every validation error."""
         def parse(label, variable, cast, minimum=None):
