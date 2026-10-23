@@ -24,3 +24,6 @@ dependencies:
   - pyopengl=3.1.10
   - freetype-py
   - hsluv
+  - pip:
+      - PyGLM==2.8.3
+      - glfw==2.11.0

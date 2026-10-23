@@ -19,6 +19,9 @@
   custom Miniforge bootstrap, installer harness, and VM launcher. Conda now
   creates the environment from `environment.yml`; use
   `python -m vispa` or `python -m vispa.gui` from the IDE or terminal.
+- Include `PyGLM==2.8.3` and `glfw==2.11.0` in the Conda environment's pip
+  section, replacing the dependency step formerly performed by the custom
+  installer and making the 3D renderer installable from the clone alone.
 - Validation: the full source and editable-installed suites each pass 131/131
   with zero skips; Conda environment solve and module/GUI dry runs pass; the
   editable package imports from `D:/VisPa/src/vispa`, and the Conda environment
