@@ -1,6 +1,6 @@
 """Focused checks for the bounded, public morphology-only example.
 
-Version: 1.11.0.dev9 (local/unreleased)
+Version: 1.11.0.dev10 (local/unreleased)
 Last updated: 2026-10-22
 Change history: ../CHANGELOG.md
 Status: candidate
@@ -176,7 +176,7 @@ class PublicExampleTests(unittest.TestCase):
                 config = dataset_config.load()
         self.assertEqual(config["visual_toolkit"]["startup_mode"], "configured")
         self.assertEqual(config["visual_toolkit"]["default_sample"], "251637")
-        self.assertEqual(config["visual_toolkit"]["default_neuron"], "003.swc")
+        self.assertEqual(config["visual_toolkit"]["default_neuron"], "004.swc")
         self.assertFalse(config["visual_toolkit"]["auto_load"])
         catalog = config["sources"]["neuron_catalog"]
         self.assertEqual(catalog["mode"], "live-iondata")

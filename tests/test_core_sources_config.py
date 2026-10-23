@@ -1,6 +1,6 @@
 """Focused regression checks for the standalone extraction seams.
 
-Version: 1.11.0.dev9 (local/unreleased)
+Version: 1.11.0.dev10 (local/unreleased)
 Last updated: 2026-10-23
 Change history: ../CHANGELOG.md
 """
@@ -788,7 +788,7 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(plan["source_kind"], "package_defaults")
             self.assertEqual(config["path"], (appdata / "VisPa" / "vispa_config.yaml").resolve())
             self.assertEqual(config["visual_toolkit"]["default_sample"], "251637")
-            self.assertEqual(config["visual_toolkit"]["default_neuron"], "003.swc")
+            self.assertEqual(config["visual_toolkit"]["default_neuron"], "004.swc")
             self.assertEqual(config["sources"]["neuron_catalog"]["mode"], "live-iondata")
             self.assertEqual(config["sources"]["neuron_catalog"]["host"], "http://10.10.48.110")
             self.assertEqual(config["sources"]["http_host"], "http://bap.cebsit.ac.cn")

@@ -1,6 +1,6 @@
 """Check whether one VisPa review identity has its configured resources.
 
-Version: 1.11.0.dev9 (local/unreleased)
+Version: 1.11.0.dev10 (local/unreleased)
 Last updated: 2026-10-23
 Change history: ../../CHANGELOG.md
 Status: candidate
@@ -193,7 +193,7 @@ def data_check(config=None, sample_id=None, neuron_id=None,
     ready = not issues
     lines = [
         f"[{'OK' if item['status'] in _READY_STATES else 'MISSING'}] {item['label']}: "
-        f"{item['detail']}"
+        f"{item['detail']}" + (f" | {item['path']}" if item.get("path") else "")
         for item in items
     ]
     return {

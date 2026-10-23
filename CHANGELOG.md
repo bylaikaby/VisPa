@@ -1,5 +1,16 @@
 # VisPa change log
 
+## 1.11.0.dev10 — 2026-10-23 (local/unreleased)
+- Show the resolved file, directory or source location beside every applicable
+  item in `vispa check`, `vispa.check()` and the GUI readiness prompt.
+- Replace the startup example with `251637/004.swc`, which has registered DS00
+  and 5 µm Context sources plus complete raw/processed SWC and FNT resources.
+  `003.swc` is no longer the default.
+- Validation: the full **139/139** source suite passes; the shared config
+  reports **15/15** resources with resolved paths; Soma/Context rendering,
+  cache reuse, 3D display and FNT project resolution remain passing technical
+  checks. No anatomical or scientific acceptance is implied.
+
 ## 1.11.0.dev9 — 2026-10-23 (local/unreleased)
 - Add the public `vispa.check()` / `data_check()` API and `vispa check`
   (`data-check` alias). It reports configuration, Python image dependencies,
@@ -12,7 +23,7 @@
   mode, while render work retains the existing indeterminate mode. Cache
   readiness is verified with a temporary write/delete probe.
 - Start the packaged profile on `251637/003.swc`, which has registered DS00 and
-  5 µm Context sources. The prior `250432` startup has no 5 µm dataset.
+  5 µm Context sources.
 - Validation: the full **139/139** source suite passes. The shared server
   config reports **15/15** resources ready; portable cache write probing,
   low-resolution in-memory reuse/eviction, real downloaded cube reuse with

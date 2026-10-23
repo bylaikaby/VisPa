@@ -1,6 +1,6 @@
 """Checks for the public data-check API, CLI and GUI progress plumbing.
 
-Version: 1.11.0.dev9 (local/unreleased)
+Version: 1.11.0.dev10 (local/unreleased)
 Last updated: 2026-10-23
 Change history: ../CHANGELOG.md
 Status: candidate
@@ -76,6 +76,10 @@ class DataCheckTests(unittest.TestCase):
             self.assertEqual(report["checked"], 15)
             self.assertEqual(progress[-1], (15, 15))
             self.assertEqual(progress, [(index, 15) for index in range(1, 16)])
+            self.assertTrue(any(
+                line.startswith("[OK] DS00 image:")
+                and str(root / "ds00.nii") in line
+                for line in report["checklist"]))
             self.assertTrue(any(item["role"] == "download_cache" and
                                 item["status"] == "ready" for item in report["checks"]))
             self.assertFalse((root / "cache").exists())

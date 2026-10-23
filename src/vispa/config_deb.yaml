@@ -3,7 +3,7 @@
 # configured intranet hosts/shares are reachable. No credentials or local tools.
 # Per-sample DS00/5 µm links are inherited source declarations, not validation or
 # anatomical acceptance. Caches and outputs resolve to the current user's profile.
-# Version: 1.11.0.dev9 (local/unreleased) | Last updated: 2026-10-23
+# Version: 1.11.0.dev10 (local/unreleased) | Last updated: 2026-10-23
 # Change history: ../../CHANGELOG.md
 version: 1
 base_dir: .
@@ -109,7 +109,7 @@ visual_toolkit:
   auto_reload: true
   worker_python: null
   default_sample: '251637'
-  default_neuron: 003.swc
+  default_neuron: 004.swc
   auto_load: false
   startup_mode: configured
   fnt_tracer:
