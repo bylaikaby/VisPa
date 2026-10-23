@@ -27,18 +27,17 @@
   editable package imports from `D:/VisPa/src/vispa`, and the Conda environment
   contains no VisPa/VisualToolkit console scripts. The current 252385/044 demo
   config, recorded panel hashes and 3D snapshot remain valid.
-- Fresh-clone validation at `167b71f8cac2d7a5143b6dfaad0da9c164160154`:
-  cloned `simplified` into an isolated local directory, created a clean Conda
-  prefix from `environment.yml` including pip-installed PyGLM/GLFW, installed
-  the package editable, and passed the full 131/131 suite plus version, config,
-  and GUI dry runs. Hosted Windows Conda run
-  [39917956968](https://github.com/bylaikaby/VisPa/actions/runs/39917956968)
+- Fresh-clone validation of the published `simplified` branch at
+  `89cd4927639b06b757af4a3459a96c0b5d953f96`: cloned the public repository,
+  created a clean Conda prefix from `environment.yml` including pip-installed
+  PyGLM/GLFW, installed the package editable, and passed the full 131/131 suite
+  plus version, config, and GUI dry runs. Hosted Windows Conda run
+  [39918504013](https://github.com/bylaikaby/VisPa/actions/runs/39918504013)
   passed for the same commit. The cloned DS00 montage test module passed 10/10,
   and a real 251637 five-view montage rendered successfully with a role legend
-  and plane-specific RAS+ axes.
-- Validation pending in this local candidate: source suite, wheel/runtime
-  payload parity, Projectome caller migration, and a bounded Projectome render
-  with the explicit adapter. No scientific or anatomical acceptance is implied.
+  and plane-specific RAS+ axes. Projectome adapter/caller focused suites passed;
+  the complete Projectome suite remains a separate pending check. No scientific
+  or anatomical acceptance is implied.
 
 ## 1.11.0.dev6 — 2026-10-23 (local/unreleased)
 - Replace the default Windows Python/venv install with a Conda-first source install. When Conda is absent, the installer downloads a pinned Miniforge installer and verifies its official SHA-256 before running it; the dedicated environment includes the review and 3D dependencies. The launcher uses the recorded per-user prefix without PATH edits or activation. Existing user configuration and cache are preserved on repeat installation. These behavior changes require a new environment; the dev5 venv remains historical.
