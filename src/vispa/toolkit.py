@@ -1,7 +1,7 @@
 """
 vispa.py - Macaque Brain Hybrid-Resolution Visualization Toolkit
 
-Version: 1.11.0.dev7 (local/unreleased)
+Version: 1.11.0.dev8 (local/unreleased)
 Last updated: 2026-10-23
 Change history: ../../CHANGELOG.md
 Status: candidate (visual review pending)
@@ -530,29 +530,42 @@ def apply_setting_overrides(overrides, settings=None):
         _sync_review_setting_constants()
     return changed
 
+def _read_tiff_with_pillow(path):
+    """Decode one TIFF or multipage TIFF without tifffile/imagecodecs."""
+    from PIL import Image, ImageSequence
+    pixel_limit = Image.MAX_IMAGE_PIXELS
+    try:
+        Image.MAX_IMAGE_PIXELS = None  # fMOST whole sections are intentionally large.
+        with Image.open(path) as image:
+            try:
+                pages = [np.array(page) for page in ImageSequence.Iterator(image)]
+            finally:
+                image.close()  # Multipage TIFFs can retain a second file handle.
+        return pages[0] if len(pages) == 1 else np.stack(pages)
+    finally:
+        Image.MAX_IMAGE_PIXELS = pixel_limit
+
+
 def _read_tiff(path):
-    """Read fMOST TIFF (LZW); fall back to PIL when imagecodecs is missing."""
+    """Read fMOST TIFF, using Pillow when tifffile or a TIFF codec is unavailable."""
     try:
         import tifffile
     except ImportError as exc:
-        raise RuntimeError("TIFF input requires tifffile; install vispa[tiff]") from exc
+        try:
+            return _read_tiff_with_pillow(path)
+        except Exception as pil_error:
+            raise RuntimeError(
+                "TIFF input could not be decoded: tifffile is unavailable and "
+                f"the Pillow fallback failed: {pil_error}. Run VisPa from its "
+                "Conda environment."
+            ) from exc
     try:
         return tifffile.imread(path)
     except Exception as tiff_error:
-        from PIL import Image, ImageSequence
-        pixel_limit = Image.MAX_IMAGE_PIXELS
         try:
-            Image.MAX_IMAGE_PIXELS = None  # fMOST whole sections are intentionally large.
-            with Image.open(path) as image:
-                try:
-                    pages = [np.array(page) for page in ImageSequence.Iterator(image)]
-                finally:
-                    image.close()  # Multipage TIFFs can retain a second file handle.
-            return pages[0] if len(pages) == 1 else np.stack(pages)
+            return _read_tiff_with_pillow(path)
         except Exception as pil_error:
             raise ValueError(f"Could not decode TIFF {path}: {tiff_error}; {pil_error}") from pil_error
-        finally:
-            Image.MAX_IMAGE_PIXELS = pixel_limit
 
 
 def _read_highres_cube(source):
@@ -560,16 +573,19 @@ def _read_highres_cube(source):
     try:
         import tifffile
     except ImportError as exc:
-        raise RuntimeError("High-resolution TIFF acquisition requires tifffile; install vispa[tiff]") from exc
-    with tifffile.TiffFile(source) as image:
-        if len(image.series) != 1:
-            raise ValueError("Expected one TIFF cube series")
-        series = image.series[0]
-        if series.shape != (90, 360, 360) or series.dtype != np.dtype("uint16"):
-            raise ValueError("Expected uint16 high-resolution cube ZYX [90,360,360]")
-    if hasattr(source, "seek"):
-        source.seek(0)
-    block = _read_tiff(source)
+        if hasattr(source, "seek"):
+            source.seek(0)
+        block = _read_tiff(source)
+    else:
+        with tifffile.TiffFile(source) as image:
+            if len(image.series) != 1:
+                raise ValueError("Expected one TIFF cube series")
+            series = image.series[0]
+            if series.shape != (90, 360, 360) or series.dtype != np.dtype("uint16"):
+                raise ValueError("Expected uint16 high-resolution cube ZYX [90,360,360]")
+        if hasattr(source, "seek"):
+            source.seek(0)
+        block = _read_tiff(source)
     if block.shape != (90, 360, 360) or block.dtype != np.uint16:
         raise ValueError("Decoded cube contradicts TIFF header")
     return block
@@ -1226,7 +1242,9 @@ class VisPa:
             try:
                 import tifffile
             except ImportError as exc:
-                raise RuntimeError("TIFF export requires tifffile; install vispa[tiff]") from exc
+                raise RuntimeError(
+                    "TIFF export requires tifffile; run VisPa from its Conda environment"
+                ) from exc
             tifffile.imwrite(full_path, volume)
         # The persisted NIfTI is XYZ. The in-memory source array remains ZYX.
         # A missing raw root must not be replaced by the crop origin.

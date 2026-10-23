@@ -1,6 +1,6 @@
 """Focused regression checks for the standalone extraction seams.
 
-Version: 1.11.0.dev7 (local/unreleased)
+Version: 1.11.0.dev8 (local/unreleased)
 Last updated: 2026-10-23
 Change history: ../CHANGELOG.md
 """
@@ -96,8 +96,21 @@ assert Path(toolkit.ACTIVE_CONFIG['path']).name == 'visual_toolkit_config.yaml'
     def test_missing_tiff_extra_fails_only_when_tiff_reader_is_used(self):
         from vispa import toolkit
         with mock.patch.dict(sys.modules, {"tifffile": None}):
-            with self.assertRaisesRegex(RuntimeError, r"vispa\[tiff\]"):
+            with self.assertRaisesRegex(RuntimeError, "TIFF input could not be decoded"):
                 toolkit._read_highres_cube("not-read.tif")
+
+    def test_missing_tifffile_uses_pillow_for_low_resolution_tiff(self):
+        import numpy as np
+        from PIL import Image
+        from vispa import toolkit
+
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp) / "section.tif"
+            expected = np.arange(25, dtype=np.uint16).reshape(5, 5)
+            Image.fromarray(expected).save(source)
+            with mock.patch.dict(sys.modules, {"tifffile": None}):
+                actual = toolkit._read_tiff(source)
+        self.assertTrue(np.array_equal(actual, expected))
 
 
 class ReviewSettingsTests(unittest.TestCase):
@@ -782,7 +795,14 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(config["defaults"]["cache_root"], user_data / "VisPa" / "cache")
             self.assertEqual(config["defaults"]["output_root"], user_data / "VisPa" / "output")
             self.assertTrue(config["visual_toolkit"]["fnt_tracer"]["auto_download"])
-            self.assertIsNone(config["visual_toolkit"]["fnt_tracer"]["project_root"])
+            self.assertEqual(
+                config["visual_toolkit"]["fnt_tracer"]["project_root"],
+                Path(r"\\10.102.8.200\microscopy_data\fMOST\resources\dependencies\fnt\projects"),
+            )
+            self.assertEqual(
+                config["sources"]["brain_view"]["processed_swc_root"],
+                Path(r"\\10.102.8.200\microscopy_data\fMOST\resources\dependencies\brain_view\processed_swc"),
+            )
 
     def test_ds00_children_follow_editable_root_without_changing_legacy_paths(self):
         from vispa.dataset_config import load
@@ -814,7 +834,7 @@ class ConfigTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             from importlib.resources import files
-            raw = yaml.safe_load(files("vispa").joinpath("default_config.yaml").read_text(encoding="utf-8"))
+            raw = yaml.safe_load(files("vispa").joinpath("config_deb.yaml").read_text(encoding="utf-8"))
             raw["defaults"]["ds00_root"] = str(root / "new-ds00")
             raw["defaults"]["resample_5um_root"] = str(root / "new-5um")
             path = root / "profile.yaml"

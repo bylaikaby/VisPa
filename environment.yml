@@ -16,6 +16,7 @@ dependencies:
   - scikit-image
   - nibabel
   - tifffile
+  - imagecodecs
   - imageio
   - networkx
   - lazy_loader

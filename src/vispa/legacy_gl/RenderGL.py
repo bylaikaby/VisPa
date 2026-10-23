@@ -1,6 +1,6 @@
 """Active legacy OpenGL mesh and SWC renderer.
 
-Version: 1.11.0.dev7 (local/unreleased)
+Version: 1.11.0.dev8 (local/unreleased)
 Last updated: 2026-10-23
 Change history: ../../../CHANGELOG.md
 Status: candidate

@@ -1,5 +1,37 @@
 # VisPa change log
 
+## 1.11.0.dev8 — 2026-10-23 (local/unreleased)
+- Make TIFF microscopy support part of the core installation. `tifffile` is
+  now a base dependency, the Conda environment includes `imagecodecs`, and
+  low-resolution TIFF reads fall back to Pillow when `tifffile` or a codec is
+  unavailable. This prevents Context acquisition from emitting one
+  obsolete optional-dependency warning per requested z-slice on minimal or stale Python
+  installations. Add working `tiff`, `nifti`, and `ssh` extras.
+- Add a standard pip/conda console entry point, `vispa`, implemented by the
+  Python CLI. It is a generated Python launcher, not a packaged standalone
+  binary; use `vispa gui` for the GUI.
+- Ignore a stale `VISPA_PYTHON`/`VISUAL_TOOLKIT_PYTHON` path when it no longer
+  exists and resolve the brain-view worker from the configured interpreter,
+  the named Conda environment, or the running interpreter. The Projectome
+  process client applies the same fallback instead of failing on a retired
+  `D:/VisPa/runtime` path.
+- Correct the local active brain-view profile to use the preserved
+  `neuron-vis/resource/macaqueallobj/root.obj` mesh and
+  `neuron-vis/resource/swc` processed-SWC folder, and set its worker to the
+  current Conda interpreter. The previous profile used incomplete copied
+  cache assets and a removed `.venv`.
+- Rename the packaged default profile to `config_deb.yaml` and point it at the
+  shared lab layout under
+  `\\10.102.8.200\microscopy_data\fMOST\resources`: `key_datasets` for DS00
+  and 5 µm data, `dependencies/brain_view` for the mesh and processed SWCs,
+  and `dependencies/fnt` for the FNT application and projects.
+- Validation: missing-`tifffile` Pillow TIFF fallback passed; stale worker
+  resolution passed; Projectome client protocol tests passed 11/11; a real
+  251637 Context acquisition read a 10,120×11,711 `uint16` native section and
+  produced a bounded `1×200×200` crop; brain-view preflight resolved the
+  preserved mesh and `251637/003.swc`. No anatomical or scientific acceptance
+  is implied.
+
 ## 1.11.0.dev7 — 2026-10-23 (local/unreleased)
 - Remove the `Visual_toolkit` Python compatibility namespace, `Visual_toolkit`
   class alias, and `visual-toolkit`/`visual-toolkit-gui` entry points. `vispa`

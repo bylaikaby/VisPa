@@ -1,15 +1,15 @@
-# Default same-intranet VisPa profile. Live neuron IDs use the IONData API;
+# Default DEB-lab VisPa profile. Live neuron IDs use the IONData API;
 # image and raw-SWC sources remain separate and are available only when the
 # configured intranet hosts/shares are reachable. No credentials or local tools.
 # Per-sample DS00/5 µm links are inherited source declarations, not validation or
 # anatomical acceptance. Caches and outputs resolve to the current user's profile.
-# Version: 1.11.0.dev6 (local/unreleased) | Last updated: 2026-10-23
+# Version: 1.11.0.dev8 (local/unreleased) | Last updated: 2026-10-23
 # Change history: ../../CHANGELOG.md
 version: 1
 base_dir: .
 defaults:
-  ds00_root: \\10.102.8.200\microscopy_data\fMOST\CH00DS_datasets
-  resample_5um_root: \\10.102.8.200\microscopy_data\fMOST\5micron_datasets
+  ds00_root: \\10.102.8.200\microscopy_data\fMOST\resources\key_datasets\CH00DS_datasets
+  resample_5um_root: \\10.102.8.200\microscopy_data\fMOST\resources\key_datasets\5micron_datasets
   swc_cache_root: null
   swc_root: null
   cache_root: null
@@ -113,8 +113,8 @@ visual_toolkit:
   auto_load: false
   startup_mode: configured
   fnt_tracer:
-    executable: null
-    project_root: null
+    executable: '\\10.102.8.200\microscopy_data\fMOST\resources\dependencies\fnt\fnt-tracer-0.99.155\bin\fnt-tracer.exe'
+    project_root: '\\10.102.8.200\microscopy_data\fMOST\resources\dependencies\fnt\projects'
     auto_download: true
     cache_root: null
     server_base_url: http://10.10.48.110/www/upload/neuron
@@ -241,6 +241,12 @@ sources:
     timeout_seconds: 10
     max_response_bytes: 8388608
   dataset_manifest_relative: manifest.json
+  brain_view:
+    mesh_path: '\\10.102.8.200\microscopy_data\fMOST\resources\dependencies\brain_view\macaqueallobj\root.obj'
+    processed_swc_root: '\\10.102.8.200\microscopy_data\fMOST\resources\dependencies\brain_view\processed_swc'
+    coordinate_frame: legacy-neuronvis-template-as-stored
+    coordinate_units: stored
+    settings: {}
   legacy_raw_swc_root: null
   http_host: http://bap.cebsit.ac.cn
   http_path: monkeydata

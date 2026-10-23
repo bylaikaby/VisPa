@@ -1,6 +1,6 @@
 """Focused lossless common-settings checks.
 
-Version: 1.11.0.dev7 (local/unreleased)
+Version: 1.11.0.dev8 (local/unreleased)
 Last updated: 2026-10-23
 Change history: ../CHANGELOG.md
 """
@@ -143,7 +143,7 @@ class SettingsWindowTests(unittest.TestCase):
             work.mkdir(exist_ok=True)
             with tempfile.TemporaryDirectory(dir=work) as folder:
                 path = Path(folder) / 'vispa_config.yaml'
-                source = Path(__file__).parents[1] / 'src' / 'vispa' / 'default_config.yaml'
+                source = Path(__file__).parents[1] / 'src' / 'vispa' / 'config_deb.yaml'
                 path.write_bytes(source.read_bytes())
                 gui = NeuroVisGUI.__new__(NeuroVisGUI)
                 gui.root, gui.config_path = root, str(path)
@@ -280,7 +280,7 @@ class SettingsWindowTests(unittest.TestCase):
             work.mkdir(exist_ok=True)
             with tempfile.TemporaryDirectory(dir=work) as folder:
                 path = Path(folder) / 'vispa_config.yaml'
-                source = Path(__file__).parents[1] / 'src' / 'vispa' / 'default_config.yaml'
+                source = Path(__file__).parents[1] / 'src' / 'vispa' / 'config_deb.yaml'
                 original = source.read_bytes()
                 path.write_bytes(original)
                 gui = NeuroVisGUI.__new__(NeuroVisGUI)

@@ -1,9 +1,14 @@
 # VisPa — Visual Projectome Analysis tool
 
 VisPa reviews macaque neuron and microscopy data from configured lab sources.
-This `simplified` branch is version 1.11.0.dev7, a Python-only development
+This `simplified` branch is version 1.11.0.dev8, a Python-only development
 candidate without a release tag. Install Miniforge or another Conda
 distribution before following this guide.
+
+The packaged default is `config_deb.yaml`. It uses the DEB-lab server's
+`fMOST/resources/key_datasets` and `fMOST/resources/dependencies` trees for the
+DS00, 5 µm, brain-view, processed-SWC and FNT resources. A local profile created
+by `config-init` contains the same resolved defaults.
 
 ## Quick start from a fresh clone
 
@@ -14,6 +19,21 @@ conda env create -f environment.yml
 conda run -n vispa python -m pip install --no-deps -e .
 conda run -n vispa python -m vispa --version
 ```
+
+After activating the environment, the same installed CLI is available directly:
+
+```powershell
+conda activate vispa
+vispa --version
+vispa gui
+```
+
+TIFF reading is included in the core installation. The Conda environment adds
+`tifffile` and `imagecodecs`; VisPa also falls back to Pillow when those
+decoders are unavailable. If Context acquisition reports an unavailable TIFF
+decoder, the command is running outside the VisPa
+environment or against a stale interpreter path. Use
+`conda run -n vispa python -m vispa ...` or verify `VISPA_PYTHON`.
 
 Create a local profile if one does not already exist:
 
@@ -52,14 +72,16 @@ directory.
 
 Use these run configurations:
 
-| Purpose | Module | Arguments |
+| Purpose | Command | Arguments |
 |---|---|---|
-| GUI | `vispa.gui` | `--config D:\VisPa\config\vispa_config.yaml` |
+| GUI | `vispa gui` | `--config D:\VisPa\config\vispa_config.yaml` |
 | Version | `vispa` | `--version` |
 | Config check | `vispa` | `config-check --validate-only --config D:\VisPa\config\vispa_config.yaml` |
 | Tests | `unittest` | `discover -s tests -v` |
 
-No activation, `vispa.exe`, `vispa-gui.exe`, or `.cmd` launcher is required.
+The `vispa` command is a standard pip-generated launcher into the Python CLI.
+It is not a standalone binary. Without activation, use
+`conda run -n vispa vispa ...` or `python -m vispa ...`.
 
 The [Windows Conda workflow](.github/workflows/windows-python-conda.yml) creates
 the declared environment, installs the editable package, checks module entry
@@ -70,7 +92,7 @@ interactive 3D, and scientific acceptance remain separate.
 1. Connect to the lab intranet. Enter a Sample ID and Neuron ID, or click **Neuron list** to choose one.
 2. Click **Load & Auto-Fill Soma**.
 3. Click **Render**; review the output folder shown in **Saving**.
-4. Use **3D brain view** when a processed SWC and mesh are configured. **fnt-tracer** uses the exact VisPa cached native FNT project when available and requires a separately installed FNT executable to launch.
+4. Use **3D brain view** when a processed SWC and mesh are configured. **fnt-tracer** uses the exact shared project when available; the default DEB profile points to the shared FNT executable and project folder.
 
 An optional local one-neuron demo is available at `demo/demo.yaml` with source
 evidence in `demo/README.md`. Launch it with
@@ -80,8 +102,8 @@ before accepting any scientific result.
 ## Development and operator commands
 
 Primary standalone development workspace: `D:/VisPa`. Package/distribution:
-`vispa`. Run `python -m vispa` and `python -m vispa.gui`; no console-script
-executables are installed.
+`vispa`. Activate the Conda environment and run `vispa`; the equivalent
+module forms remain `python -m vispa` and `python -m vispa.gui`.
 
 `VISPA_CONFIG` and `VISPA_WHEELHOUSE` are the VisPa environment handles. Pass
 `--config PATH` for a specific run; otherwise `VISPA_CONFIG` wins, then the own
@@ -92,7 +114,7 @@ not provide compatibility Python modules or commands.
 
 The Python API is imported only as `vispa`. The legacy `Visual_toolkit`
 forwarding package and class alias have been removed. Optional OpenGL remains
-lazy. Use `python -m vispa` or `python -m vispa.gui`.
+lazy. Use `vispa`, `python -m vispa`, or `python -m vispa.gui`.
 
 New standalone run receipts, builds and candidate outputs live under `D:/VisPa/work/`. The [shared validation receipt](work/fnt_onboarding_20261022/run_receipt.json) records versioned milestones separately; [the Windows Conda workflow](.github/workflows/windows-python-conda.yml) validates the Python-only environment. The living project journal remains `D:/projectome_analysis/docs/project_note.md`. Existing projectome receipts remain historical evidence; external scientific data/cache paths remain explicit configuration.
 
@@ -100,7 +122,7 @@ New standalone run receipts, builds and candidate outputs live under `D:/VisPa/w
 
 VisPa includes a live per-sample IONData neuron list for the configured lab intranet and review panels for configured local microscopy resources. The live list is fetched from the neuron API; image cubes, raw SWCs, and microscopy files use separate configured hosts or shares. The package contains only server addresses and candidate sample-resource links, not source data, credentials, or local project tools. These links and checksums do not establish current share availability or scientific acceptance.
 
-This checkout is **1.11.0.dev7, without a release tag**. It preserves the
+This checkout is **1.11.0.dev8, without a release tag**. It preserves the
 existing rendering and source-verification algorithms while removing the
 retired `Visual_toolkit` compatibility namespace. The DS00 sagittal panel
 retains its two documented axis hypotheses and its manifest, hash, geometry,
@@ -271,7 +293,16 @@ vector relationship; add `--config PATH` to include configured current values.
 
 ## Sources and configuration
 
-The packaged default is a same-intranet profile: it configures live IONData catalog access, separate BAP image-cube and raw-SWC hosts, known microscopy share roots, and per-user VisPa caches/outputs. Its sample-to-AnimalID and dataset links are candidate resource references and may be unavailable off the lab network. No credentials, FNT executable, local worker path, or other application's working-output path is set. The packaged YAML contains no literal Windows profile path. A new profile can be created with `python -m vispa config-init`; caches and outputs use `%LOCALAPPDATA%\VisPa`. Pass `--config PATH` to select another profile. On this checkout, the explicitly selected local example is `D:\VisPa\config\vispa_config.yaml`; no other lab PC needs that drive. JSON works with the standard library; YAML is included in the core install. Relative paths resolve from the config file's folder, or from the optional top-level `base_dir`.
+The packaged `config_deb.yaml` profile configures live IONData catalog access,
+separate BAP image-cube and raw-SWC hosts, the shared DEB microscopy dataset
+roots, brain-view dependencies, FNT executable/projects, and per-user VisPa
+caches/outputs. Its sample-to-AnimalID and dataset links are candidate resource
+references and may be unavailable off the lab network. No credentials or local
+worker path is set. A new profile can be created with `vispa config-init`;
+caches and outputs use `%LOCALAPPDATA%\VisPa`. Pass `--config PATH` to select
+another profile. JSON works with the standard library; YAML is included in the
+core install. Relative paths resolve from the config file's folder, or from the
+optional top-level `base_dir`.
 
 Create the per-user YAML without overwriting anything already present:
 

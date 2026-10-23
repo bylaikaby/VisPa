@@ -1,6 +1,6 @@
 """Load explicit, portable VisPa dataset configuration.
 
-Version: 1.11.0.dev7 (local/unreleased)
+Version: 1.11.0.dev8 (local/unreleased)
 Last updated: 2026-10-23
 Change history: ../../CHANGELOG.md
 """
@@ -55,7 +55,7 @@ def legacy_yaml_config_path() -> Path:
 def _template_bytes() -> bytes:
     from importlib.resources import files
 
-    return files("vispa").joinpath("default_config.yaml").read_bytes()
+    return files("vispa").joinpath("config_deb.yaml").read_bytes()
 
 
 def _parse_config_bytes(content: bytes, source: Path) -> dict:
@@ -592,9 +592,9 @@ def initialize_default_config(output: str | Path | None = None,
         source_label = str(selected_source)
         source_hash = hashlib.sha256(source_bytes).hexdigest()
     else:
-        raw = _parse_config_bytes(_template_bytes(), Path("default_config.yaml"))
+        raw = _parse_config_bytes(_template_bytes(), Path("config_deb.yaml"))
         loaded = None
-        source_label = "package:vispa/default_config.yaml"
+        source_label = "package:vispa/config_deb.yaml"
         source_hash = hashlib.sha256(_template_bytes()).hexdigest()
         source_kind = "package_defaults"
     settings_block = _materialized_settings(loaded if loaded is not None else raw)

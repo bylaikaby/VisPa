@@ -4,13 +4,19 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vispa"
-version = "1.11.0.dev7"
+version = "1.11.0.dev8"
 description = "VisPa — Visual Projectome Analysis tool for microscopy visualization and review"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = ["numpy", "matplotlib<3.11.1", "Pillow", "PyYAML"]
+dependencies = ["numpy", "matplotlib<3.11.1", "Pillow", "PyYAML", "tifffile"]
+
+[project.scripts]
+vispa = "vispa.cli:main"
 
 [project.optional-dependencies]
+tiff = ["tifffile", "imagecodecs"]
+nifti = ["nibabel"]
+ssh = ["paramiko"]
 "3d" = [
     "freetype-py",
     "glfw==2.11.0",
@@ -23,7 +29,6 @@ dependencies = ["numpy", "matplotlib<3.11.1", "Pillow", "PyYAML"]
     "PyOpenGL==3.1.10",
     "scikit-image",
     "scipy",
-    "tifffile",
     "trimesh==5.1.1",
     "vispy==0.17.0",
 ]
@@ -35,5 +40,5 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-vispa = ["default_config.yaml"]
+vispa = ["config_deb.yaml"]
 

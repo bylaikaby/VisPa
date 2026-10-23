@@ -1,6 +1,6 @@
 """Contract tests for the lazy original-engine OpenGL worker.
 
-Version: 1.10.0.dev0 (local/unreleased)
+Version: 1.11.0.dev8 (local/unreleased)
 Last updated: 2026-10-18
 Change history: ../CHANGELOG.md
 Status: candidate
@@ -180,6 +180,14 @@ class LegacyOpenGLPlanningTests(unittest.TestCase):
         self.assertNotIn("PYTHONPATH", kwargs["env"])
         self.assertNotIn("MATPLOTLIBRC", kwargs["env"])
         self.assertNotIn("GLFW_LIBRARY", kwargs["env"])
+
+    def test_stale_environment_worker_falls_back_to_configured_python(self):
+        stale = self.root / "retired-runtime" / "python.exe"
+        with mock.patch.dict(os.environ, {
+                "VISPA_PYTHON": str(stale), "VISUAL_TOOLKIT_PYTHON": ""}):
+            plan = opengl.plan_configured_view(
+                "251637", "001.swc", config_path=self.config)
+        self.assertEqual(Path(plan["worker_python"]), Path(sys.executable).resolve())
 
     def test_snapshot_collision_rejected_without_overwrite(self):
         target = self.root / "review.png"

@@ -1,7 +1,7 @@
 """
 vispa_gui.py - GUI for NeuroVis Visual Toolkit
 
-Version: 1.11.0.dev7 (local/unreleased)
+Version: 1.11.0.dev8 (local/unreleased)
 Last updated: 2026-10-23
 Change history: ../../CHANGELOG.md
 Status: candidate (visual review pending)
@@ -1956,7 +1956,7 @@ class NeuroVisGUI:
             window.lift()
             window.focus_force()
             return
-        packaged_default = files('vispa').joinpath('default_config.yaml').read_bytes()
+        packaged_default = files('vispa').joinpath('config_deb.yaml').read_bytes()
         default_path = Path(path).with_name('vispa_config.default.yaml')
         default_warning = ''
         try:
@@ -2260,7 +2260,7 @@ class NeuroVisGUI:
         from importlib.resources import files
         from .dataset_config import load as load_config
         protected = Path(path).name.casefold() == 'vispa_config.default.yaml'
-        installed_default = Path(str(files('vispa').joinpath('default_config.yaml'))).resolve()
+        installed_default = Path(str(files('vispa').joinpath('config_deb.yaml'))).resolve()
         if protected or Path(path).resolve() == installed_default:
             messagebox.showerror('Config', 'Default YAML is read-only; select an active configuration to save.')
             return False

@@ -1,6 +1,6 @@
 """Explicit local-input launcher for the isolated legacy OpenGL viewer.
 
-Version: 1.11.0.dev7 (local/unreleased)
+Version: 1.11.0.dev8 (local/unreleased)
 Last updated: 2026-10-23
 Change history: ../../CHANGELOG.md
 Status: candidate
@@ -26,6 +26,11 @@ from datetime import datetime, timezone
 from ._version import __version__
 
 SCHEMA = "visual-toolkit.legacy-gl.v1"
+_LOCALAPPDATA = Path(os.environ.get("LOCALAPPDATA") or (Path.home() / ".local" / "share"))
+DEFAULT_WORKER_CANDIDATES = (
+    _LOCALAPPDATA / "VisPa" / "conda-env" / "python.exe",
+    _LOCALAPPDATA / "VisPa" / "conda-env" / "bin" / "python",
+)
 DEFAULT_SETTINGS = {
     "eye_direction": [-1.3, 1.6, 1.5],
     "up": [0.0, 0.0, 1.0],
@@ -200,10 +205,26 @@ def plan_configured_view(sample_id: str, neuron_id: str, portal_region: str = ""
     receipt_path = snapshot_path.with_suffix(".json") if snapshot_path else None
     if snapshot_path and (snapshot_path.exists() or receipt_path.exists()):
         raise FileExistsError("snapshot PNG or receipt already exists; choose a new path")
-    worker = (os.environ.get("VISPA_PYTHON") or os.environ.get("VISUAL_TOOLKIT_PYTHON")) or config.get("visual_toolkit", {}).get("worker_python") or sys.executable
-    worker = str(Path(worker).expanduser().resolve())
-    if not Path(worker).is_file():
-        raise FileNotFoundError(f"configured VisPa worker Python does not exist: {worker}")
+    candidates = (
+        os.environ.get("VISPA_PYTHON"),
+        os.environ.get("VISUAL_TOOLKIT_PYTHON"),
+        config.get("visual_toolkit", {}).get("worker_python"),
+        sys.executable,
+        *DEFAULT_WORKER_CANDIDATES,
+    )
+    worker = None
+    for candidate in candidates:
+        if not candidate:
+            continue
+        resolved = Path(candidate).expanduser().resolve()
+        if resolved.is_file():
+            worker = str(resolved)
+            break
+    if worker is None:
+        raise FileNotFoundError(
+            "no usable VisPa worker Python was found; run the Conda environment "
+            "or set VISPA_PYTHON to its python executable"
+        )
     direction = settings["eye_direction"]
     norm = math.sqrt(sum(value * value for value in direction))
     direction = [value / norm for value in direction]
