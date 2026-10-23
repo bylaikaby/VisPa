@@ -31,10 +31,16 @@ foreach ($path in @($launcher,$environmentFile)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Missing entry point: $path" }
 }
 $envYaml = Get-Content -LiteralPath $environmentFile -Raw
-foreach ($required in @('python=3.13','  - tk','  - scipy','  - vispy=0.17.0','  - pip:','PyGLM==2.8.3')) {
+foreach ($required in @('python=3.13','  - tk','  - scipy','  - vispy=0.17.0','  - pip')) {
     if (-not $envYaml.Contains($required)) { throw "Missing Conda dependency: $required" }
 }
-Write-Host 'PASS: Conda definition includes Python, Tk, scientific and 3D dependencies.'
+if ($envYaml -match '(?m)^  - pip:') { throw 'Conda pip subsection requires activation and fails for spaced environment prefixes.' }
+$installerText = Get-Content -LiteralPath $installer -Raw
+if ($installerText -notmatch 'PyGLM==2\.8\.3' -or $installerText -notmatch 'glfw==2\.11\.0' -or
+        $installerText -notmatch '\$targetPython @nativePipArgs' -or $installerText -notmatch "'--no-deps'") {
+    throw 'Installer must install pinned renderer wheels directly through target Python without Conda activation.'
+}
+Write-Host 'PASS: Conda owns compiled dependencies; pinned renderer wheels use direct target Python.'
 $plan = & $installer -DryRun -NoLaunch -NoShortcut | ConvertFrom-Json
 if ($plan.install_dir -notmatch 'VisPa[\\/]conda-env$') { throw "Unexpected default prefix: $($plan.install_dir)" }
 if ($plan.add_user_path -ne $false -or $plan.launch_gui -ne $false -or $plan.desktop_shortcut -ne $false) {
@@ -43,7 +49,17 @@ if ($plan.add_user_path -ne $false -or $plan.launch_gui -ne $false -or $plan.des
 if ($plan.runtime_python -notmatch '[\\/]python.exe$' -or $plan.environment_file -ne $environmentFile) {
     throw 'Dry-run did not resolve Conda Python and environment definition.'
 }
+if ($plan.renderer_pip.executable -ne $plan.runtime_python -or
+        $plan.renderer_pip.packages[0] -ne 'PyGLM==2.8.3' -or
+        $plan.renderer_pip.packages[1] -ne 'glfw==2.11.0' -or
+        -not $plan.renderer_pip.no_deps -or $plan.renderer_pip.no_index) {
+    throw 'Dry-run omitted the direct pinned renderer wheel plan.'
+}
 Write-Host 'PASS: dry run resolves isolated prefix and leaves PATH unchanged.'
+$offlinePlan = & $installer -DryRun -NoLaunch -NoShortcut -Wheelhouse $env:TEMP | ConvertFrom-Json
+if (-not $offlinePlan.renderer_pip.no_index -or $offlinePlan.renderer_pip.wheelhouse -ne $env:TEMP) {
+    throw 'Wheelhouse dry-run must keep renderer wheels offline.'
+}
 $safeRootPlan = & $installer -DryRun -NoLaunch -NoShortcut -MiniforgeRoot 'C:\VisPa-test-miniforge' | ConvertFrom-Json
 if ($safeRootPlan.bootstrap_root -ne 'C:\VisPa-test-miniforge' -or $safeRootPlan.bootstrap_root_selection -ne 'explicit') {
     throw 'Dry run lost the explicit safe Miniforge root.'

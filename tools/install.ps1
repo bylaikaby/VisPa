@@ -130,6 +130,13 @@ $plan = [ordered]@{
     source_install = $sourceMode
     wheel = $Wheel
     wheelhouse = $Wheelhouse
+    renderer_pip = [ordered]@{
+        packages = @('PyGLM==2.8.3','glfw==2.11.0')
+        executable = $targetPython
+        no_deps = $true
+        no_index = [bool]$Wheelhouse
+        wheelhouse = $Wheelhouse
+    }
     config = $Config
     config_selection = $configSelection
     cache_root = (Join-Path $env:LOCALAPPDATA 'VisPa\cache')
@@ -187,6 +194,13 @@ if (-not (Test-Path -LiteralPath $targetPython -PathType Leaf)) { throw "Conda P
 $env:PATH = "$InstallDir;$InstallDir\Library\bin;$InstallDir\Scripts;$env:PATH"
 & $targetPython -c 'import sys,tkinter; tkinter.Tcl(); assert sys.version_info[:2] == (3,13); assert sys.maxsize > 2**32'
 if ($LASTEXITCODE -ne 0) { throw 'Conda preflight failed: 64-bit Python 3.13 with Tk is required.' }
+$nativePipArgs = @('-m','pip','install','--disable-pip-version-check','--no-deps')
+if ($Wheelhouse) { $nativePipArgs += @('--no-index','--find-links',$Wheelhouse) }
+$nativePipArgs += @('PyGLM==2.8.3','glfw==2.11.0')
+& $targetPython @nativePipArgs
+if ($LASTEXITCODE -ne 0) { throw 'Pinned PyGLM/glfw installation failed. The Conda prefix is preserved for repair.' }
+& $targetPython -c 'import glm,glfw'
+if ($LASTEXITCODE -ne 0) { throw 'Pinned PyGLM/glfw imports failed. The Conda prefix is preserved for repair.' }
 & $targetPython -c "import importlib.metadata as m,sys; sys.exit(2 if any(d.metadata['Name'].lower().replace('_','-')=='visual-toolkit' for d in m.distributions()) else 0)"
 if ($LASTEXITCODE -eq 2) { throw 'Target contains visual-toolkit; choose a fresh -InstallDir. Existing files are preserved.' }
 if ($LASTEXITCODE -ne 0) { throw 'Could not inspect target package ownership.' }
