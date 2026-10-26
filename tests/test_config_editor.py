@@ -1,7 +1,7 @@
 """Focused lossless common-settings checks.
 
-Version: 1.11.0.dev11 (local/unreleased)
-Last updated: 2026-10-23
+Version: 1.11.0.dev17 (local/unreleased)
+Last updated: 2026-10-26
 Change history: ../CHANGELOG.md
 """
 import unittest
@@ -102,6 +102,48 @@ class ConfigEditorTests(unittest.TestCase):
         self.assertEqual(events.count(('fnt', '251637', '003')), 1)
         self.assertNotIn('rerender', events)
         self.assertEqual(gui.preview_files, {'Soma': 'cached.png'})
+
+    def test_partial_render_logs_sagittal_and_trio_dependency(self):
+        from vispa.gui import NeuroVisGUI
+        gui = NeuroVisGUI.__new__(NeuroVisGUI)
+        request = SimpleNamespace(sample_id='SYNTH', neuron_id='001.swc',
+                                  plot_soma=True, plot_context=True, plot_sagittal=True,
+                                  save_soma_png=False, save_context_png=False,
+                                  save_sagittal_png=False, save_trio_png=False,
+                                  save_outputs=False, output_dir='unused')
+        gui.sample_id = SimpleNamespace(get=lambda: 'SYNTH')
+        gui.neuron_id = SimpleNamespace(get=lambda: '001.swc')
+        gui.preview_files = {}
+        gui._capture_processing_request = lambda: request
+        gui._fingerprint = lambda: None
+        gui._target_for = lambda *args: 'unused'
+        gui._render_soma = lambda *args: {'png_path': 'soma.png'}
+        gui._render_context = lambda *args: {'png_path': 'context.png'}
+        gui._render_sagittal = lambda *args: (_ for _ in ()).throw(FileNotFoundError(
+            'Live manifest-selected preprocessed DS volume is unavailable: selected.nii'))
+        gui._panel_png = lambda panel: panel['png_path']
+        gui._register_outputs = lambda paths: gui.preview_files.update(
+            {'Soma': paths[0], 'Context': paths[1]})
+        logs, statuses = [], []
+        gui._append_log = logs.append
+        gui.update_status = statuses.append
+        gui._ui_call = lambda callback, *args: callback(*args)
+        gui.make_review_figure = SimpleNamespace(get=lambda: True)
+        toolkit = SimpleNamespace(plot_tri_plot=mock.Mock())
+        def finish_work(req, work, message):
+            paths, errors = work(toolkit)
+            gui._finish(req, paths, message(req), errors)
+        gui._run_worker = finish_work
+        with mock.patch('vispa.gui.IT.IONData', return_value=object()):
+            gui.run_selected(force_rerender=True)
+        self.assertEqual(gui.preview_files, {'Soma': 'soma.png', 'Context': 'context.png'})
+        self.assertTrue(any('Sagittal render failed: Live manifest-selected preprocessed DS volume '
+                            'is unavailable: selected.nii' in line for line in logs))
+        self.assertTrue(any('Sagittal: this sample has no registered processed-DS sagittal source'
+                            in line for line in logs))
+        self.assertTrue(any('TrioPlot: requires Soma, Context and Sagittal; missing Sagittal'
+                            in line for line in logs))
+        toolkit.plot_tri_plot.assert_not_called()
 
     def test_manifest_relative_and_explicit_switch_without_noop_loss(self):
         source = {'version': 1, 'defaults': {'ds00_root': r'\\server\DS00'},
