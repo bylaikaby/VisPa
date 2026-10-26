@@ -69,6 +69,8 @@ BrkRaw is deployed with `python -m pip install brkraw` and then used as the `brk
 
 Install this checkout, a wheel built from it, or the git URL. The PyPI project named `vispa` is the unrelated RWTH Aachen VISPA 0.9 IDE, so a bare `python -m pip install vispa` selects that other project.
 
+On Windows, in PowerShell:
+
 ```powershell
 python -m pip install ".[3d,tiff]"
 vispa --help
@@ -76,7 +78,16 @@ python -m vispa --version
 vispa gui
 ```
 
-`vispa` with no subcommand prints help and exits with status 2. `vispa gui` opens the review window. `python run_vispa.py` remains the checkout shortcut and opens the GUI when started with no arguments.
+On Linux or macOS, in the active environment:
+
+```bash
+python -m pip install ".[3d,tiff]"
+vispa --help
+python -m vispa --version
+vispa gui
+```
+
+Pip writes `vispa.exe` on Windows and a `vispa` script on Linux and macOS. Both call `vispa.cli:main`. `python -m vispa` is the same command on either system. With no subcommand, `vispa` prints help and exits with status 2. `vispa gui` opens the review window. `python run_vispa.py` remains the checkout shortcut and opens the GUI when started with no arguments. The same wheel was installed and checked on Windows Python 3.12 and on WSL Linux Python 3.12.3.
 
 A wheel does not need this source tree on `PYTHONPATH` after installation:
 
