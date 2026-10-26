@@ -1,6 +1,6 @@
 """Explicit local-input launcher for the isolated legacy OpenGL viewer.
 
-Version: 1.11.0.dev14 (local/unreleased)
+Version: 1.11.0.dev20 (local/unreleased)
 Last updated: 2026-10-26
 Change history: ../../CHANGELOG.md
 Status: candidate
@@ -307,7 +307,7 @@ def render_configured_snapshot(sample_id: str, neuron_id: str,
                                *, mesh_path: str | os.PathLike | None = None,
                                mesh_label: str | None = None,
                                overrides: dict | None = None) -> dict:
-    """Render one static 3D SWC view through the isolated worker."""
+    """Render one static SWC Brain View through the isolated worker."""
     plan = plan_configured_view(
         sample_id, neuron_id, portal_region, config_path, snapshot=snapshot,
         mesh_path=mesh_path, mesh_label=mesh_label, overrides=overrides)
@@ -335,16 +335,16 @@ def render_configured_snapshot(sample_id: str, neuron_id: str,
     if completed.returncode != 0:
         diagnostic = (completed.stderr or completed.stdout or "no diagnostic").strip()
         raise RuntimeError(
-            f"3D SWC worker exited with status {completed.returncode}: {diagnostic[-4000:]}")
+            f"SWC Brain View worker exited with status {completed.returncode}: {diagnostic[-4000:]}")
     receipt = Path(plan["receipt"])
     image = Path(plan["snapshot_png"])
     if not image.is_file() or not receipt.is_file():
-        raise RuntimeError("3D SWC worker did not create both the PNG and receipt")
+        raise RuntimeError("SWC Brain View worker did not create both the PNG and receipt")
     payload = json.loads(receipt.read_text(encoding="utf-8"))
     if payload.get("status") != "rendered_candidate":
-        raise RuntimeError(f"Unexpected 3D SWC receipt status: {payload.get('status')!r}")
+        raise RuntimeError(f"Unexpected SWC Brain View receipt status: {payload.get('status')!r}")
     if payload.get("output_png_sha256") != _sha256(image):
-        raise RuntimeError("3D SWC snapshot hash does not match its receipt")
+        raise RuntimeError("SWC Brain View snapshot hash does not match its receipt")
     return payload
 
 

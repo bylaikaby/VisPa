@@ -1,7 +1,7 @@
 """Checks for the public data-check API, CLI and GUI progress plumbing.
 
-Version: 1.11.0.dev11 (local/unreleased)
-Last updated: 2026-10-23
+Version: 1.11.0.dev20 (local/unreleased)
+Last updated: 2026-10-26
 Change history: ../CHANGELOG.md
 Status: candidate
 """
@@ -203,7 +203,12 @@ class ProgressBarTests(unittest.TestCase):
         self.assertEqual(gui.last_data_check, report)
 
     def test_swc3d_tab_requests_a_snapshot_when_not_cached(self):
-        from vispa.gui import NeuroVisGUI
+        from vispa.gui import (NeuroVisGUI, SWC_BRAIN_VIEW_LABEL,
+                               SWC_BRAIN_VIEW_INTERACTIVE_LABEL)
+
+        self.assertEqual(SWC_BRAIN_VIEW_LABEL, "SWC Brain View")
+        self.assertEqual(SWC_BRAIN_VIEW_INTERACTIVE_LABEL,
+                         "SWC Brain View interactive")
         gui = object.__new__(NeuroVisGUI)
         gui.preview_files = {}
         gui._render_swc3d = mock.Mock()

@@ -1,7 +1,7 @@
 """
 vispa_gui.py - GUI for NeuroVis Visual Toolkit
 
-Version: 1.11.0.dev18 (local/unreleased)
+Version: 1.11.0.dev20 (local/unreleased)
 Last updated: 2026-10-26
 Change history: ../../CHANGELOG.md
 Status: candidate (visual review pending)
@@ -23,7 +23,7 @@ KEY FEATURES:
     - Auto-Load on Startup: Uses optional configured identity and auto-load defaults
     - Auto-Fill Soma: Read soma coordinates from the configured SWC source
     - Neuron list: Browse the configured live or dated source and select an exact SWC ID
-    - fnt-tracer: Open the current neuron's FNT project beside the 3D brain view
+    - fnt-tracer: Open the current neuron's FNT project beside SWC Brain View interactive
     - Threaded Processing: Non-blocking panel requests with progress indicators
 
 USAGE NOTES:
@@ -144,6 +144,9 @@ import subprocess
 from pathlib import Path
 from dataclasses import dataclass
 from ._version import __version__
+
+SWC_BRAIN_VIEW_LABEL = "SWC Brain View"
+SWC_BRAIN_VIEW_INTERACTIVE_LABEL = "SWC Brain View interactive"
 
 EMPTY_PREVIEW_TEXT = (
     "No figure yet\n\nEnter Sample ID and Neuron ID; soma coordinates load "
@@ -903,7 +906,7 @@ class NeuroVisGUI:
         tab_grid.pack(side='left')
         for index, (role, label) in enumerate((('Soma', 'Soma'), ('Context', 'Context'),
                                                ('Sagittal', 'Sagittal'), ('TrioPlot', 'TrioPlot'),
-                                               ('SWC3D', '3D SWC'))):
+                                               ('SWC3D', SWC_BRAIN_VIEW_LABEL))):
             button = tk.Button(tab_grid, text=label,
                                command=lambda r=role: self._show_role(r),
                                relief='flat', bd=0, bg=C['card'], fg=C['text'],
@@ -952,7 +955,8 @@ class NeuroVisGUI:
                        selectcolor=C['field'], font=('Segoe UI', 10),
                        cursor='hand2').pack(side='left', padx=(0, P(12)))
         brain_button = self._flat_button(
-            action_row, "3D brain view", self._on_template_brain_view, primary=True,
+            action_row, SWC_BRAIN_VIEW_INTERACTIVE_LABEL,
+            self._on_template_brain_view, primary=True,
             color='#e07a1f', active='#b95f10')
         brain_button.configure(font=('Segoe UI', 12, 'bold'),
                                padx=P(38), pady=P(12))
@@ -1334,7 +1338,7 @@ class NeuroVisGUI:
         return portal_region
 
     def _on_fnt_tracer(self):
-        """Open this neuron's exact FNT project beside the 3D view."""
+        """Open this neuron's exact FNT project beside the interactive view."""
         sample_id = self.sample_id.get().strip()
         neuron_id = self.neuron_id.get().strip()
         if not sample_id or not neuron_id:
@@ -1713,7 +1717,7 @@ class NeuroVisGUI:
         sample = self.sample_id.get().strip()
         neuron = self.neuron_id.get().strip()
         if not sample or not neuron:
-            messagebox.showwarning("3D SWC", "Choose a sample and neuron first.")
+            messagebox.showwarning("SWC Brain View", "Choose a sample and neuron first.")
             return
         portal_region = self._current_portal_region(sample, neuron)
         save = bool(self.save_outputs.get())
@@ -1732,7 +1736,7 @@ class NeuroVisGUI:
         snapshot = os.path.join(
             folder,
             f"{sample}_{neuron.removesuffix('.swc')}_{_stamp()}_{time.time_ns() % 1000000:06d}_3D_SWC.png")
-        self.update_status("3D SWC · rendering template mesh and trace…")
+        self.update_status("SWC Brain View · rendering template mesh and trace…")
 
         def worker():
             try:
@@ -1743,8 +1747,8 @@ class NeuroVisGUI:
                     portal_region=portal_region, config_path=self.config_path)
             except Exception as exc:
                 self._ui_call(self._hide_progress)
-                self._ui_call(messagebox.showerror, "3D SWC", f"Could not render:\n{exc}")
-                self._ui_call(self.update_status, f"3D SWC failed: {exc}")
+                self._ui_call(messagebox.showerror, "SWC Brain View", f"Could not render:\n{exc}")
+                self._ui_call(self.update_status, f"SWC Brain View failed: {exc}")
             else:
                 self._ui_call(
                     self._finish_swc3d, sample, neuron, snapshot,
@@ -1753,7 +1757,7 @@ class NeuroVisGUI:
         self._launch_processing(worker)
 
     def _finish_swc3d(self, sample, neuron, image_path, receipt_path, save):
-        """Publish a completed 3D SWC snapshot to the preview tab."""
+        """Publish a completed SWC Brain View snapshot to the preview tab."""
         self._hide_progress()
         if not identity_matches(
                 (sample, neuron), self.sample_id.get(), self.neuron_id.get()):
@@ -1763,7 +1767,7 @@ class NeuroVisGUI:
                         os.remove(path)
                     except OSError:
                         pass
-            self.update_status("Discarded stale 3D SWC result")
+            self.update_status("Discarded stale SWC Brain View result")
             return
         self._ephemeral_images = getattr(self, '_ephemeral_images', {})
         if not save and Image is not None:
@@ -1782,8 +1786,8 @@ class NeuroVisGUI:
                         os.remove(path)
                     except OSError:
                         pass
-        self.update_status(f"3D SWC rendered for {sample}/{neuron}")
-        self._append_log(f"3D SWC rendered: {image_path}")
+        self.update_status(f"SWC Brain View rendered for {sample}/{neuron}")
+        self._append_log(f"SWC Brain View rendered: {image_path}")
 
     def show_preview(self, path, role=None):
         if getattr(self, 'preview_label', None) is None:

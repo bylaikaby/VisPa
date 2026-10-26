@@ -1,6 +1,6 @@
 """Contract tests for the lazy original-engine OpenGL worker.
 
-Version: 1.11.0.dev14 (local/unreleased)
+Version: 1.11.0.dev20 (local/unreleased)
 Last updated: 2026-10-26
 Change history: ../CHANGELOG.md
 Status: candidate
@@ -212,6 +212,14 @@ class LegacyOpenGLPlanningTests(unittest.TestCase):
         self.assertIn("--portal-region=-x", commands[0])
         self.assertIn(f"--mesh-path={self.mesh.resolve()}", commands[0])
         self.assertIn("--mesh-label=-h", commands[0])
+
+    def test_snapshot_worker_failure_uses_preview_label(self):
+        snapshot = self.root / "failed-snapshot.png"
+        with mock.patch.object(opengl.subprocess, "run", return_value=
+                               opengl.subprocess.CompletedProcess([], 2, "", "worker failed")):
+            with self.assertRaisesRegex(RuntimeError, "SWC Brain View worker exited"):
+                opengl.render_configured_snapshot(
+                    "251637", "001.swc", snapshot, config_path=self.config)
 
     def test_snapshot_collision_rejected_without_overwrite(self):
         target = self.root / "review.png"
