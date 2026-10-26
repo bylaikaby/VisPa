@@ -1,7 +1,7 @@
 """
 vispa_gui.py - GUI for NeuroVis Visual Toolkit
 
-Version: 1.11.0.dev17 (local/unreleased)
+Version: 1.11.0.dev18 (local/unreleased)
 Last updated: 2026-10-26
 Change history: ../../CHANGELOG.md
 Status: candidate (visual review pending)
@@ -3182,7 +3182,7 @@ class NeuroVisGUI:
                 trio_target = request.output_dir if saving else self._preview_target_dir(request)
                 trio_path = toolkit.plot_tri_plot(
                     [panels["Soma"], panels["Context"], panels["Sagittal"]],
-                    request.neuron_id, output_dir=trio_target, legend=True)
+                    request.neuron_id, output_dir=trio_target, legend=False)
                 paths.append(trio_path)
             elif make_review:
                 missing = [role for role in ("Soma", "Context", "Sagittal")

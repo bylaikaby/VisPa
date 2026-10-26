@@ -1,7 +1,7 @@
 """Bounded command line for one local VisPa review render or montage.
 
-Version: 1.11.0.dev11 (local/unreleased)
-Last updated: 2026-10-23
+Version: 1.11.0.dev18 (local/unreleased)
+Last updated: 2026-10-26
 Change history: CHANGELOG.md
 """
 from __future__ import annotations
@@ -196,7 +196,7 @@ def _render(args):
                 None if args.role == "soma"
                 else ("X pixel index (column)", "Y pixel index (row)"))
             rendered = Path(tool.plot_tri_plot([panel], neuron, output_dir=temp_dir,
-                                               suffix=args.role, legend=True))
+                                               suffix=args.role, legend=False))
             tool.close()
             if not rendered.is_file():
                 raise RuntimeError("renderer did not produce the expected PNG")

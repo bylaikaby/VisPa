@@ -1,5 +1,8 @@
 # VisPa change log
 
+## 1.11.0.dev18 — 2026-10-26 (local/unreleased)
+- Remove unused role-legend text from the Context panel, CLI single-panel preview and GUI TrioPlot at the user's request. Soma remains legend-free; Sagittal keeps its source/marker legend. Source selection, geometry, markers and panel data are unchanged. The presentation regression checks absence/presence by panel; full source-suite validation is recorded in the shared project receipt.
+
 ## 1.11.0.dev17 — 2026-10-26 (local/unreleased)
 - Render the manifest-selected shared DS00 volume after verifying its SHA-256 and stable size/mtime; retain the repository candidate path as provenance without requiring that workstation-local copy. Manifest sample selection, path binding and scientific image choice remain unchanged. A mismatched shared volume still fails closed.
 - Log each skipped GUI panel and explicitly report when TrioPlot cannot be formed because a required panel failed. Grey tabs still require real generated images. Synthetic source/hash and partial-render regressions passed; shared 251637 manifest source hash was checked locally. Remote GUI and scientific acceptance remain pending.

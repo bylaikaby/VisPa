@@ -1,6 +1,6 @@
 """Focused regression checks for the standalone extraction seams.
 
-Version: 1.11.0.dev17 (local/unreleased)
+Version: 1.11.0.dev18 (local/unreleased)
 Last updated: 2026-10-26
 Change history: ../CHANGELOG.md
 """
@@ -1239,7 +1239,7 @@ class MarkerLabelPresentationTests(unittest.TestCase):
             toolkit._parse_setting_value('marker.label_mode', 'unknown', 'none')
         self.assertEqual(toolkit._parse_setting_value('marker.label_mode', 'short', 'none'), 'short')
 
-    def test_soma_is_furniture_free_while_context_retains_role_explanation(self):
+    def test_soma_and_context_omit_role_legend(self):
         import matplotlib.pyplot as plt
         import numpy as np
         from vispa import toolkit
@@ -1264,17 +1264,19 @@ class MarkerLabelPresentationTests(unittest.TestCase):
                     tuple(soma_fig.axes[0].images[0].get_extent()),
                     (-0.5, 119.5, 119.5, -0.5))
 
-                for fig in figures[1:]:
+                context_fig, sagittal_fig = figures[1], figures[2]
+                for fig in (context_fig, sagittal_fig):
                     fig.canvas.draw()
-                    renderer = fig.canvas.get_renderer()
-                    self.assertEqual(len(fig.legends), 1)
-                    self.assertGreater(
-                        fig.axes[0].get_tightbbox(renderer).y0,
-                        fig.legends[0].get_window_extent(renderer).y1)
                     self.assertEqual(
                         tuple(fig.axes[0].images[0].get_extent()),
                         (-0.5, 119.5, 119.5, -0.5))
                     self.assertIn('Source X', fig.axes[0].get_xlabel())
+                self.assertEqual(len(context_fig.legends), 0)
+                self.assertEqual(len(sagittal_fig.legends), 1)
+                renderer = sagittal_fig.canvas.get_renderer()
+                self.assertGreater(
+                    sagittal_fig.axes[0].get_tightbbox(renderer).y0,
+                    sagittal_fig.legends[0].get_window_extent(renderer).y1)
             finally:
                 for fig in locals().get('figures', []):
                     real_close(fig)
