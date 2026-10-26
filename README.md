@@ -5,6 +5,8 @@ This checkout identifies as **1.11.0.dev16**, without a release tag. VisPa is a
 Python package inside a Conda environment. Launch the GUI directly from this
 checkout with `python run_vispa.py`.
 
+[Install](#install-on-windows) · [Update an existing environment](#update-an-existing-vispa-environment) · [Remove the environment](#remove-the-vispa-environment)
+
 The default `config_deb.yaml` starts at **251637 / 004.swc** and uses the shared
 server data and dependencies:
 
@@ -29,7 +31,7 @@ conda activate vispa
 python run_vispa.py
 ```
 
-If `vispa` already exists, use the update commands below. Recloning the repository does not recreate the Conda environment.
+If Conda reports that the `vispa` prefix already exists, [update it](#update-an-existing-vispa-environment) or [remove it](#remove-the-vispa-environment) before creating it again. Recloning the repository does not remove the environment.
 Activation selects the environment's Python; `run_vispa.py` starts the GUI.
 
 If the Windows `conda.exe` launcher itself fails, run the environment create or
@@ -60,19 +62,22 @@ flowchart LR
   G -. configured lab resources .-> D[External data]
 ```
 
-## Update an existing installation
+## Update an existing VisPa environment
 
-In Miniforge or Anaconda Prompt, run `git pull --ff-only origin main` from
-the checkout first, then:
+In Miniforge or Anaconda Prompt, update the checkout and environment:
 
 ```powershell
+cd D:\vispa
+git pull --ff-only origin main
 conda env update -n vispa -f environment.yml
 conda activate vispa
 python run_vispa.py
 ```
 
-To remove the environment later, first run `conda deactivate`, then
-`conda env remove -n vispa`. This does not delete the repository or data.
+The YAML automatically reinstalls editable VisPa and its extras. Use your
+checkout's actual path if it is not `D:\vispa`.
+
+### Adopt new lab defaults
 
 To adopt new lab defaults, use **Settings → Default YAML → Reset to default → Save settings**, or launch with the shared profile directly:
 
@@ -81,6 +86,21 @@ python run_vispa.py gui --config '\\10.102.8.200\microscopy_data\fMOST\resources
 ```
 
 `python run_vispa.py check` must report **All configured resources ready** before rendering. Each line includes its resolved file, folder, or server location.
+
+## Remove the VisPa environment
+
+In Miniforge or Anaconda Prompt:
+
+```powershell
+conda deactivate
+conda env remove -n vispa
+conda env list
+```
+
+The last command lets you confirm `vispa` is gone. Removal deletes that Conda
+environment and its installed packages. It preserves the repository, per-user
+VisPa configuration and cache, and scientific data stored outside the
+environment. To install again, follow [Install on Windows](#install-on-windows).
 
 ## Create or select a configuration
 

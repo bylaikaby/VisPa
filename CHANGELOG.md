@@ -3,6 +3,7 @@
 ## 1.11.0.dev16 — 2026-10-26 (local/unreleased)
 - Put editable `.[3d,tiff]` installation in the `environment.yml` pip subsection so Conda create and update perform the complete package setup. The operator now runs Conda create or update, activates `vispa`, and starts `python run_vispa.py`; Windows CI uses the same YAML path. The generated console command remains absent.
 - Retain the Conda OpenBLAS constraints and existing scientific behavior. Fresh Conda create and update passed in the existing isolated `work/` test prefix; Conda's own pip stage installed editable dev16 and its 3D/TIFF extras with no manual pip command. The existing named environment also updated through YAML. Both installations passed `pip check`, dev16 metadata/source parity and no generated launcher; fresh config and GUI dry runs passed. Visible dev16 GUI and scientific review remain separate. See the shared work receipt.
+- Clarify the README's existing-environment update and removal procedures, including the prefix-already-exists case and which files environment removal preserves. Documentation only; no package behavior changed.
 
 ## 1.11.0.dev15 — 2026-10-26 (local/unreleased)
 - Make root `run_vispa.py` the direct GUI and command entry point. With no arguments it calls the existing GUI command; all other arguments go to the existing CLI. The script imports `src/vispa` relative to its own location, so an absolute script path also works from another working directory.
