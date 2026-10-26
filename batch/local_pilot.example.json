@@ -1,0 +1,18 @@
+{
+  "schema": "vispa.brain_view_batch.v1",
+  "vispa_config": "C:/absolute/path/to/local_vispa_config.yaml",
+  "allow_all": false,
+  "jobs": [
+    {
+      "sample_id": "SAMPLE_ID",
+      "region_id": "whole_brain",
+      "mesh_path": "C:/absolute/path/to/local_mesh.obj",
+      "mesh_label": "Brain mesh",
+      "neuron_ids": ["NEURON_ID.swc"],
+      "coordinate_frame": "DECLARE_EXACT_SOURCE_FRAME",
+      "coordinate_units": "DECLARE_EXACT_SOURCE_UNITS",
+      "portal_region": "",
+      "camera_overrides": {}
+    }
+  ]
+}

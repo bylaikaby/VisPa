@@ -1,7 +1,7 @@
 """Contract tests for the lazy original-engine OpenGL worker.
 
-Version: 1.11.0.dev11 (local/unreleased)
-Last updated: 2026-10-18
+Version: 1.11.0.dev13 (local/unreleased)
+Last updated: 2026-10-26
 Change history: ../CHANGELOG.md
 Status: candidate
 """
@@ -191,8 +191,10 @@ class LegacyOpenGLPlanningTests(unittest.TestCase):
 
     def test_snapshot_worker_returns_hash_verified_receipt(self):
         snapshot = self.root / "swc3d.png"
+        commands = []
 
         def fake_run(command, **kwargs):
+            commands.append(command)
             output = Path(command[command.index("--snapshot") + 1])
             output.write_bytes(b"synthetic-png")
             output.with_suffix(".json").write_text(json.dumps({
@@ -203,9 +205,13 @@ class LegacyOpenGLPlanningTests(unittest.TestCase):
 
         with mock.patch.object(opengl.subprocess, "run", side_effect=fake_run):
             receipt = opengl.render_configured_snapshot(
-                "251637", "001.swc", snapshot, config_path=self.config)
+                "251637", "001.swc", snapshot, portal_region="-x",
+                config_path=self.config, mesh_path=self.mesh, mesh_label="-h")
         self.assertEqual(receipt["status"], "rendered_candidate")
         self.assertTrue(snapshot.is_file())
+        self.assertIn("--portal-region=-x", commands[0])
+        self.assertIn(f"--mesh-path={self.mesh.resolve()}", commands[0])
+        self.assertIn("--mesh-label=-h", commands[0])
 
     def test_snapshot_collision_rejected_without_overwrite(self):
         target = self.root / "review.png"

@@ -1,7 +1,7 @@
 # VisPa — Visual Projectome Analysis tool
 
 VisPa reviews macaque neuron and microscopy data configured by the DEB lab.
-This checkout identifies as **1.11.0.dev12**, without a release tag. VisPa is a Python package
+This checkout identifies as **1.11.0.dev13**, without a release tag. VisPa is a Python package
 inside a Conda environment; `vispa` is a pip-generated Python launcher, not a
 separately packaged application binary.
 
@@ -176,7 +176,7 @@ New standalone run receipts, builds and candidate outputs live under `D:/VisPa/w
 
 VisPa includes a live per-sample IONData neuron list for the configured lab intranet and review panels for configured local microscopy resources. The live list is fetched from the neuron API; image cubes, raw SWCs, and microscopy files use separate configured hosts or shares. The package contains only server addresses and candidate sample-resource links, not source data, credentials, or local project tools. These links and checksums do not establish current share availability or scientific acceptance.
 
-This checkout is **1.11.0.dev12, without a release tag**. It preserves the
+This checkout is **1.11.0.dev13, without a release tag**. It preserves the
 existing rendering and source-verification algorithms while removing the
 retired `Visual_toolkit` compatibility namespace. The DS00 sagittal panel now
 shows one provisional soma-location marker without A/B raw-SWC traces; its
@@ -289,6 +289,28 @@ package remains installable without the `[3d]` OpenGL dependencies.
 | `mesh_color` / `--mesh-color R G B` | `[0.8, 0.8, 0.8]` | Brain-mesh display color | Each RGB component in `[0, 1]` |
 | `neuron_color` / `--neuron-color R G B` | `[1, 0.5, 0]` | Processed-neuron display color | Each RGB component in `[0, 1]` |
 | `window_size` / `--window-size WIDTH HEIGHT` | `[1100, 800]` | Initial viewer dimensions in pixels | Two integers, each at least 100 |
+
+## Explicit brain-view batches (local dev13 candidate)
+
+Use [the batch guide](batch/README.md) and the placeholder [example jobs](batch/local_pilot.example.json) for selected mesh/neuron pairs. Keep machine-specific filled jobs outside version control. One job renders one existing OBJ mesh with one named processed SWC through the same VisPa OpenGL worker. This does not combine multiple neurons in one scene. A supplied region mesh must already be in the declared processed-SWC frame and units; VisPa applies no registration, scaling or mirror transform.
+
+```mermaid
+flowchart LR
+  A[Jobs JSON: region OBJ + exact neuron IDs] --> B[Dry-run: hashes, frame, camera, output paths]
+  C[VisPa dataset configuration] --> B
+  B -->|--limit 1| D[Existing isolated brain-view worker]
+  D --> E[One PNG and adjacent receipt per pair]
+  E --> F[Shared batch receipt]
+  F -. future handoff, no transfer yet .-> G[Multimodal_INS analysis_scripts]
+```
+
+```powershell
+cd D:\VisPa_publish_20261023
+python -m batch.render_brain_views --jobs work/jobs/filled-local-jobs.json --output-root work/results/brain-view-batch-new-run --limit 1 --dry-run
+python -m batch.render_brain_views --jobs work/jobs/filled-local-jobs.json --output-root work/results/brain-view-batch-new-run --limit 1
+```
+
+`--limit N` selects N sorted jobs. Full execution requires both `allow_all: true` in jobs JSON and `--all`; outputs require a fresh root. Job groups expose `sample_id`, `region_id`, existing `mesh_path` (OBJ), `mesh_label` (1–18 printable characters), exact `neuron_ids`, matching `coordinate_frame` and `coordinate_units`, optional `portal_region`, and `camera_overrides` using the brain-view setting names and valid ranges above. The single-view CLI also accepts `--mesh-path` and `--mesh-label`; when absent, the configured whole-brain mesh and its legend remain the defaults. The prior local pilot used a pre-existing whole-brain OBJ and processed SWC; its privately stored PNG verifies technical rendering and legend readability only. Region OBJ overlay/framing and anatomical acceptance remain unverified. The canonical VisPa or ReMAP environments were not changed by the disposable shared Python 3.10 validation.
 
 ## Shared settings interface
 

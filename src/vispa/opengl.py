@@ -1,7 +1,7 @@
 """Explicit local-input launcher for the isolated legacy OpenGL viewer.
 
-Version: 1.11.0.dev11 (local/unreleased)
-Last updated: 2026-10-23
+Version: 1.11.0.dev13 (local/unreleased)
+Last updated: 2026-10-26
 Change history: ../../CHANGELOG.md
 Status: candidate
 
@@ -158,7 +158,9 @@ def _obj_bounds(path: Path) -> tuple[list[float], list[float], list[float], floa
 
 def plan_configured_view(sample_id: str, neuron_id: str, portal_region: str = "",
                          config_path: str | os.PathLike | None = None,
-                         *, overrides: dict | None = None, snapshot: str | os.PathLike | None = None) -> dict:
+                         *, overrides: dict | None = None, snapshot: str | os.PathLike | None = None,
+                         mesh_path: str | os.PathLike | None = None,
+                         mesh_label: str | None = None) -> dict:
     """Resolve one configured local mesh/SWC pair without importing GL libraries."""
     if not isinstance(sample_id, str) or not _IDENT.fullmatch(sample_id):
         raise ValueError("sample_id must contain only letters, digits, underscore or hyphen")
@@ -179,7 +181,15 @@ def plan_configured_view(sample_id: str, neuron_id: str, portal_region: str = ""
         raise ValueError("sources.brain_view.coordinate_frame must be explicitly declared")
     if not isinstance(units, str) or not units.strip():
         raise ValueError("sources.brain_view.coordinate_units must be explicitly declared")
-    mesh = Path(source["mesh_path"]).expanduser().resolve()
+    if mesh_label is not None and (not isinstance(mesh_label, str) or
+                                   not mesh_label.strip() or len(mesh_label) > 18 or
+                                   any(not 32 <= ord(character) <= 126 for character in mesh_label)):
+        raise ValueError("mesh_label must be 1-18 printable ASCII characters")
+    if mesh_label is not None and mesh_path is None:
+        raise ValueError("mesh_label requires an explicit mesh_path")
+    mesh = Path(mesh_path if mesh_path is not None else source["mesh_path"]).expanduser().resolve()
+    if mesh.suffix.lower() != ".obj":
+        raise ValueError("brain-view mesh must be an OBJ file")
     swc_root = Path(source["processed_swc_root"]).expanduser().resolve()
     swc = (swc_root / sample_id / neuron_id).resolve()
     if not mesh.is_file():
@@ -238,6 +248,7 @@ def plan_configured_view(sample_id: str, neuron_id: str, portal_region: str = ""
         "schema": SCHEMA, "command": "brain-view", "package_version": __version__,
         "sample_id": sample_id, "neuron_id": neuron_id,
         "portal_region": str(portal_region or ""),
+        "mesh_label": mesh_label.strip() if mesh_label is not None else "Brain mesh",
         "mesh": {"path": str(mesh), "sha256": mesh_before[1], "stat": mesh_before[0],
                  "bounds_source_xyz": {"center": center, "min": bounds_min, "max": bounds_max,
                                        "diagonal": diagonal}},
@@ -260,14 +271,20 @@ def plan_configured_view(sample_id: str, neuron_id: str, portal_region: str = ""
 
 
 def launch_configured_view(sample_id: str, neuron_id: str, portal_region: str = "",
-                           config_path: str | os.PathLike | None = None) -> subprocess.Popen:
+                           config_path: str | os.PathLike | None = None,
+                           *, mesh_path: str | os.PathLike | None = None,
+                           mesh_label: str | None = None) -> subprocess.Popen:
     """Start the isolated legacy viewer for one configured local sample/neuron."""
-    plan = plan_configured_view(sample_id, neuron_id, portal_region, config_path)
+    plan = plan_configured_view(sample_id, neuron_id, portal_region, config_path,
+                                mesh_path=mesh_path, mesh_label=mesh_label)
     command = [plan["worker_python"], "-I", "-m", "vispa", "brain-view",
                "--sample", sample_id, "--neuron", neuron_id]
     if portal_region:
-        command.extend(("--portal-region", str(portal_region)))
+        command.append(f"--portal-region={portal_region}")
     command.extend(("--config", plan["config_path"]))
+    if mesh_path is not None:
+        command.extend((f"--mesh-path={plan['mesh']['path']}",
+                        f"--mesh-label={plan['mesh_label']}"))
     command.extend(_settings_argv(plan["settings"]))
     env = {key: value for key, value in os.environ.items()
            if not (key.startswith("PYTHON") or key.startswith("CONDA")
@@ -286,16 +303,23 @@ def launch_configured_view(sample_id: str, neuron_id: str, portal_region: str = 
 def render_configured_snapshot(sample_id: str, neuron_id: str,
                                snapshot: str | os.PathLike,
                                portal_region: str = "",
-                               config_path: str | os.PathLike | None = None) -> dict:
+                               config_path: str | os.PathLike | None = None,
+                               *, mesh_path: str | os.PathLike | None = None,
+                               mesh_label: str | None = None,
+                               overrides: dict | None = None) -> dict:
     """Render one static 3D SWC view through the isolated worker."""
     plan = plan_configured_view(
-        sample_id, neuron_id, portal_region, config_path, snapshot=snapshot)
+        sample_id, neuron_id, portal_region, config_path, snapshot=snapshot,
+        mesh_path=mesh_path, mesh_label=mesh_label, overrides=overrides)
     command = [plan["worker_python"], "-I", "-m", "vispa", "brain-view",
                "--sample", sample_id, "--neuron", neuron_id,
                "--snapshot", plan["snapshot_png"]]
     if portal_region:
-        command.extend(("--portal-region", str(portal_region)))
+        command.append(f"--portal-region={portal_region}")
     command.extend(("--config", plan["config_path"]))
+    if mesh_path is not None:
+        command.extend((f"--mesh-path={plan['mesh']['path']}",
+                        f"--mesh-label={plan['mesh_label']}"))
     command.extend(_settings_argv(plan["settings"]))
     env = {key: value for key, value in os.environ.items()
            if not (key.startswith("PYTHON") or key.startswith("CONDA")
@@ -343,6 +367,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--neuron", required=True)
     parser.add_argument("--portal-region", default="")
     parser.add_argument("--config")
+    parser.add_argument("--mesh-path", help="explicit local OBJ region/root mesh for this view")
+    parser.add_argument("--mesh-label", help="legend role label for --mesh-path")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--snapshot", help="write one PNG and adjacent JSON receipt, then exit")
     parser.add_argument("--eye-direction", nargs=3, type=float)
@@ -370,7 +396,8 @@ def main(argv=None) -> int:
             if value is not None:
                 overrides[key] = value
         plan = plan_configured_view(args.sample, args.neuron, args.portal_region,
-                                    args.config, overrides=overrides, snapshot=args.snapshot)
+                                    args.config, overrides=overrides, snapshot=args.snapshot,
+                                    mesh_path=args.mesh_path, mesh_label=args.mesh_label)
         if args.dry_run:
             print(json.dumps(plan, indent=2, sort_keys=True))
             return 0
@@ -480,12 +507,12 @@ def _legend_texture(plan: dict):
     mesh = tuple(round(value * 255) for value in plan["settings"]["mesh_color"])
     neuron = tuple(round(value * 255) for value in plan["settings"]["neuron_color"])
     draw.rectangle((14, 27, 31, 45), fill=mesh + (255,))
-    draw.text((40, 28), "Brain mesh", fill=(250, 250, 250, 255))
-    draw.line((150, 36, 176, 36), fill=neuron + (255,), width=5)
-    draw.text((185, 28), "Processed neuron", fill=(250, 250, 250, 255))
+    draw.text((40, 28), plan.get("mesh_label", "Brain mesh"), fill=(250, 250, 250, 255))
+    draw.line((245, 36, 271, 36), fill=neuron + (255,), width=5)
+    draw.text((280, 28), "Processed neuron", fill=(250, 250, 250, 255))
     caption = (f'{plan["sample_id"]} | {plan["neuron_id"]} | '
                f'{plan["coordinate_frame"]} ({plan["coordinate_units"]}; as stored)')
-    draw.text((375, 28), caption, fill=(250, 250, 250, 255))
+    draw.text((470, 28), caption, fill=(250, 250, 250, 255))
     return image.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
 
 
@@ -582,7 +609,7 @@ def _set_interactive_caption(viewer, plan: dict) -> None:
         if getattr(viewer, "window", None) is not None:
             color_label = lambda values: "#" + "".join(f"{round(value * 255):02x}" for value in values)
             glfw.set_window_title(viewer.window,
-                                  f'Brain mesh ({color_label(plan["settings"]["mesh_color"])}) | '
+                                  f'{plan.get("mesh_label", "Brain mesh")} ({color_label(plan["settings"]["mesh_color"])}) | '
                                   f'Processed neuron ({color_label(plan["settings"]["neuron_color"])}) | '
                                   f'{plan["sample_id"]} {plan["neuron_id"]} | '
                                   f'{plan["coordinate_frame"]} ({plan["coordinate_units"]}; as stored)')

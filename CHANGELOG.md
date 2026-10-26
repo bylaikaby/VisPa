@@ -1,5 +1,29 @@
 # VisPa change log
 
+## 1.11.0.dev13 — 2026-10-26 (local/unreleased)
+- Add an explicit local OBJ mesh override and role label to the existing
+  one-neuron brain-view planner and worker. The configured whole-brain mesh is
+  unchanged when no override is provided; source mesh/SWC coordinates remain
+  as stored, with no inferred transform.
+- Add a bounded `batch.render_brain_views` operator for declared region-mesh
+  and neuron pairs. It expands explicit IDs deterministically, dry-runs
+  resolved input hashes and camera settings, requires `--limit` or a separate
+  `allow_all` opt-in, and records each VisPa snapshot receipt in one batch
+  summary. A failed render preserves a `partial_or_failed` receipt and returns
+  exit status 2 without an unhandled traceback. Default mesh legends use the
+  region ID, and worker arguments use `--option=value` so legal hyphen-prefixed
+  portal and label values cannot be parsed as flags. Validation: full source
+  suite 144/144 under Python 3.10.20, focused batch 5/5 and OpenGL 12/12 tests
+  passed; one bounded local whole-brain processed-SWC PNG rendered in a
+  disposable shared Python 3.10 VisPa/ReMAP environment. Independent PNG
+  readback found a fully framed translucent brain, visible orange neuron and
+  readable role legend. This is technical visual evidence only; a compatible
+  region OBJ and anatomical acceptance remain unverified. The existing Python
+  3.13 VisPa environment currently crashes in a minimal Matplotlib `savefig`
+  call with `0xC06D007F`; forcing `MKL_THREADING_LAYER=SEQUENTIAL` makes the
+  same probe pass, so this environment/runtime collision is recorded separately
+  from the Python 3.10 source-test result.
+
 ## 1.11.0.dev12 — 2026-10-25 (local/unreleased)
 - Install this checkout from the existing Conda environment file using its pip
   section. A single `conda env create` or `conda env update` now sets up both
