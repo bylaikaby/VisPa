@@ -22,13 +22,16 @@
   3.13 VisPa environment currently crashes in a minimal Matplotlib `savefig`
   call with `0xC06D007F`; forcing `MKL_THREADING_LAYER=SEQUENTIAL` makes the
   same probe pass, so this environment/runtime collision is recorded separately
-  from the Python 3.10 source-test result.
+  from the source-test result. Hosted Windows run
+  [40259167505](https://github.com/bylaikaby/VisPa/actions/runs/40259167505)
+  subsequently passed 144 source tests and five batch tests in a fresh Python
+  3.13 Conda environment.
 - Pin the Windows CI bootstrap to immutable `setup-miniconda` v4.1.0 and
   Miniforge `26.7.2-1`, the installer version recorded by the prior successful
   hosted run. The newer `26.9.4-0` failed during `conda init` with
   `Scripts/conda.exe` reporting "needs sudo" under both the old and pinned
-  action; environment creation and all VisPa tests were skipped. The rerun for
-  this exact pair remains the hosted acceptance gate.
+  action; environment creation and all VisPa tests were skipped. The pinned
+  pair passed the hosted setup and test steps.
 
 ## 1.11.0.dev12 — 2026-10-25 (local/unreleased)
 - Install this checkout from the existing Conda environment file using its pip
@@ -37,7 +40,10 @@
   Existing user configuration is unaffected. Validation: parsed YAML contains
   one editable entry; offline pip editable dry run resolved this checkout as
   `vispa-1.11.0.dev12`; source CLI and metadata versions match; patch formatting
-  passed. Fresh Conda create/update and installed GUI remain unverified.
+  passed. Hosted Windows run
+  [40259167505](https://github.com/bylaikaby/VisPa/actions/runs/40259167505)
+  then created the fresh Conda environment, installed the editable checkout and
+  passed installed command/dry-run checks; visible GUI remains unverified.
 
 ## 1.11.0.dev11 — 2026-10-23 (local/unreleased)
 - Replace the leftover **Public SWC** preview tab with **3D SWC**. Selecting it
