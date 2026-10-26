@@ -1,7 +1,7 @@
 """Bounded command line for one local VisPa review render or montage.
 
-Version: 1.11.0.dev11 (local/unreleased)
-Last updated: 2026-10-23
+Version: 1.11.0.dev17 (local/unreleased)
+Last updated: 2026-10-27
 Change history: CHANGELOG.md
 """
 from __future__ import annotations
@@ -579,8 +579,18 @@ def _data_check(args):
 
 
 def _parser():
-    parser = argparse.ArgumentParser(prog="vispa", description=f"VisPa {VERSION} command line")
-    parser.add_argument("--version", action="version", version=VERSION)
+    parser = argparse.ArgumentParser(
+        prog="vispa",
+        description=f"VisPa {VERSION} command line",
+        epilog=(
+            "Installed usage: vispa <command>\n"
+            "The same interface is: python -m vispa <command>\n"
+            "With no command, VisPa prints this help and exits 2.\n"
+            "Checkout GUI shortcut: python run_vispa.py"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("--version", action="version", version=f"vispa {VERSION}")
     commands = parser.add_subparsers(dest="command")
     commands.add_parser("gui", help="open the VisPa review GUI")
     example = commands.add_parser(
@@ -742,4 +752,4 @@ def main(argv=None):
         except (OSError, RuntimeError, ValueError, KeyError) as exc:
             parser.error(str(exc))
     parser.print_help()
-    return 0
+    return 2

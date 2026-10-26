@@ -1,10 +1,11 @@
-# Version: 1.11.0.dev16 (local/unreleased)
-# Last updated: 2026-10-26
+# Version: 1.11.0.dev17 (local/unreleased)
+# Last updated: 2026-10-27
 # Change history: ../../CHANGELOG.md
 name: Windows Conda Python-only check
 on:
   push:
     branches: [main, simplified, 'codex/**']
+  pull_request:
   workflow_dispatch:
 permissions:
   contents: read
@@ -28,6 +29,21 @@ jobs:
       - name: Verify script entry point and dry runs
         shell: pwsh
         run: |
+          if (Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue) {
+            $PSNativeCommandUseErrorActionPreference = $false
+          }
+          $fromModule = (python -m vispa --version | Out-String).Trim()
+          $fromScript = (vispa --version | Out-String).Trim()
+          if ($fromModule -ne $fromScript) { throw "vispa and python -m vispa versions differ: [$fromModule] [$fromScript]" }
+          python -m vispa
+          if ($LASTEXITCODE -ne 2) { throw "python -m vispa with no command exited $LASTEXITCODE" }
+          $repo = (Get-Location).Path
+          Push-Location $env:TEMP
+          vispa --help
+          if ($LASTEXITCODE -ne 0) { throw "vispa --help failed outside the checkout" }
+          vispa config-check --validate-only --config (Join-Path $repo "src\vispa\config_deb.yaml")
+          if ($LASTEXITCODE -ne 0) { throw "vispa config-check failed outside the checkout" }
+          Pop-Location
           python run_vispa.py --version
           python run_vispa.py config-check --validate-only --config src/vispa/config_deb.yaml
           python run_vispa.py example --dry-run --config src/vispa/config_deb.yaml

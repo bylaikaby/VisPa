@@ -1,5 +1,10 @@
 # VisPa change log
 
+## 1.11.0.dev17 — 2026-10-27 (local/unreleased)
+- Add the pip console command `vispa`, implemented by `vispa.cli:main`. `python -m vispa` calls that same function. With no command, both print help and exit 2. `vispa gui` opens the review window. `python run_vispa.py` still opens the GUI when started with no arguments.
+- Read the package version from `vispa._version` at build time, so the wheel version and `vispa --version` stay one string.
+- Document checkout, wheel, and git installation. The PyPI project named `vispa` is the unrelated RWTH Aachen VISPA 0.9 IDE, so a bare index install selects that other project. Windows CI checks the console command, `python -m vispa`, and a no-command exit status of 2 from another working directory.
+
 ## 1.11.0.dev16 — 2026-10-26 (local/unreleased)
 - Put editable `.[3d,tiff]` installation in the `environment.yml` pip subsection so Conda create and update perform the complete package setup. The operator now runs Conda create or update, activates `vispa`, and starts `python run_vispa.py`; Windows CI uses the same YAML path. The generated console command remains absent.
 - Retain the Conda OpenBLAS constraints and existing scientific behavior. Fresh Conda create and update passed in the existing isolated `work/` test prefix; Conda's own pip stage installed editable dev16 and its 3D/TIFF extras with no manual pip command. The existing named environment also updated through YAML. Both installations passed `pip check`, dev16 metadata/source parity and no generated launcher; fresh config and GUI dry runs passed. Visible dev16 GUI and scientific review remain separate. See the shared work receipt.

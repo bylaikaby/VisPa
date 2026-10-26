@@ -1,11 +1,12 @@
 # VisPa — Visual Projectome Analysis tool
 
 VisPa reviews macaque neuron and microscopy data configured by the DEB lab.
-This checkout identifies as **1.11.0.dev16**, without a release tag. VisPa is a
-Python package inside a Conda environment. Launch the GUI directly from this
-checkout with `python run_vispa.py`.
+This checkout identifies as **1.11.0.dev17**, without a release tag. The lab
+install is a Conda environment. A pip install of this checkout also provides
+the `vispa` command and `python -m vispa`. Launch the GUI from this checkout
+with `python run_vispa.py`, or after installation with `vispa gui`.
 
-[Install](#install-on-windows) · [Update an existing environment](#update-an-existing-vispa-environment) · [Remove the environment](#remove-the-vispa-environment)
+[Install](#install-on-windows) · [Install with pip](#install-with-pip) · [Update an existing environment](#update-an-existing-vispa-environment) · [Remove the environment](#remove-the-vispa-environment)
 
 The default `config_deb.yaml` starts at **251637 / 004.swc** and uses the shared
 server data and dependencies:
@@ -47,7 +48,7 @@ from a normal host process. Open VisPa from your normal Conda Prompt.
 
 Use `miniconda3` or `miniforge3` in that path if it is your installation folder.
 
-For a downloaded ZIP, extract it locally and run the same commands in its folder. Conda reads the pip subsection of `environment.yml` and installs this checkout with its 3D and TIFF extras automatically. The file also selects conda-forge OpenBLAS; this avoids a reproduced Windows Matplotlib crash with the MKL-backed solve. Verify with `python -m pip check` and `python run_vispa.py --version`.
+For a downloaded ZIP, extract it locally and run the same commands in its folder. Conda reads the pip subsection of `environment.yml` and installs this checkout with its 3D and TIFF extras automatically. That install creates the `vispa` command. The file also selects conda-forge OpenBLAS; this avoids a reproduced Windows Matplotlib crash with the MKL-backed solve. Verify with `python -m pip check`, `vispa --version`, and `python run_vispa.py --version`.
 
 `python run_vispa.py check` verifies configured files and server/cache access. A disconnected lab share can make this check fail after a successful installation. TIFF support is included through the declared package extras.
 
@@ -56,10 +57,49 @@ flowchart LR
   Y[Checkout: environment.yml] --> C[Conda create or update]
   C --> P[Conda installs editable VisPa and extras]
   P --> A[Activate vispa]
-  A --> R[python run_vispa.py]
-  R --> G[GUI by default]
+  A --> R[vispa or python run_vispa.py]
+  R --> G[GUI by default from the checkout script]
   R --> O[CLI options when supplied]
   G -. configured lab resources .-> D[External data]
+```
+
+## Install with pip
+
+BrkRaw is deployed with `python -m pip install brkraw` and then used as the `brkraw` command. VisPa follows that shape: pip installs this package, and `vispa` runs from any working directory. `python -m vispa` calls the same command.
+
+Install this checkout, a wheel built from it, or the git URL. The PyPI project named `vispa` is the unrelated RWTH Aachen VISPA 0.9 IDE, so a bare `python -m pip install vispa` selects that other project.
+
+```powershell
+python -m pip install ".[3d,tiff]"
+vispa --help
+python -m vispa --version
+vispa gui
+```
+
+`vispa` with no subcommand prints help and exits with status 2. `vispa gui` opens the review window. `python run_vispa.py` remains the checkout shortcut and opens the GUI when started with no arguments.
+
+A wheel does not need this source tree on `PYTHONPATH` after installation:
+
+```powershell
+python -m pip wheel --wheel-dir dist .
+python -m pip install (Get-ChildItem dist\vispa-*-py3-none-any.whl | Select-Object -First 1).FullName
+vispa --version
+```
+
+To install the published git branch into the active environment:
+
+```powershell
+python -m pip install "git+https://github.com/bylaikaby/VisPa.git"
+```
+
+The Conda environment remains the supported lab stack because it pins OpenBLAS. After `conda activate vispa`, the same `vispa` command is on `PATH`.
+
+```mermaid
+flowchart LR
+  I["pip install of this checkout, a wheel, or the git URL"] --> C[vispa on PATH]
+  C --> H[vispa --help]
+  C --> M[python -m vispa]
+  C --> G[vispa gui]
 ```
 
 ## Update an existing VisPa environment
@@ -132,7 +172,7 @@ directory.
 |---|---|---|
 | Open the GUI | `python run_vispa.py` | Opens the normal review interface. |
 | Check readiness | `python run_vispa.py check` | Prints a path-aware checklist for the configured sample and neuron. |
-| Show version | `python run_vispa.py --version` | Prints the installed VisPa version. |
+| Show version | `vispa --version` | Prints the installed VisPa version. `python -m vispa --version` prints the same line. |
 | Validate a config | `python run_vispa.py config-check --validate-only --config PATH` | Checks YAML/JSON structure without reading lab data. |
 | Audit one resource set | `python run_vispa.py config-check --sample SAMPLE --neuron 004.swc` | Reports exact paths, hashes, geometry and cache references. |
 | Open 3D view | `python run_vispa.py brain-view --sample 251637 --neuron 004.swc` | Opens the configured mesh and processed SWC. |
@@ -141,7 +181,7 @@ directory.
 | Create user config | `python run_vispa.py config-init` | Creates the per-user profile without overwriting an existing file. |
 | Run tests | `python -m unittest discover -s tests -v` | Runs all automated tests. |
 
-`python run_vispa.py` is the single GUI and command entry point in this checkout.
+After installation, `vispa <command>` and `python -m vispa <command>` are the same CLI. `python run_vispa.py` is the checkout shortcut: with no arguments it opens the GUI, and any other arguments are passed to that CLI.
 
 The [Windows Conda workflow](.github/workflows/windows-python-conda.yml) creates
 the declared environment, installs the editable package, checks the script
@@ -179,8 +219,9 @@ python run_vispa.py example --dry-run
 ## Advanced operational details
 
 This repository is the standalone development workspace. Package/distribution:
-`vispa`. Activate the Conda environment and run `python run_vispa.py` from
-the checkout. Use `python run_vispa.py gui --help` for GUI options.
+`vispa`. The console command is `vispa`, implemented by `vispa.cli:main`.
+Activate the Conda environment and run `vispa` or `python run_vispa.py` from
+the checkout. Use `vispa gui --help` for GUI options.
 
 `VISPA_CONFIG` and `VISPA_WHEELHOUSE` are the VisPa environment handles. Pass
 `--config PATH` for a specific run; otherwise `VISPA_CONFIG` wins, then the own
@@ -191,7 +232,7 @@ not provide compatibility Python modules or commands.
 
 The Python API is imported only as `vispa`. The legacy `Visual_toolkit`
 forwarding package and class alias have been removed. Optional OpenGL remains
-lazy. Use `python run_vispa.py` for the GUI and `python run_vispa.py --help` for commands.
+lazy. Use `vispa gui` or `python run_vispa.py` for the GUI, and `vispa --help` for commands.
 
 New standalone run receipts, builds and candidate outputs live under `D:/VisPa/work/`. The [shared validation receipt](work/fnt_onboarding_20261022/run_receipt.json) records versioned milestones separately; [the Windows Conda workflow](.github/workflows/windows-python-conda.yml) validates the Python-only environment. The living project journal remains `D:/projectome_analysis/docs/project_note.md`. Existing projectome receipts remain historical evidence; external scientific data/cache paths remain explicit configuration.
 
@@ -199,7 +240,7 @@ New standalone run receipts, builds and candidate outputs live under `D:/VisPa/w
 
 VisPa includes a live per-sample IONData neuron list for the configured lab intranet and review panels for configured local microscopy resources. The live list is fetched from the neuron API; image cubes, raw SWCs, and microscopy files use separate configured hosts or shares. The package contains only server addresses and candidate sample-resource links, not source data, credentials, or local project tools. These links and checksums do not establish current share availability or scientific acceptance.
 
-This checkout is **1.11.0.dev16, without a release tag**. It preserves the
+This checkout is **1.11.0.dev17, without a release tag**. It preserves the
 existing rendering and source-verification algorithms while removing the
 retired `Visual_toolkit` compatibility namespace. The DS00 sagittal panel now
 shows one provisional soma-location marker without A/B raw-SWC traces; its

@@ -1,7 +1,7 @@
 """CLI contract tests for bounded standalone use.
 
-Version: 1.11.0.dev15 (local/unreleased)
-Last updated: 2026-10-26
+Version: 1.11.0.dev17 (local/unreleased)
+Last updated: 2026-10-27
 Change history: ../CHANGELOG.md
 """
 from __future__ import annotations
@@ -83,6 +83,54 @@ class CliContractTests(unittest.TestCase):
         self.assertEqual(result.exception.code, 0)
         launch.assert_called_once_with(["gui"])
 
+    def test_project_declares_vispa_console_script(self):
+        text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        self.assertIn("[project.scripts]", text)
+        self.assertRegex(text, r'(?m)^vispa\s*=\s*"vispa\.cli:main"\s*$')
+        self.assertIn('version = {attr = "vispa._version.__version__"}', text)
+
+    def test_missing_command_prints_help_and_exits_2(self):
+        from vispa.cli import main
+        output = io.StringIO()
+        with mock.patch("sys.stdout", output):
+            self.assertEqual(main([]), 2)
+        self.assertIn("usage:", output.getvalue().lower())
+        result = run_cli()
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("usage:", result.stdout.lower())
+        self.assertIn("vispa <command>", result.stdout)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_installed_console_script_matches_module(self):
+        if not TEST_INSTALLED:
+            self.skipTest("requires an installed vispa console script")
+        from importlib.metadata import entry_points, version
+        import vispa
+        scripts = [item for item in entry_points(group="console_scripts") if item.name == "vispa"]
+        self.assertEqual([(item.name, item.value) for item in scripts], [("vispa", "vispa.cli:main")])
+        self.assertEqual(version("vispa"), __version__)
+        purelib = Path(sysconfig.get_paths()["purelib"]).resolve()
+        editable_src = (ROOT / "src").resolve()
+        installed = Path(vispa.__file__).resolve()
+        self.assertTrue(
+            installed.is_relative_to(purelib) or installed.is_relative_to(editable_src),
+            installed,
+        )
+        script = Path(sys.executable).with_name("vispa.exe")
+        if not script.is_file():
+            script = Path(sys.executable).with_name("vispa")
+        self.assertTrue(script.is_file(), script)
+        module = run_cli("--version")
+        launched = subprocess.run([str(script), "--version"], cwd=Path.cwd(), env=ENV,
+                                  text=True, capture_output=True, check=False)
+        self.assertEqual(launched.returncode, 0, launched.stderr)
+        self.assertEqual(launched.stdout, module.stdout)
+        self.assertIn(f"vispa {__version__}", launched.stdout)
+        bare = subprocess.run([str(script)], cwd=Path.cwd(), env=ENV,
+                              text=True, capture_output=True, check=False)
+        self.assertEqual(bare.returncode, 2, bare.stderr)
+        self.assertIn("usage:", bare.stdout.lower())
+
     def setUp(self):
         isolated = mock.patch.dict(os.environ, {"VISPA_CONFIG": ""})
         isolated.start()
@@ -129,7 +177,7 @@ class CliContractTests(unittest.TestCase):
             self.assertEqual(run_cli("--help", cwd=tmp_path).returncode, 0)
             version = run_cli("--version", cwd=tmp_path)
             self.assertEqual(version.returncode, 0)
-            self.assertIn(__version__, version.stdout)
+            self.assertIn(f"vispa {__version__}", version.stdout)
 
     def test_settings_command_prints_discoverable_json_without_optional_imports(self):
         with tempfile.TemporaryDirectory() as directory:
