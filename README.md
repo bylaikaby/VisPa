@@ -1,7 +1,7 @@
 # VisPa — Visual Projectome Analysis tool
 
 VisPa reviews macaque neuron and microscopy data configured by the DEB lab.
-This checkout identifies as **1.11.0.dev16**, without a release tag. VisPa is a
+This checkout identifies as **1.11.0.dev17**, without a release tag. VisPa is a
 Python package inside a Conda environment. Launch the GUI directly from this
 checkout with `python run_vispa.py`.
 
@@ -163,6 +163,9 @@ python run_vispa.py
    to finish.
 5. Review **Soma**, **Context**, **Sagittal**, **TrioPlot** and **3D SWC**. The
    **3D SWC** tab renders the current processed neuron on the template mesh.
+   A grey panel tab means Render did not produce its image; check **Process log**
+   for the panel error. **TrioPlot** requires all three other panels. A ready
+   data check confirms configured resources, not a successful render.
 6. Use **3D brain view** for the interactive viewer; use **fnt-tracer** for the
    matching annotation project.
 7. Use **Check data** at any time to repeat the readiness checklist.
@@ -199,7 +202,7 @@ New standalone run receipts, builds and candidate outputs live under `D:/VisPa/w
 
 VisPa includes a live per-sample IONData neuron list for the configured lab intranet and review panels for configured local microscopy resources. The live list is fetched from the neuron API; image cubes, raw SWCs, and microscopy files use separate configured hosts or shares. The package contains only server addresses and candidate sample-resource links, not source data, credentials, or local project tools. These links and checksums do not establish current share availability or scientific acceptance.
 
-This checkout is **1.11.0.dev16, without a release tag**. It preserves the
+This checkout is **1.11.0.dev17, without a release tag**. It preserves the
 existing rendering and source-verification algorithms while removing the
 retired `Visual_toolkit` compatibility namespace. The DS00 sagittal panel now
 shows one provisional soma-location marker without A/B raw-SWC traces; its

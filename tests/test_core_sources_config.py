@@ -1,7 +1,7 @@
 """Focused regression checks for the standalone extraction seams.
 
-Version: 1.11.0.dev11 (local/unreleased)
-Last updated: 2026-10-23
+Version: 1.11.0.dev17 (local/unreleased)
+Last updated: 2026-10-26
 Change history: ../CHANGELOG.md
 """
 import copy
@@ -479,7 +479,7 @@ class ConfigTests(unittest.TestCase):
                 local.parent.mkdir()
                 server.parent.mkdir()
                 local.write_bytes(b"synthetic source")
-                server.write_bytes(b"same-sized configured reference")
+                server.write_bytes(b"synthetic source")
                 manifest = Path(temp) / "manifest.json"
                 manifest.write_text(json.dumps({"selected_preprocessed_outputs": [{
                     "sample": "SYNTH", "relative_path": "sample.nii",
@@ -491,6 +491,22 @@ class ConfigTests(unittest.TestCase):
                 toolkit.SAMPLE_PATHS = {"SYNTH": {}}
                 source_record = toolkit._source_record("SYNTH")
                 self.assertEqual(source_record["expected_geometry"], toolkit.EXPECTED_GEOMETRY["SYNTH"])
+                self.assertEqual(source_record["path"], str(server))
+                local.unlink()
+                self.assertEqual(toolkit._source_record("SYNTH")["sha256"], toolkit._sha256(server))
+                local.write_bytes(b"synthetic source")
+                server.write_bytes(b"different source")
+                with self.assertRaisesRegex(RuntimeError, "SHA256 differs"):
+                    toolkit._source_record("SYNTH")
+                server.write_bytes(b"synthetic source")
+                with self.assertRaisesRegex(ValueError, "No verified processed-DS source"):
+                    toolkit._source_record("UNKNOWN")
+                manifest.write_text(json.dumps({"selected_preprocessed_outputs": [
+                    {"sample": "SYNTH", "relative_path": "sample.nii"},
+                    {"sample": "SYNTH", "relative_path": "sample.nii"},
+                ]}), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "does not uniquely select"):
+                    toolkit._source_record("SYNTH")
             bad = dict(geometry, shape_ijk=[10, 0, 30])
             config_path.write_text(json.dumps({"version": 1, "samples": {
                 "SYNTH": {"ds00_expected_geometry": bad}}}), encoding="utf-8")

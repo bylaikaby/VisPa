@@ -1,8 +1,8 @@
 """
 vispa_gui.py - GUI for NeuroVis Visual Toolkit
 
-Version: 1.11.0.dev11 (local/unreleased)
-Last updated: 2026-10-23
+Version: 1.11.0.dev17 (local/unreleased)
+Last updated: 2026-10-26
 Change history: ../../CHANGELOG.md
 Status: candidate (visual review pending)
 
@@ -1587,6 +1587,8 @@ class NeuroVisGUI:
         note = "" if request.save_outputs else "  ·  preview only (not saved)"
         if errors:
             summary = " · ".join(errors)
+            for error in errors:
+                self._append_log(f"Panel skipped: {error}")
             self.update_status(f"⚠️ {message}; skipped: {summary}")
             if not kept:
                 self._ui_call(messagebox.showwarning, "Panel unavailable", summary)
@@ -3167,6 +3169,7 @@ class NeuroVisGUI:
                             self._target_for(request, request.save_sagittal_png))
                 except Exception as exc:
                     # One unavailable panel must not discard the others.
+                    self._ui_call(self._append_log, f"{role} render failed: {exc}")
                     errors.append(f"{role}: {self._friendly_error(exc)}")
                     continue
                 panels[role] = panel
@@ -3181,6 +3184,11 @@ class NeuroVisGUI:
                     [panels["Soma"], panels["Context"], panels["Sagittal"]],
                     request.neuron_id, output_dir=trio_target, legend=True)
                 paths.append(trio_path)
+            elif make_review:
+                missing = [role for role in ("Soma", "Context", "Sagittal")
+                           if role not in panels]
+                errors.append("TrioPlot: requires Soma, Context and Sagittal; "
+                              f"missing {', '.join(missing)}")
             specs = {role: self._panel_spec(panel) for role, panel in panels.items()}
             if request.save_outputs and fingerprint is not None:
                 self._write_receipt(

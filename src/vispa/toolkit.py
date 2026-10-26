@@ -1,8 +1,8 @@
 """
 vispa.py - Macaque Brain Hybrid-Resolution Visualization Toolkit
 
-Version: 1.11.0.dev11 (local/unreleased)
-Last updated: 2026-10-23
+Version: 1.11.0.dev17 (local/unreleased)
+Last updated: 2026-10-26
 Change history: ../../CHANGELOG.md
 Status: candidate (visual review pending)
 
@@ -2054,9 +2054,9 @@ def _source_record(sample_id: str) -> dict[str, Any]:
     server_path = SHARE_ROOT / Path(expected_rel)
     if not server_path.is_file():
         raise FileNotFoundError(f"Live manifest-selected preprocessed DS volume is unavailable: {server_path}")
-    source_path = Path(str(row.get("repository_candidate_path", "")))
-    if not source_path.is_file():
-        raise FileNotFoundError(f"Manifest-bound local copy of selected DS candidate is unavailable: {source_path}")
+    # The manifest-selected shared file is the render source. Its historical
+    # repository candidate may be absent on another workstation.
+    source_path = server_path
     stat_before = source_path.stat()
     got_hash = _sha256(source_path)
     stat_after = source_path.stat()
@@ -2067,6 +2067,7 @@ def _source_record(sample_id: str) -> dict[str, Any]:
     return {
         "path": str(source_path),
         "server_path": str(server_path),
+        "repository_candidate_path": row.get("repository_candidate_path"),
         "relative_path": expected_rel,
         "sha256": got_hash,
         "bytes": stat_after.st_size,

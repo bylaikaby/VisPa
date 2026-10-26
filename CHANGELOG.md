@@ -1,5 +1,9 @@
 # VisPa change log
 
+## 1.11.0.dev17 — 2026-10-26 (local/unreleased)
+- Render the manifest-selected shared DS00 volume after verifying its SHA-256 and stable size/mtime; retain the repository candidate path as provenance without requiring that workstation-local copy. Manifest sample selection, path binding and scientific image choice remain unchanged. A mismatched shared volume still fails closed.
+- Log each skipped GUI panel and explicitly report when TrioPlot cannot be formed because a required panel failed. Grey tabs still require real generated images. Synthetic source/hash and partial-render regressions passed; shared 251637 manifest source hash was checked locally. Remote GUI and scientific acceptance remain pending.
+
 ## 1.11.0.dev16 — 2026-10-26 (local/unreleased)
 - Put editable `.[3d,tiff]` installation in the `environment.yml` pip subsection so Conda create and update perform the complete package setup. The operator now runs Conda create or update, activates `vispa`, and starts `python run_vispa.py`; Windows CI uses the same YAML path. The generated console command remains absent.
 - Retain the Conda OpenBLAS constraints and existing scientific behavior. Fresh Conda create and update passed in the existing isolated `work/` test prefix; Conda's own pip stage installed editable dev16 and its 3D/TIFF extras with no manual pip command. The existing named environment also updated through YAML. Both installations passed `pip check`, dev16 metadata/source parity and no generated launcher; fresh config and GUI dry runs passed. Visible dev16 GUI and scientific review remain separate. See the shared work receipt.
