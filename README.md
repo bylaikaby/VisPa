@@ -1,7 +1,7 @@
 # VisPa — Visual Projectome Analysis tool
 
 VisPa reviews macaque neuron and microscopy data configured by the DEB lab.
-This checkout identifies as **1.11.0.dev18**, without a release tag. VisPa is a
+This checkout identifies as **1.11.0.dev19**, without a release tag. VisPa is a
 Python package inside a Conda environment. Launch the GUI directly from this
 checkout with `python run_vispa.py`.
 
@@ -18,6 +18,26 @@ server data and dependencies:
     ├── brain_view\
     └── fnt\
 ```
+
+## Terminal candidate table (opt-in Python API)
+
+`vispa.terminal_qc.terminal_table(raw_swc, processed_swc, atlas)` returns full-graph, non-root type-2 leaf candidates and raw-frame branch measurements. `processed_swc` and `atlas` are optional. When supplied, raw and processed nodes must have the same IDs, types and parent links; processed coordinates provide atlas labels at nominal 250 µm voxel scale. File inputs carry SHA-256 byte hashes in `input_provenance`; an in-memory tree has unknown source identity. The branch `sections_crossed` value uses a nominal 3 µm raw-sampling interval and is a candidate metric, not a validated physical section count. No GUI or command entry point calls this API yet.
+
+```mermaid
+flowchart LR
+  R[Raw SWC] --> V[Validate full graph]
+  P[Optional processed SWC] --> N[Match node ID, type and parent]
+  V --> N
+  V --> E[Select non-root type-2 leaves]
+  E --> M[Branch candidate metrics]
+  K[Optional atlas volume and key] --> A[Optional atlas labels]
+  N --> A[Optional atlas labels]
+  M --> T[Terminal candidate table]
+  A --> T
+  T -. future integration .-> O[Region analysis operator and visual review]
+```
+
+Solid arrows show implemented table steps; the dashed arrow is planned integration. The API returns graph-end candidates only. Review of image support, trace continuation and anatomy is separate.
 
 ## Install on Windows
 
@@ -202,7 +222,7 @@ New standalone run receipts, builds and candidate outputs live under `D:/VisPa/w
 
 VisPa includes a live per-sample IONData neuron list for the configured lab intranet and review panels for configured local microscopy resources. The live list is fetched from the neuron API; image cubes, raw SWCs, and microscopy files use separate configured hosts or shares. The package contains only server addresses and candidate sample-resource links, not source data, credentials, or local project tools. These links and checksums do not establish current share availability or scientific acceptance.
 
-This checkout is **1.11.0.dev18, without a release tag**. It preserves the
+This checkout is **1.11.0.dev19, without a release tag**. It preserves the
 existing rendering and source-verification algorithms while removing the
 retired `Visual_toolkit` compatibility namespace. The DS00 sagittal panel now
 shows one provisional soma-location marker without A/B raw-SWC traces; its

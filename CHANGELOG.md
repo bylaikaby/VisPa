@@ -1,5 +1,9 @@
 # VisPa change log
 
+## 1.11.0.dev19 — 2026-10-26 (local/unreleased)
+- Add an opt-in terminal candidate table Python API. It selects non-root type-2 leaves from the full raw SWC graph, pairs processed nodes by ID/type/parent for atlas lookup, and records file-byte provenance. In-memory trees explicitly have unknown source identity. Branch section counts use a candidate 3 µm raw-sampling interval. No GUI, CLI, image renderer or existing source/config behavior changes. Focused synthetic tests validate graph selection, geometry and provenance; visual/anatomical acceptance remains pending.
+- Validation: focused terminal-core tests 11/11 and the full source suite 157/157 passed in the isolated Python environment. Existing GUI, toolkit, CLI, sources, configuration and package initializer match the dev18 base byte for byte; editable package metadata, CLI version and `pip check` passed.
+
 ## 1.11.0.dev18 — 2026-10-26 (local/unreleased)
 - Remove unused role-legend text from the Context panel, CLI single-panel preview and GUI TrioPlot at the user's request. Soma remains legend-free; Sagittal keeps its source/marker legend. Source selection, geometry, markers and panel data are unchanged. The presentation regression checks absence/presence by panel; full source-suite validation is recorded in the shared project receipt.
 
