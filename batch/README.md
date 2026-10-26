@@ -1,6 +1,6 @@
 # VisPa brain-view batch operator
 
-Local candidate `1.11.0.dev14`. The entry point is `python -m batch.render_brain_views` from this checkout. Each declared job renders **one OBJ mesh and one processed SWC** with VisPa's existing OpenGL worker. A region mesh must already exist as an OBJ in the same declared coordinate frame and units as the processed SWC. The configured whole-brain mesh remains the ordinary single-view default. No mesh generation, coordinate transform, cohort discovery or data fetch occurs here.
+Local candidate `1.11.0.dev15`. The entry point is `python -m batch.render_brain_views` from this checkout. Each declared job renders **one OBJ mesh and one processed SWC** with VisPa's existing OpenGL worker. A region mesh must already exist as an OBJ in the same declared coordinate frame and units as the processed SWC. The configured whole-brain mesh remains the ordinary single-view default. No mesh generation, coordinate transform, cohort discovery or data fetch occurs here.
 
 ```mermaid
 flowchart LR

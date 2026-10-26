@@ -1,4 +1,4 @@
-include CHANGELOG.md README.md environment.yml
+include CHANGELOG.md README.md environment.yml run_vispa.py
 recursive-include src *.py *.yaml
 recursive-include tests *.py
 exclude extraction_manifest.json

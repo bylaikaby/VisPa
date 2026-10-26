@@ -1,9 +1,9 @@
 # VisPa — Visual Projectome Analysis tool
 
 VisPa reviews macaque neuron and microscopy data configured by the DEB lab.
-This checkout identifies as **1.11.0.dev14**, without a release tag. VisPa is a Python package
-inside a Conda environment; `vispa` is a pip-generated Python launcher, not a
-separately packaged application binary.
+This checkout identifies as **1.11.0.dev15**, without a release tag. VisPa is a
+Python package inside a Conda environment. Launch the GUI directly from this
+checkout with `python run_vispa.py`.
 
 The default `config_deb.yaml` starts at **251637 / 004.swc** and uses the shared
 server data and dependencies:
@@ -19,50 +19,77 @@ server data and dependencies:
 
 ## Install on Windows
 
-Install [Miniforge](https://github.com/conda-forge/miniforge). Open **Miniforge Prompt** in this checkout and run:
+Open your existing **Miniforge Prompt** or **Anaconda Prompt**. If Conda is not installed, install [Miniforge](https://github.com/conda-forge/miniforge) first. Then run:
 
 ```powershell
+git clone --branch main https://github.com/bylaikaby/VisPa.git D:\vispa
+cd D:\vispa
 conda env create -f environment.yml
 conda activate vispa
 python -m pip install --no-build-isolation -e ".[3d,tiff]"
-python -m vispa
+python run_vispa.py
 ```
 
 If `vispa` already exists, use the update commands below. Recloning the repository does not recreate the Conda environment.
+Activation selects the environment's Python; `run_vispa.py` starts the GUI.
 
-For a downloaded ZIP, extract it locally and run the same commands in its folder. [Conda recommends activating the environment before pip installation](https://docs.conda.io/projects/conda/en/stable/user-guide/tasks/manage-environments.html#using-pip-in-an-environment). The environment file selects conda-forge OpenBLAS; this avoids a reproduced Windows Matplotlib crash with the MKL-backed solve. Verify with `python -m pip check` and `python -m vispa --version`.
+If the Windows `conda.exe` launcher itself fails, run the environment create or
+update command as `python -m conda env ...` from the base Conda Prompt. If
+activation also fails, launch with that environment's `python.exe` and the
+absolute path to `run_vispa.py`. A restricted test session reported
+`WinError 10013` for the neuron portal; the same endpoint returned HTTP 200
+from a normal host process. Open VisPa from your normal Conda Prompt.
 
-`python -m vispa check` verifies configured files and server/cache access. A disconnected lab share can make this check fail after a successful installation. TIFF support is included through the declared package extras.
+```powershell
+& "$env:USERPROFILE\anaconda3\envs\vispa\python.exe" "D:\vispa\run_vispa.py"
+```
 
-`install.cmd` is an optional convenience wrapper. From Miniforge Prompt it uses Conda's base Python; otherwise it tries `%USERPROFILE%\miniconda3\python.exe`. Pass `-CondaBasePython PATH` if needed. It performs the same environment setup, pip install, and checks. `VisPa.cmd` forwards arguments to `python -m vispa` after `conda activate vispa`.
+Use `miniconda3` or `miniforge3` in that path if it is your installation folder.
+
+For a downloaded ZIP, extract it locally and run the same commands in its folder. [Conda recommends activating the environment before pip installation](https://docs.conda.io/projects/conda/en/stable/user-guide/tasks/manage-environments.html#using-pip-in-an-environment). The environment file selects conda-forge OpenBLAS; this avoids a reproduced Windows Matplotlib crash with the MKL-backed solve. Verify with `python -m pip check` and `python run_vispa.py --version`.
+
+`python run_vispa.py check` verifies configured files and server/cache access. A disconnected lab share can make this check fail after a successful installation. TIFF support is included through the declared package extras.
+
+```mermaid
+flowchart LR
+  Y[Checkout: environment.yml] --> C[Conda create or update]
+  C --> P[Activate vispa; pip install editable package]
+  P --> R[python run_vispa.py]
+  R --> G[GUI by default]
+  R --> O[CLI options when supplied]
+  G -. configured lab resources .-> D[External data]
+```
 
 ## Update an existing installation
 
-In Miniforge Prompt, from the checkout:
+In Miniforge or Anaconda Prompt, from the checkout:
 
 ```powershell
 conda env update -n vispa -f environment.yml
 conda activate vispa
 python -m pip install --no-build-isolation -e ".[3d,tiff]"
 python -m pip check
-python -m vispa --version
+python run_vispa.py --version
 ```
+
+To remove the environment later, first run `conda deactivate`, then
+`conda env remove -n vispa`. This does not delete the repository or data.
 
 To adopt new lab defaults, use **Settings → Default YAML → Reset to default → Save settings**, or launch with the shared profile directly:
 
 ```powershell
-python -m vispa gui --config '\\10.102.8.200\microscopy_data\fMOST\resources\config_deb.yaml'
+python run_vispa.py gui --config '\\10.102.8.200\microscopy_data\fMOST\resources\config_deb.yaml'
 ```
 
-`python -m vispa check` must report **All configured resources ready** before rendering. Each line includes its resolved file, folder, or server location.
+`python run_vispa.py check` must report **All configured resources ready** before rendering. Each line includes its resolved file, folder, or server location.
 
 ## Create or select a configuration
 
 Create the per-user profile without overwriting an existing file:
 
 ```powershell
-python -m vispa config-init --dry-run
-python -m vispa config-init
+python run_vispa.py config-init --dry-run
+python run_vispa.py config-init
 ```
 
 Pass `--config PATH` to any command to select another profile. Relative paths
@@ -84,29 +111,27 @@ directory.
 
 | Task | Simple command | What it does |
 |---|---|---|
-| Open the GUI | `python -m vispa` | Opens the normal review interface. |
-| Check readiness | `python -m vispa check` | Prints a path-aware checklist for the configured sample and neuron. |
-| Show version | `python -m vispa --version` | Prints the installed VisPa version. |
-| Validate a config | `python -m vispa config-check --validate-only --config PATH` | Checks YAML/JSON structure without reading lab data. |
-| Audit one resource set | `python -m vispa config-check --sample SAMPLE --neuron 004.swc` | Reports exact paths, hashes, geometry and cache references. |
-| Open 3D view | `python -m vispa brain-view --sample 251637 --neuron 004.swc` | Opens the configured mesh and processed SWC. |
-| Render a montage | `python -m vispa montage --input FILE --output FILE --units mm` | Creates a five-view DS00 montage. |
-| Fetch FNT | `python -m vispa fnt-fetch --sample 251637 --neuron 004.swc` | Retrieves one exact FNT into the user cache. |
-| Create user config | `python -m vispa config-init` | Creates the per-user profile without overwriting an existing file. |
+| Open the GUI | `python run_vispa.py` | Opens the normal review interface. |
+| Check readiness | `python run_vispa.py check` | Prints a path-aware checklist for the configured sample and neuron. |
+| Show version | `python run_vispa.py --version` | Prints the installed VisPa version. |
+| Validate a config | `python run_vispa.py config-check --validate-only --config PATH` | Checks YAML/JSON structure without reading lab data. |
+| Audit one resource set | `python run_vispa.py config-check --sample SAMPLE --neuron 004.swc` | Reports exact paths, hashes, geometry and cache references. |
+| Open 3D view | `python run_vispa.py brain-view --sample 251637 --neuron 004.swc` | Opens the configured mesh and processed SWC. |
+| Render a montage | `python run_vispa.py montage --input FILE --output FILE --units mm` | Creates a five-view DS00 montage. |
+| Fetch FNT | `python run_vispa.py fnt-fetch --sample 251637 --neuron 004.swc` | Retrieves one exact FNT into the user cache. |
+| Create user config | `python run_vispa.py config-init` | Creates the per-user profile without overwriting an existing file. |
 | Run tests | `python -m unittest discover -s tests -v` | Runs all automated tests. |
 
-The generated `vispa` command remains available in the installer environment;
-`python -m vispa` is the stable Windows fallback when that generated launcher is
-unavailable.
+`python run_vispa.py` is the single GUI and command entry point in this checkout.
 
 The [Windows Conda workflow](.github/workflows/windows-python-conda.yml) creates
-the declared environment, installs the editable package, checks command entry
-points and dry runs, and runs the source suite.
+the declared environment, installs the editable package, checks the script
+entry point and dry runs, and runs the source suite.
 
 ## GUI walkthrough
 
 ```powershell
-python -m vispa
+python run_vispa.py
 ```
 
 1. Wait for **VisPa data check**. A ready profile shows a check mark and the
@@ -129,14 +154,14 @@ receives the rendered panels.
 The optional morphology-only example is CLI-only and separate from lab data:
 
 ```powershell
-vispa example --dry-run
+python run_vispa.py example --dry-run
 ```
 
 ## Advanced operational details
 
-Primary standalone development workspace: `D:/VisPa`. Package/distribution:
-`vispa`. Activate the Conda environment and run `vispa`; the equivalent
-IDE/troubleshooting forms remain `python -m vispa` and `python -m vispa.gui`.
+This repository is the standalone development workspace. Package/distribution:
+`vispa`. Activate the Conda environment and run `python run_vispa.py` from
+the checkout. Use `python run_vispa.py gui --help` for GUI options.
 
 `VISPA_CONFIG` and `VISPA_WHEELHOUSE` are the VisPa environment handles. Pass
 `--config PATH` for a specific run; otherwise `VISPA_CONFIG` wins, then the own
@@ -147,7 +172,7 @@ not provide compatibility Python modules or commands.
 
 The Python API is imported only as `vispa`. The legacy `Visual_toolkit`
 forwarding package and class alias have been removed. Optional OpenGL remains
-lazy. Use `vispa` for the CLI and `vispa gui` for the GUI.
+lazy. Use `python run_vispa.py` for the GUI and `python run_vispa.py --help` for commands.
 
 New standalone run receipts, builds and candidate outputs live under `D:/VisPa/work/`. The [shared validation receipt](work/fnt_onboarding_20261022/run_receipt.json) records versioned milestones separately; [the Windows Conda workflow](.github/workflows/windows-python-conda.yml) validates the Python-only environment. The living project journal remains `D:/projectome_analysis/docs/project_note.md`. Existing projectome receipts remain historical evidence; external scientific data/cache paths remain explicit configuration.
 
@@ -155,7 +180,7 @@ New standalone run receipts, builds and candidate outputs live under `D:/VisPa/w
 
 VisPa includes a live per-sample IONData neuron list for the configured lab intranet and review panels for configured local microscopy resources. The live list is fetched from the neuron API; image cubes, raw SWCs, and microscopy files use separate configured hosts or shares. The package contains only server addresses and candidate sample-resource links, not source data, credentials, or local project tools. These links and checksums do not establish current share availability or scientific acceptance.
 
-This checkout is **1.11.0.dev14, without a release tag**. It preserves the
+This checkout is **1.11.0.dev15, without a release tag**. It preserves the
 existing rendering and source-verification algorithms while removing the
 retired `Visual_toolkit` compatibility namespace. The DS00 sagittal panel now
 shows one provisional soma-location marker without A/B raw-SWC traces; its
@@ -181,22 +206,22 @@ vispa render --input cube.npy --sample sample-01 --neuron 0007 --soma 120 240 30
 
 Use `--role context` for the 5 µm style. `--set PATH=VALUE` overrides review settings; scalar values and numeric sequences are supported, such as `--set figure.panel_dpi=400` or `--set soma_window.cubes_xy_steps=1.5,1.25,1`. Unknown keys, out-of-range values and invalid combinations fail before changing global settings. Run `vispa settings` to print each setting's default, current value, valid range and effect as JSON. Python callers can use `review_settings_schema()` and pass a mapping or a list of `PATH=VALUE` strings to `apply_setting_overrides()`. The single-panel review figure includes the image and target marker legend and labels the displayed plane as native X/Y. The cyan target box and cross mark the supplied coordinate; they do not validate anatomy, orientation, or laterality. The labeled single-panel CLI review reserves font-measured clearance between its axes and shared legend; multi-panel and unlabeled figures retain the legacy layout.
 
-`vispa gui` starts the optional Tk interface. `vispa --help` and `vispa --version` do not load image libraries, open windows, or acquire data. Package import does not change `sys.path` or import `IONData`.
+`python run_vispa.py gui` starts the optional Tk interface. `python run_vispa.py --help` and `python run_vispa.py --version` do not load image libraries, open windows, or acquire data. Package import does not change `sys.path` or import `IONData`.
 
-The compatibility command `vispa example` fetches one public SWC for a morphology-only preview. It does not exercise the lab image, atlas, FNT, or brain-view paths. The cached source is checksum-pinned; its coordinate frame and units are unspecified. Preview its source URL and proposed output locations without network or file access first:
+The compatibility command `python run_vispa.py example` fetches one public SWC for a morphology-only preview. It does not exercise the lab image, atlas, FNT, or brain-view paths. The cached source is checksum-pinned; its coordinate frame and units are unspecified. Preview its source URL and proposed output locations without network or file access first:
 
 ```powershell
-vispa example --dry-run
+python run_vispa.py example --dry-run
 ```
 
 The one-record operation accepts `--cache-dir`, `--output-dir`, and `--dpi` (100–240; default 160). It reuses an existing figure only when its receipt, source checksum, VisPa version, renderer-code checksum, DPI, full-extent declaration, and PNG hash match; changed renderer code, version, or DPI uses a named variant, and conflicting files are preserved. No sample configuration is required.
 
 ## One-volume DS00 montage
 
-`vispa montage` renders one explicitly named 3D NIfTI into the preserved five DS00 views. It does not discover cohorts, read workbooks, choose files, or apply a transform. The affine must yield LPS voxel axis codes, as in the source montage. NIfTI affines map voxel indices into RAS+ world coordinates; each panel labels increasing projected anatomical directions in RAS+ millimetres. The header must declare millimetres, or the operator must explicitly declare `--units mm` when the header units are unknown; known non-mm units are rejected. The output includes a compact intensity-image legend. The `[3d]` extra provides the montage dependencies.
+`python run_vispa.py montage` renders one explicitly named 3D NIfTI into the preserved five DS00 views. It does not discover cohorts, read workbooks, choose files, or apply a transform. The affine must yield LPS voxel axis codes, as in the source montage. NIfTI affines map voxel indices into RAS+ world coordinates; each panel labels increasing projected anatomical directions in RAS+ millimetres. The header must declare millimetres, or the operator must explicitly declare `--units mm` when the header units are unknown; known non-mm units are rejected. The output includes a compact intensity-image legend. The `[3d]` extra provides the montage dependencies.
 
 ```powershell
-vispa montage --input 'D:\data\sample.nii.gz' --output 'D:\review\sample-5view.png' --units mm --max-voxels 64000000 --set display_gamma=0.88 --dry-run
+python run_vispa.py montage --input 'D:\data\sample.nii.gz' --output 'D:\review\sample-5view.png' --units mm --max-voxels 64000000 --set display_gamma=0.88 --dry-run
 ```
 
 Review the resolved header, affine, setting values, output path, and receipt path. Remove `--dry-run` to write a new PNG and adjacent JSON receipt. The command requires the explicit `--units mm` declaration, refuses existing outputs and input overwrite; it hashes the source before and after rendering and removes partial outputs if rendering fails. The default bound is 64 million voxels; `--max-voxels` can change that bound explicitly. `--set KEY=JSON_VALUE` is repeatable and only accepts the settings below. The Python mapping `vispa.volume_montage.SETTING_SPECS` also provides each parameter's default, effect, unit, and validated range.
@@ -242,7 +267,7 @@ data, or apply registration/mirroring. Preview the resolved paths and display se
 before launching a window:
 
 ```powershell
-vispa brain-view --sample 251637 --neuron 004.swc --config 'C:\data\vispa_config.yaml' --dry-run
+python run_vispa.py brain-view --sample 251637 --neuron 004.swc --config 'C:\data\vispa_config.yaml' --dry-run
 ```
 
 Remove `--dry-run` for an interactive review, or add `--snapshot 'D:\review\view.png'`
@@ -339,7 +364,7 @@ Brain-view adds repeatable `--set KEY=VALUE`; the existing specific flags take
 precedence if the same key appears in both forms. Example:
 
 ```powershell
-vispa brain-view --sample 251637 --neuron 004.swc --config 'D:\config.json' --dry-run --set camera_distance_scale=0.5 --camera-distance-scale 0.6
+python run_vispa.py brain-view --sample 251637 --neuron 004.swc --config 'D:\config.json' --dry-run --set camera_distance_scale=0.5 --camera-distance-scale 0.6
 ```
 
 The resolved camera scale is `0.6`. Run `vispa settings --scope brain-view`
@@ -353,7 +378,7 @@ separate BAP image-cube and raw-SWC hosts, the shared DEB microscopy dataset
 roots, brain-view dependencies, FNT executable/projects, and per-user VisPa
 caches/outputs. Its sample-to-AnimalID and dataset links are candidate resource
 references and may be unavailable off the lab network. No credentials or local
-worker path is set. A new profile can be created with `vispa config-init`;
+worker path is set. A new profile can be created with `python run_vispa.py config-init`;
 caches and outputs use `%LOCALAPPDATA%\VisPa`. Pass `--config PATH` to select
 another profile. JSON works with the standard library; YAML is included in the
 core install. Relative paths resolve from the config file's folder, or from the
@@ -362,10 +387,10 @@ optional top-level `base_dir`.
 Create the per-user YAML without overwriting anything already present:
 
 ```powershell
-vispa config-init --dry-run
-vispa config-init
-vispa config-init --output 'D:\review\vispa_config.yaml'
-vispa config-init --from-config 'D:\old\visual_toolkit_config.json' --output 'D:\review\vispa_config.yaml'
+python run_vispa.py config-init --dry-run
+python run_vispa.py config-init
+python run_vispa.py config-init --output 'D:\review\vispa_config.yaml'
+python run_vispa.py config-init --from-config 'D:\old\visual_toolkit_config.json' --output 'D:\review\vispa_config.yaml'
 ```
 
 `--output` must end in `.yaml` or `.yml`; an explicit destination is never
@@ -374,7 +399,7 @@ packaged defaults. Import an older config only with `--from-config`; its source
 bytes remain unchanged.
 Passing `--output` selects the packaged same-intranet template; it never overwrites an existing destination. A fresh install or normal GUI launch creates the per-user VisPa config when absent. Legacy VisualToolkit YAML/JSON and environment variables remain untouched and require explicit `--config` or `config-init --from-config` selection. Existing CSV-only catalogs remain CSV by default; the Neuron list source selector can explicitly query Live IONData when a catalog is configured. Choosing a source never triggers automatic fallback. The created file contains validated values for review, brain-view and montage scopes as well as the lab source profile. A relative per-sample `swc_cache` resolves from the config folder unless `swc_cache_root` or `swc_root` is declared. The GUI parses its arguments first (abbreviations are rejected) and initializes only a valid implicit launch; `--config`, `--dry-run` and a configured VisPa environment path never create a file.
 
-All lab server addresses and source roots live in the editable profile. In the packaged profile, each sample's `ds00_relative` is resolved under `defaults.ds00_root`, and `sources.dataset_manifest_relative` follows the same root. The `resample_5um` entries follow `defaults.resample_5um_root`. Changing these roots redirects the declared paths without editing ten per-sample UNC strings; existing profiles that use `ds00_processed` keep their original path meaning. Relative child paths must stay within their declared root. The sample filenames and SHA-256 declarations remain candidate provenance; changing a root does not verify that files or geometry match. The optional `vispa example` CLI owns its checksum-pinned public source defaults and does not add example fields to the GUI profile.
+All lab server addresses and source roots live in the editable profile. In the packaged profile, each sample's `ds00_relative` is resolved under `defaults.ds00_root`, and `sources.dataset_manifest_relative` follows the same root. The `resample_5um` entries follow `defaults.resample_5um_root`. Changing these roots redirects the declared paths without editing ten per-sample UNC strings; existing profiles that use `ds00_processed` keep their original path meaning. Relative child paths must stay within their declared root. The sample filenames and SHA-256 declarations remain candidate provenance; changing a root does not verify that files or geometry match. The optional `python run_vispa.py example` CLI owns its checksum-pinned public source defaults and does not add example fields to the GUI profile.
 
 For SSH sections, set `ssh_sample_id` alongside `ssh_remote_base`; that remote root is only eligible for the matching sample. `low_res_ssh_base=` is an explicit per-instance override. The GUI identity is selected from `visual_toolkit.default_sample` and `visual_toolkit.default_neuron`; the packaged profile starts on sample `251637` and `004.swc`, which has registered DS00 and 5 µm sources. A valid Sample/Neuron identity, including the configured startup identity, triggers automatic soma lookup unless `--no-autoload` is passed. The highlighted Sample-section status panel reports whether the neuron was found and its portal region. In the GUI, **Neuron list** uses the selected source and shows every API row for the exact sample ID, preserving zero-padded filenames and suffixes; selecting a row fills the Neuron ID and starts the same automatic lookup. The source selector offers Live IONData explicitly alongside a configured dated CSV; on older CSV-only profiles, CSV remains selected unless you choose Live IONData. The compact note lists the eight INS-cohort AnimalIDs from the megatable and separately identifies sample 250432 / AnimalID 747; it does not classify individual neuron rows. **Render** (F5) produces the complete panel set (Soma, Context, Sagittal and TrioPlot); there is no per-panel selection. **Save outputs** beside Render chooses whether the run writes files (unticked = preview only), and **Save Soma NIfTI (.nii.gz)** in Saving controls the soma volume. The **3D brain view** action carries the current sample, neuron ID, and any loaded portal region to the isolated original OpenGL worker, using the configured processed SWC only. **fnt-tracer** uses an explicitly configured matching project first, then an exact VisPa native FNT cache project; its executable is needed only to launch the external tracer. There is no bulk action.
 
@@ -438,7 +463,7 @@ heterogeneous or irregular-pitch grid mapping.
 
 `dataset_config.load(path=None, base_dir=None)` returns resolved `defaults`, `samples`, `visual_toolkit`, and `sources`. Backend cache/output roots use `defaults.cache_root` and `defaults.output_root`; `visual_toolkit.output_root` is the GUI review-output root. `dataset_config.default_config_path()` and `default_output_root()` provide per-user locations without creating them. A project adapter may call `toolkit.configure_data_sources(path)` after selecting its config; the selected config then applies to subsequent toolkit instances.
 
-The GUI's **Neuron list** uses `sources.neuron_catalog.mode: live-iondata` in the packaged profile and queries `http://10.10.48.110/neuronbrowser/api/user/selectNeurons?id=<sample-id>` with a bounded timeout and response size. It validates the JSON rows and keeps exact `sampleid` and `name` values, including leading zeroes and sample suffixes. The display has two columns, **SWC ID** and **Portal region**; provenance shows whether the list came from live IONData or a dated CSV, its row count, fetch time or source date, URL or file path, and SHA-256. To add a dated snapshot alongside live mode, set `sources.neuron_catalog.snapshot_path`; in a CSV-mode profile, `sources.neuron_catalog.path` selects the CSV. If both sources are available, choose explicitly in the GUI. On existing CSV-only profiles, Live IONData is an explicit option and uses the configured host or the intranet default; the current CSV remains the default. No source is silently substituted. For a bounded backend check, run `vispa config-check --catalog --sample 250432 --catalog-source live-iondata --dry-run` to inspect the resolved endpoint without fetching, or omit `--dry-run` to fetch just that sample's catalog and report its count and provenance. `vispa.sources.list_neurons(sample_id, config=None, source=None)` supports `live-iondata` and `csv` with the same explicit-source behavior.
+The GUI's **Neuron list** uses `sources.neuron_catalog.mode: live-iondata` in the packaged profile and queries `http://10.10.48.110/neuronbrowser/api/user/selectNeurons?id=<sample-id>` with a bounded timeout and response size. It validates the JSON rows and keeps exact `sampleid` and `name` values, including leading zeroes and sample suffixes. The display has two columns, **SWC ID** and **Portal region**; provenance shows whether the list came from live IONData or a dated CSV, its row count, fetch time or source date, URL or file path, and SHA-256. To add a dated snapshot alongside live mode, set `sources.neuron_catalog.snapshot_path`; in a CSV-mode profile, `sources.neuron_catalog.path` selects the CSV. If both sources are available, choose explicitly in the GUI. On existing CSV-only profiles, Live IONData is an explicit option and uses the configured host or the intranet default; the current CSV remains the default. No source is silently substituted. For a bounded backend check, run `python run_vispa.py config-check --catalog --sample 250432 --catalog-source live-iondata --dry-run` to inspect the resolved endpoint without fetching, or omit `--dry-run` to fetch just that sample's catalog and report its count and provenance. `vispa.sources.list_neurons(sample_id, config=None, source=None)` supports `live-iondata` and `csv` with the same explicit-source behavior.
 
 The optional **3D brain view** action uses `sources.brain_view.mesh_path` and `processed_swc_root`, with declared `coordinate_frame` / `coordinate_units` and optional `settings`; `visual_toolkit.worker_python` selects its isolated worker when set. A generic config does not receive default anatomical frame or unit declarations: the worker preflight requires explicit values when 3D view is requested. The default projectome config points to the preserved root.obj and processed-SWC tree and declares their current stored convention. The handoff passes the exact current sample and neuron ID plus the portal snapshot's region when available. It never substitutes a raw SWC or downloads a model. The GUI starts the worker in a separate process, leaving the host Python imports isolated.
 
@@ -468,9 +493,9 @@ See [CHANGELOG.md](CHANGELOG.md) for the preserved toolkit history and extractio
 
 ### Single-neuron resource and FNT preflight
 
-Run `vispa config-check --config settings.yaml --sample 251637 --neuron 004.swc --dry-run` for a read-only JSON inventory (file hashes, source dates unknown as null, coordinate declarations, cache references and cube route/geometry). Add `--fnt` to require both a configured executable and an exact matching manual or native cached FNT project; this mode returns failure when either is unavailable and never starts the binary. The JSON also reports `project_ready` and `executable_ready` separately. Directory references are not recursively hashed; the inventory alone does not establish complete offline panel coverage or scientific acceptance.
+Run `python run_vispa.py config-check --config settings.yaml --sample 251637 --neuron 004.swc --dry-run` for a read-only JSON inventory (file hashes, source dates unknown as null, coordinate declarations, cache references and cube route/geometry). Add `--fnt` to require both a configured executable and an exact matching manual or native cached FNT project; this mode returns failure when either is unavailable and never starts the binary. The JSON also reports `project_ready` and `executable_ready` separately. Directory references are not recursively hashed; the inventory alone does not establish complete offline panel coverage or scientific acceptance.
 
-The active VisPa profile can fetch one exact native FNT with `vispa fnt-fetch --config PATH --sample 251637 --neuron 004.swc --dry-run`; remove `--dry-run` to download and verify it into the VisPa cache. `visual_toolkit.fnt_tracer` exposes `auto_download` (boolean, default true), `cache_root` (optional path), `server_base_url` and `catalog_base_url` (plain HTTP(S) base URLs), `timeout_seconds` (positive integer, default 30), and `max_response_bytes` (positive integer, default 67108864). An explicit `project_root` keeps a matching annotated local project as first choice; otherwise the exact verified VisPa cache project is used. `config-check --fnt` stays read-only and reports project and executable readiness separately. The executable is required only to launch **fnt-tracer**. In the GUI, **Settings** opens the active config with five sections in **Organized editor**, complete editable **Raw YAML** (or **Raw JSON** for an explicit JSON config), and a read-only **Default YAML** reference. Choose Data folders, Sources, Brain view, FNT or Startup; use **Browse…** for paths. The public-neuron example is intentionally absent from the GUI. Raw mode includes sample-specific paths, geometry, provenance and display settings. Switching between the editing tabs transfers valid unsaved edits. No-op saves preserve exact bytes; changed form saves keep unknown keys but may reformat YAML comments and whitespace. Invalid active YAML opens in Raw for correction. On first open, VisPa copies its installed default profile to `vispa_config.default.yaml` beside the active config; an existing copy is never replaced. If that copy is unavailable or invalid, Default YAML shows the installed profile with a warning. **Reset to default** stages the frozen local profile; **Restore backup…** stages a selected historical YAML/JSON. Neither writes the active file until **Save settings**. Save validates the complete file, backs up its previous bytes under `config_backups/` with a unique timestamp, and refuses an externally changed file or failed backup. Default YAML cannot be edited or saved directly. **Reload** discards unsaved edits. Restart VisPa after changing source folders. The cache and FNT paths do not change scientific rendering parameters.
+The active VisPa profile can fetch one exact native FNT with `python run_vispa.py fnt-fetch --config PATH --sample 251637 --neuron 004.swc --dry-run`; remove `--dry-run` to download and verify it into the VisPa cache. `visual_toolkit.fnt_tracer` exposes `auto_download` (boolean, default true), `cache_root` (optional path), `server_base_url` and `catalog_base_url` (plain HTTP(S) base URLs), `timeout_seconds` (positive integer, default 30), and `max_response_bytes` (positive integer, default 67108864). An explicit `project_root` keeps a matching annotated local project as first choice; otherwise the exact verified VisPa cache project is used. `config-check --fnt` stays read-only and reports project and executable readiness separately. The executable is required only to launch **fnt-tracer**. In the GUI, **Settings** opens the active config with five sections in **Organized editor**, complete editable **Raw YAML** (or **Raw JSON** for an explicit JSON config), and a read-only **Default YAML** reference. Choose Data folders, Sources, Brain view, FNT or Startup; use **Browse…** for paths. The public-neuron example is intentionally absent from the GUI. Raw mode includes sample-specific paths, geometry, provenance and display settings. Switching between the editing tabs transfers valid unsaved edits. No-op saves preserve exact bytes; changed form saves keep unknown keys but may reformat YAML comments and whitespace. Invalid active YAML opens in Raw for correction. On first open, VisPa copies its installed default profile to `vispa_config.default.yaml` beside the active config; an existing copy is never replaced. If that copy is unavailable or invalid, Default YAML shows the installed profile with a warning. **Reset to default** stages the frozen local profile; **Restore backup…** stages a selected historical YAML/JSON. Neither writes the active file until **Save settings**. Save validates the complete file, backs up its previous bytes under `config_backups/` with a unique timestamp, and refuses an externally changed file or failed backup. Default YAML cannot be edited or saved directly. **Reload** discards unsaved edits. Restart VisPa after changing source folders. The cache and FNT paths do not change scientific rendering parameters.
 
 Combined review figures derive text wrapping, legend/footer height and labeled-axis separation from the selected font metrics and available axes width; panels retain full image extents and original aspect ratios, anchored at the top. These are automatic layout constraints rather than separate scientific parameters. Tune `figure.review_figsize` and `figure.review_dpi` through the existing settings interface.
 

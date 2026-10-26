@@ -1,5 +1,10 @@
 # VisPa change log
 
+## 1.11.0.dev15 — 2026-10-26 (local/unreleased)
+- Make root `run_vispa.py` the direct GUI and command entry point. With no arguments it calls the existing GUI command; all other arguments go to the existing CLI. The script imports `src/vispa` relative to its own location, so an absolute script path also works from another working directory.
+- Remove the generated `vispa` console command and the recently added Windows CMD/PowerShell wrappers. This intentionally changes the launch command to `python run_vispa.py`; installation remains ordinary Conda activation followed by editable pip installation. Include the root script in source distributions and update CI and operator instructions.
+- Validation: fresh Windows Conda create/update and exact editable extras install passed in one isolated `work/` prefix; `pip check`, dev15 metadata/source parity, no generated launcher, config validation, GUI dry run, Tk and Agg Matplotlib PNG passed. An existing-environment GUI opened with dev15 title and 15/15 resource readiness. The separate fresh environment did not open a visible GUI; no scientific acceptance is implied. See the living project note and `work/conda_script_setup_20261026/receipt.json`.
+
 ## 1.11.0.dev14 — 2026-10-26 (local/unreleased)
 - Keep the OpenBLAS constraints in `environment.yml` after a reproduced MKL-backed Windows Matplotlib crash. A local repair receipt records the working OpenBLAS environment; no rendering or scientific algorithm changed.
 - Replace the earlier uncommitted custom Miniforge bootstrap/installer candidate with the standard Miniforge Prompt sequence: create/update from `environment.yml`, activate `vispa`, then pip install the editable `[3d,tiff]` package. `install.cmd` is now a small optional wrapper that uses base `python -m conda`; `VisPa.cmd` forwards to the activated environment. No download, persistent install handle, or wheelhouse behavior remains in this candidate.

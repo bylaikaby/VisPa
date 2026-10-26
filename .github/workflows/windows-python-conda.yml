@@ -1,4 +1,4 @@
-# Version: 1.11.0.dev14 (local/unreleased)
+# Version: 1.11.0.dev15 (local/unreleased)
 # Last updated: 2026-10-26
 # Change history: ../../CHANGELOG.md
 name: Windows Conda Python-only check
@@ -27,17 +27,13 @@ jobs:
         run: |
           python -m pip install --no-build-isolation -e ".[3d,tiff]"
           python -m pip check
-      - name: Validate Windows installer
-        shell: powershell
-        run: .\tests\test_install.ps1
-      - name: Verify command entry points and dry runs
+      - name: Verify script entry point and dry runs
         shell: pwsh
         run: |
-          vispa --version
-          python -m vispa --version
-          vispa config-check --validate-only --config src/vispa/config_deb.yaml
-          vispa example --dry-run --config src/vispa/config_deb.yaml
-          vispa gui --dry-run --config src/vispa/config_deb.yaml --no-autoload
+          python run_vispa.py --version
+          python run_vispa.py config-check --validate-only --config src/vispa/config_deb.yaml
+          python run_vispa.py example --dry-run --config src/vispa/config_deb.yaml
+          python run_vispa.py gui --dry-run --config src/vispa/config_deb.yaml --no-autoload
       - name: Run source tests
         shell: pwsh
         run: |

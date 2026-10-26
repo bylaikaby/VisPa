@@ -1,7 +1,7 @@
 """CLI contract tests for bounded standalone use.
 
-Version: 1.11.0.dev14 (local/unreleased)
-Last updated: 2026-10-25
+Version: 1.11.0.dev15 (local/unreleased)
+Last updated: 2026-10-26
 Change history: ../CHANGELOG.md
 """
 from __future__ import annotations
@@ -11,6 +11,7 @@ import hashlib
 import io
 import os
 from pathlib import Path
+import runpy
 import subprocess
 import sys
 import sysconfig
@@ -73,6 +74,15 @@ def same_planned_path(actual, expected, existing_parent):
 
 
 class CliContractTests(unittest.TestCase):
+    def test_root_script_defaults_to_gui(self):
+        from vispa import cli
+        with mock.patch.object(sys, "argv", [str(ROOT / "run_vispa.py")]), \
+             mock.patch.object(cli, "main", return_value=0) as launch:
+            with self.assertRaises(SystemExit) as result:
+                runpy.run_path(str(ROOT / "run_vispa.py"), run_name="__main__")
+        self.assertEqual(result.exception.code, 0)
+        launch.assert_called_once_with(["gui"])
+
     def setUp(self):
         isolated = mock.patch.dict(os.environ, {"VISPA_CONFIG": ""})
         isolated.start()
