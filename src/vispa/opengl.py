@@ -1,6 +1,6 @@
 """Explicit local-input launcher for the isolated legacy OpenGL viewer.
 
-Version: 1.11.0.dev13 (local/unreleased)
+Version: 1.11.0.dev14 (local/unreleased)
 Last updated: 2026-10-26
 Change history: ../../CHANGELOG.md
 Status: candidate

@@ -1,4 +1,4 @@
-# Version: 1.11.0.dev13 (local/unreleased)
+# Version: 1.11.0.dev14 (local/unreleased)
 # Last updated: 2026-10-26
 # Change history: CHANGELOG.md
 name: vispa
@@ -11,6 +11,9 @@ dependencies:
   - setuptools>=68
   - wheel
   - tk
+  - libblas=*=*openblas
+  - libcblas=*=*openblas
+  - liblapack=*=*openblas
   - numpy
   - matplotlib<3.11.1
   - pillow
@@ -28,7 +31,3 @@ dependencies:
   - pyopengl=3.1.10
   - freetype-py
   - hsluv
-  - pip:
-      - PyGLM==2.8.3
-      - glfw==2.11.0
-      - -e .

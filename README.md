@@ -1,7 +1,7 @@
 # VisPa — Visual Projectome Analysis tool
 
 VisPa reviews macaque neuron and microscopy data configured by the DEB lab.
-This checkout identifies as **1.11.0.dev13**, without a release tag. VisPa is a Python package
+This checkout identifies as **1.11.0.dev14**, without a release tag. VisPa is a Python package
 inside a Conda environment; `vispa` is a pip-generated Python launcher, not a
 separately packaged application binary.
 
@@ -17,73 +17,52 @@ server data and dependencies:
     └── fnt\
 ```
 
-## Install for the first time
+## Install on Windows
 
-Install Git and [Miniforge](https://github.com/conda-forge/miniforge) or Anaconda
-first, then open its PowerShell prompt so `conda` is available. Run:
+Install [Miniforge](https://github.com/conda-forge/miniforge). Open **Miniforge Prompt** in this checkout and run:
 
 ```powershell
-git clone --branch main https://github.com/bylaikaby/VisPa.git D:\vispa-work
-Set-Location D:\vispa-work
 conda env create -f environment.yml
-conda run --no-capture-output -n vispa vispa gui
+conda activate vispa
+python -m pip install --no-build-isolation -e ".[3d,tiff]"
+python -m vispa
 ```
 
-For later launches, run `conda run --no-capture-output -n vispa vispa gui`
-from any folder. To check the installed command and external lab resources:
+If `vispa` already exists, use the update commands below. Recloning the repository does not recreate the Conda environment.
 
-```powershell
-conda run -n vispa vispa --version
-conda run --no-capture-output -n vispa vispa check
-```
+For a downloaded ZIP, extract it locally and run the same commands in its folder. [Conda recommends activating the environment before pip installation](https://docs.conda.io/projects/conda/en/stable/user-guide/tasks/manage-environments.html#using-pip-in-an-environment). The environment file selects conda-forge OpenBLAS; this avoids a reproduced Windows Matplotlib crash with the MKL-backed solve. Verify with `python -m pip check` and `python -m vispa --version`.
 
-The version check verifies the installed command. The resource check verifies
-configured files, servers and cache access; it may report unavailable resources
-when the lab network is disconnected even though installation succeeded.
+`python -m vispa check` verifies configured files and server/cache access. A disconnected lab share can make this check fail after a successful installation. TIFF support is included through the declared package extras.
 
-TIFF reading is included in the core installation. The Conda environment adds
-`tifffile` and `imagecodecs`; VisPa also falls back to Pillow when those
-decoders are unavailable. If Context acquisition reports an unavailable TIFF
-decoder, the command is running outside the VisPa
-environment or against a stale interpreter path. Use
-`conda run -n vispa vispa ...` or verify `VISPA_PYTHON`.
-
-You can also activate the environment with `conda activate vispa` and then run
-`vispa gui`, `vispa check`, or `vispa --version` directly.
+`install.cmd` is an optional convenience wrapper. From Miniforge Prompt it uses Conda's base Python; otherwise it tries `%USERPROFILE%\miniconda3\python.exe`. Pass `-CondaBasePython PATH` if needed. It performs the same environment setup, pip install, and checks. `VisPa.cmd` forwards arguments to `python -m vispa` after `conda activate vispa`.
 
 ## Update an existing installation
 
-Run these commands in the Conda PowerShell prompt from the VisPa checkout:
+In Miniforge Prompt, from the checkout:
 
 ```powershell
-Set-Location D:\vispa-work
-git switch main
-git pull --ff-only origin main
 conda env update -n vispa -f environment.yml
-conda run -n vispa vispa --version
+conda activate vispa
+python -m pip install --no-build-isolation -e ".[3d,tiff]"
+python -m pip check
+python -m vispa --version
 ```
 
-Run these from the checkout because the environment file installs VisPa from
-the folder containing `environment.yml` in editable mode. Updates preserve
-the per-user config.
-
-To adopt new lab defaults, use **Settings → Default YAML → Reset to default → Save
-settings**, or launch with the shared profile directly:
+To adopt new lab defaults, use **Settings → Default YAML → Reset to default → Save settings**, or launch with the shared profile directly:
 
 ```powershell
-vispa gui --config '\\10.102.8.200\microscopy_data\fMOST\resources\config_deb.yaml'
+python -m vispa gui --config '\\10.102.8.200\microscopy_data\fMOST\resources\config_deb.yaml'
 ```
 
-`vispa check` must report **All configured resources ready** before rendering.
-Each line includes its resolved file, folder, or server location.
+`python -m vispa check` must report **All configured resources ready** before rendering. Each line includes its resolved file, folder, or server location.
 
 ## Create or select a configuration
 
 Create the per-user profile without overwriting an existing file:
 
 ```powershell
-vispa config-init --dry-run
-vispa config-init
+python -m vispa config-init --dry-run
+python -m vispa config-init
 ```
 
 Pass `--config PATH` to any command to select another profile. Relative paths
@@ -95,7 +74,7 @@ remain external.
 Find the exact interpreter:
 
 ```powershell
-conda run -n vispa python -c "import sys; print(sys.executable)"
+python -c "import sys; print(sys.executable)"
 ```
 
 Select that interpreter in the IDE and use the cloned checkout as the working
@@ -105,19 +84,20 @@ directory.
 
 | Task | Simple command | What it does |
 |---|---|---|
-| Open the GUI | `vispa gui` | Opens the normal review interface. Add `--config PATH` to choose a profile. |
-| Check readiness | `vispa check` | Prints a path-aware checklist for the configured sample and neuron. |
-| Show version | `vispa --version` | Prints the installed VisPa version. |
-| Validate a config | `vispa config-check --validate-only --config PATH` | Checks YAML/JSON structure without reading lab data. |
-| Audit one resource set | `vispa config-check --sample SAMPLE --neuron 004.swc` | Reports exact paths, hashes, geometry and cache references. |
-| Open 3D view | `vispa brain-view --sample 251637 --neuron 004.swc` | Opens the configured mesh and processed SWC. |
-| Render a montage | `vispa montage --input FILE --output FILE --units mm` | Creates a five-view DS00 montage. |
-| Fetch FNT | `vispa fnt-fetch --sample 251637 --neuron 004.swc` | Retrieves one exact FNT into the user cache. |
-| Create user config | `vispa config-init` | Creates the per-user profile without overwriting an existing file. |
+| Open the GUI | `python -m vispa` | Opens the normal review interface. |
+| Check readiness | `python -m vispa check` | Prints a path-aware checklist for the configured sample and neuron. |
+| Show version | `python -m vispa --version` | Prints the installed VisPa version. |
+| Validate a config | `python -m vispa config-check --validate-only --config PATH` | Checks YAML/JSON structure without reading lab data. |
+| Audit one resource set | `python -m vispa config-check --sample SAMPLE --neuron 004.swc` | Reports exact paths, hashes, geometry and cache references. |
+| Open 3D view | `python -m vispa brain-view --sample 251637 --neuron 004.swc` | Opens the configured mesh and processed SWC. |
+| Render a montage | `python -m vispa montage --input FILE --output FILE --units mm` | Creates a five-view DS00 montage. |
+| Fetch FNT | `python -m vispa fnt-fetch --sample 251637 --neuron 004.swc` | Retrieves one exact FNT into the user cache. |
+| Create user config | `python -m vispa config-init` | Creates the per-user profile without overwriting an existing file. |
 | Run tests | `python -m unittest discover -s tests -v` | Runs all automated tests. |
 
-The equivalent module forms remain available for IDE or troubleshooting use:
-`vispa` and `vispa gui`. They require the same environment.
+The generated `vispa` command remains available in the installer environment;
+`python -m vispa` is the stable Windows fallback when that generated launcher is
+unavailable.
 
 The [Windows Conda workflow](.github/workflows/windows-python-conda.yml) creates
 the declared environment, installs the editable package, checks command entry
@@ -126,8 +106,7 @@ points and dry runs, and runs the source suite.
 ## GUI walkthrough
 
 ```powershell
-conda activate vispa
-vispa gui
+python -m vispa
 ```
 
 1. Wait for **VisPa data check**. A ready profile shows a check mark and the
@@ -176,7 +155,7 @@ New standalone run receipts, builds and candidate outputs live under `D:/VisPa/w
 
 VisPa includes a live per-sample IONData neuron list for the configured lab intranet and review panels for configured local microscopy resources. The live list is fetched from the neuron API; image cubes, raw SWCs, and microscopy files use separate configured hosts or shares. The package contains only server addresses and candidate sample-resource links, not source data, credentials, or local project tools. These links and checksums do not establish current share availability or scientific acceptance.
 
-This checkout is **1.11.0.dev13, without a release tag**. It preserves the
+This checkout is **1.11.0.dev14, without a release tag**. It preserves the
 existing rendering and source-verification algorithms while removing the
 retired `Visual_toolkit` compatibility namespace. The DS00 sagittal panel now
 shows one provisional soma-location marker without A/B raw-SWC traces; its

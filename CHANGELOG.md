@@ -1,5 +1,9 @@
 # VisPa change log
 
+## 1.11.0.dev14 — 2026-10-26 (local/unreleased)
+- Keep the OpenBLAS constraints in `environment.yml` after a reproduced MKL-backed Windows Matplotlib crash. A local repair receipt records the working OpenBLAS environment; no rendering or scientific algorithm changed.
+- Replace the earlier uncommitted custom Miniforge bootstrap/installer candidate with the standard Miniforge Prompt sequence: create/update from `environment.yml`, activate `vispa`, then pip install the editable `[3d,tiff]` package. `install.cmd` is now a small optional wrapper that uses base `python -m conda`; `VisPa.cmd` forwards to the activated environment. No download, persistent install handle, or wheelhouse behavior remains in this candidate.
+- Validation: PowerShell installer parses and rejects a missing Conda base Python before writes. Editable dev14 package reinstall into the existing `vispa` environment succeeded. The existing environment passed `pip check`, CLI version and config validation; a fresh environment solve and visible GUI launch remain unverified. Scientific acceptance is separate.
 ## 1.11.0.dev13 — 2026-10-26 (local/unreleased)
 - Add an explicit local OBJ mesh override and role label to the existing
   one-neuron brain-view planner and worker. The configured whole-brain mesh is
