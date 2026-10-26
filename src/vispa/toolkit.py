@@ -1593,7 +1593,8 @@ class VisPa:
             fig, ax, sx, sy, resolution, neuron_id, suffix, volume_3d.shape[0],
             marker_color=TARGET_MARKER_COLOR, soma_region=soma_region,
             soma_coords=soma_coords, output_dir=output_dir,
-            scale_bar_um=scale_bar_um, extra_title=overlay_note, legend_entries=role_legend)
+            scale_bar_um=scale_bar_um, extra_title=overlay_note, legend_entries=role_legend,
+            show_legend=False)
         return {
             'display': rgb, 'cmap': None,
             'resolution_um': (float(resolution[0]), float(resolution[1])),

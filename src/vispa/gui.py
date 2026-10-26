@@ -3179,7 +3179,7 @@ class NeuroVisGUI:
                 trio_target = request.output_dir if saving else self._preview_target_dir(request)
                 trio_path = toolkit.plot_tri_plot(
                     [panels["Soma"], panels["Context"], panels["Sagittal"]],
-                    request.neuron_id, output_dir=trio_target, legend=True)
+                    request.neuron_id, output_dir=trio_target, legend=False)
                 paths.append(trio_path)
             specs = {role: self._panel_spec(panel) for role, panel in panels.items()}
             if request.save_outputs and fingerprint is not None:

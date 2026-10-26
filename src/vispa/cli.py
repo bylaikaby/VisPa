@@ -196,7 +196,7 @@ def _render(args):
                 None if args.role == "soma"
                 else ("X pixel index (column)", "Y pixel index (row)"))
             rendered = Path(tool.plot_tri_plot([panel], neuron, output_dir=temp_dir,
-                                               suffix=args.role, legend=True))
+                                               suffix=args.role, legend=False))
             tool.close()
             if not rendered.is_file():
                 raise RuntimeError("renderer did not produce the expected PNG")
