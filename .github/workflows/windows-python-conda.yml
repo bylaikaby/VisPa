@@ -16,11 +16,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - uses: conda-incubator/setup-miniconda@v3
+      - uses: conda-incubator/setup-miniconda@be893c923ea9cf1cf7cd510fbdde27c7e18cbdcb  # v4.1.0
         with:
           activate-environment: vispa
           environment-file: environment.yml
-          miniforge-version: latest
+          miniforge-version: 26.9.4-0
           channels: conda-forge,nodefaults
       - name: Verify command entry points and dry runs
         shell: pwsh
