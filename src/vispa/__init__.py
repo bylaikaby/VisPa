@@ -3,8 +3,8 @@
 Importing the package root does not import Matplotlib, acquisition providers, or
 optional image libraries. Public names are loaded on first access.
 
-Version: 1.11.0.dev11 (local/unreleased)
-Last updated: 2026-10-23
+Version: 1.11.0.dev12 (local/unreleased)
+Last updated: 2026-10-25
 Change history: ../../CHANGELOG.md
 """
 from importlib import import_module

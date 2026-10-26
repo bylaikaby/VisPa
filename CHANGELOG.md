@@ -1,5 +1,14 @@
 # VisPa change log
 
+## 1.11.0.dev12 — 2026-10-25 (local/unreleased)
+- Install this checkout from the existing Conda environment file using its pip
+  section. A single `conda env create` or `conda env update` now sets up both
+  dependencies and the editable VisPa launcher when run from the checkout.
+  Existing user configuration is unaffected. Validation: parsed YAML contains
+  one editable entry; offline pip editable dry run resolved this checkout as
+  `vispa-1.11.0.dev12`; source CLI and metadata versions match; patch formatting
+  passed. Fresh Conda create/update and installed GUI remain unverified.
+
 ## 1.11.0.dev11 — 2026-10-23 (local/unreleased)
 - Replace the leftover **Public SWC** preview tab with **3D SWC**. Selecting it
   renders the current processed SWC on the configured template mesh in the

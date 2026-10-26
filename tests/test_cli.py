@@ -1,7 +1,7 @@
 """CLI contract tests for bounded standalone use.
 
-Version: 1.11.0.dev11 (local/unreleased)
-Last updated: 2026-10-23
+Version: 1.11.0.dev12 (local/unreleased)
+Last updated: 2026-10-25
 Change history: ../CHANGELOG.md
 """
 from __future__ import annotations
@@ -24,6 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TEST_INSTALLED = os.environ.get("VISPA_TEST_INSTALLED") == "1"
 if not TEST_INSTALLED:
     sys.path.insert(0, str(ROOT / "src"))
+from vispa import __version__
 ENV = {key: value for key, value in os.environ.items()
        if key not in {"PYTHONPATH", "VISPA_CONFIG", "VISUAL_TOOLKIT_CONFIG", "PROJECTOME_DATASETS"}}
 ENV.update({"MPLBACKEND": "Agg", "PYTHONDONTWRITEBYTECODE": "1"})
@@ -118,7 +119,7 @@ class CliContractTests(unittest.TestCase):
             self.assertEqual(run_cli("--help", cwd=tmp_path).returncode, 0)
             version = run_cli("--version", cwd=tmp_path)
             self.assertEqual(version.returncode, 0)
-            self.assertIn("1.11.0.dev11", version.stdout)
+            self.assertIn(__version__, version.stdout)
 
     def test_settings_command_prints_discoverable_json_without_optional_imports(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -218,7 +219,7 @@ assert main(["settings", "--scope", "all"]) == 0
             plan = json.loads(result.stdout)
             assert_backend_is_installed(self, plan)
             self.assertEqual(plan["schema"], "visual-toolkit.render.v1")
-            self.assertEqual(plan["package_version"], "1.11.0.dev11")
+            self.assertEqual(plan["package_version"], __version__)
             self.assertTrue(Path(plan["python_executable"]).is_file())
             self.assertTrue(Path(plan["runtime"]["python_executable"]).is_file())
             self.assertTrue(Path(plan["runtime"]["backend_module"]).is_file())
@@ -296,7 +297,7 @@ assert main(["settings", "--scope", "all"]) == 0
             self.assertEqual({path.name for path in output.iterdir()}, {png.name, receipt_path.name})
             self.assertTrue(os.path.samefile(receipt["output_png"], png))
             self.assertEqual(receipt["schema"], "visual-toolkit.render.v1")
-            self.assertEqual(receipt["package_version"], "1.11.0.dev11")
+            self.assertEqual(receipt["package_version"], __version__)
             runtime = receipt["runtime"]
             self.assertTrue(Path(runtime["python_prefix"]).exists())
             self.assertEqual(runtime["backend_sha256"],

@@ -1,7 +1,7 @@
 # VisPa — Visual Projectome Analysis tool
 
 VisPa reviews macaque neuron and microscopy data configured by the DEB lab.
-The current `simplified` candidate is **1.11.0.dev11**. It is a Python package
+This checkout identifies as **1.11.0.dev12**, without a release tag. VisPa is a Python package
 inside a Conda environment; `vispa` is a pip-generated Python launcher, not a
 separately packaged application binary.
 
@@ -19,22 +19,27 @@ server data and dependencies:
 
 ## Install for the first time
 
+Install Git and [Miniforge](https://github.com/conda-forge/miniforge) or Anaconda
+first, then open its PowerShell prompt so `conda` is available. Run:
+
 ```powershell
-git clone --branch simplified https://github.com/bylaikaby/VisPa.git D:\vispa-work
+git clone --branch main https://github.com/bylaikaby/VisPa.git D:\vispa-work
 Set-Location D:\vispa-work
 conda env create -f environment.yml
-conda run -n vispa python -m pip install --no-deps -e .
-conda run -n vispa vispa --version
+conda run --no-capture-output -n vispa vispa gui
 ```
 
-Activate the environment for normal use:
+For later launches, run `conda run --no-capture-output -n vispa vispa gui`
+from any folder. To check the installed command and external lab resources:
 
 ```powershell
-conda activate vispa
-vispa --version
-vispa check
-vispa gui
+conda run -n vispa vispa --version
+conda run --no-capture-output -n vispa vispa check
 ```
+
+The version check verifies the installed command. The resource check verifies
+configured files, servers and cache access; it may report unavailable resources
+when the lab network is disconnected even though installation succeeded.
 
 TIFF reading is included in the core installation. The Conda environment adds
 `tifffile` and `imagecodecs`; VisPa also falls back to Pillow when those
@@ -43,26 +48,26 @@ decoder, the command is running outside the VisPa
 environment or against a stale interpreter path. Use
 `conda run -n vispa vispa ...` or verify `VISPA_PYTHON`.
 
-If you prefer not to activate Conda, prefix any command with
-`conda run -n vispa`, for example `conda run -n vispa vispa check`.
+You can also activate the environment with `conda activate vispa` and then run
+`vispa gui`, `vispa check`, or `vispa --version` directly.
 
 ## Update an existing installation
 
-Run these commands from the VisPa checkout:
+Run these commands in the Conda PowerShell prompt from the VisPa checkout:
 
 ```powershell
 Set-Location D:\vispa-work
-git fetch origin simplified
-git checkout simplified
-git pull --ff-only origin simplified
+git switch main
+git pull --ff-only origin main
 conda env update -n vispa -f environment.yml
-conda run -n vispa python -m pip install --no-deps -e .
 conda run -n vispa vispa --version
-conda run -n vispa vispa check
 ```
 
-The update does not overwrite an existing user configuration. To adopt the
-new lab defaults, use **Settings → Default YAML → Reset to default → Save
+Run these from the checkout because the environment file installs VisPa from
+the folder containing `environment.yml` in editable mode. Updates preserve
+the per-user config.
+
+To adopt new lab defaults, use **Settings → Default YAML → Reset to default → Save
 settings**, or launch with the shared profile directly:
 
 ```powershell
@@ -171,7 +176,7 @@ New standalone run receipts, builds and candidate outputs live under `D:/VisPa/w
 
 VisPa includes a live per-sample IONData neuron list for the configured lab intranet and review panels for configured local microscopy resources. The live list is fetched from the neuron API; image cubes, raw SWCs, and microscopy files use separate configured hosts or shares. The package contains only server addresses and candidate sample-resource links, not source data, credentials, or local project tools. These links and checksums do not establish current share availability or scientific acceptance.
 
-This checkout is **1.11.0.dev11, without a release tag**. It preserves the
+This checkout is **1.11.0.dev12, without a release tag**. It preserves the
 existing rendering and source-verification algorithms while removing the
 retired `Visual_toolkit` compatibility namespace. The DS00 sagittal panel now
 shows one provisional soma-location marker without A/B raw-SWC traces; its
@@ -251,8 +256,7 @@ Review the resolved header, affine, setting values, output path, and receipt pat
 
 These are display settings inherited from the project montage. They do not change anatomy or establish registration or scientific acceptance.
 
-The legacy OpenGL viewer is installed into the dedicated worker with
-`environment.yml` installs the optional 3D dependencies in the Conda runtime. It requires a local OBJ mesh, an explicit sample ID and processed
+`environment.yml` installs the optional 3D dependencies in the Conda runtime. The legacy OpenGL viewer requires a local OBJ mesh, an explicit sample ID and processed
 SWC filename, and explicit coordinate-frame and coordinate-unit declarations in
 `sources.brain_view`; it does not resolve cohort identities, use raw SWCs, fetch remote
 data, or apply registration/mirroring. Preview the resolved paths and display settings

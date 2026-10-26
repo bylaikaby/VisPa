@@ -1,3 +1,6 @@
+# Version: 1.11.0.dev12 (local/unreleased)
+# Last updated: 2026-10-25
+# Change history: CHANGELOG.md
 name: vispa
 channels:
   - conda-forge
@@ -28,3 +31,4 @@ dependencies:
   - pip:
       - PyGLM==2.8.3
       - glfw==2.11.0
+      - -e .
