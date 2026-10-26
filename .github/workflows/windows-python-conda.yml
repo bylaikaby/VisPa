@@ -20,7 +20,7 @@ jobs:
         with:
           activate-environment: vispa
           environment-file: environment.yml
-          miniforge-version: 26.9.4-0
+          miniforge-version: 26.7.2-1
           channels: conda-forge,nodefaults
       - name: Verify command entry points and dry runs
         shell: pwsh

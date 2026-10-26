@@ -24,10 +24,11 @@
   same probe pass, so this environment/runtime collision is recorded separately
   from the Python 3.10 source-test result.
 - Pin the Windows CI bootstrap to immutable `setup-miniconda` v4.1.0 and
-  Miniforge `26.9.4-0`. The prior floating `v3`/`latest` setup failed during
-  GitHub's Node 24 enforcement with `conda init` reporting that
-  `Scripts/conda.exe` "needs sudo"; environment creation and all VisPa tests
-  were skipped. The rerun for this exact pin remains the hosted acceptance gate.
+  Miniforge `26.7.2-1`, the installer version recorded by the prior successful
+  hosted run. The newer `26.9.4-0` failed during `conda init` with
+  `Scripts/conda.exe` reporting "needs sudo" under both the old and pinned
+  action; environment creation and all VisPa tests were skipped. The rerun for
+  this exact pair remains the hosted acceptance gate.
 
 ## 1.11.0.dev12 — 2026-10-25 (local/unreleased)
 - Install this checkout from the existing Conda environment file using its pip
