@@ -1,0 +1,38 @@
+{
+  "schema": "vispa.remap_stepwise.v1",
+  "run_id": "251637-bounded",
+  "share_slot": "remap_outputs",
+  "share_base": "\\\\10.102.8.200\\microscopy_data\\fMOST",
+  "allow_all": false,
+  "vispa_config": "./REPLACE_vispa_config.yaml",
+  "region": {
+    "sample_id": "251637",
+    "neuron_ids": ["001.swc"],
+    "swc_source_dir": "./REPLACE_analysis_swc",
+    "atlas": "./REPLACE_atlas.nii.gz",
+    "atlas_key": "./REPLACE_atlas_key.txt",
+    "template": "./REPLACE_template.nii.gz",
+    "hemisphere_mask": "./REPLACE_hemisphere_mask.nii.gz",
+    "cortex_hierarchy_csv": "./REPLACE_charm.csv",
+    "subcortical_hierarchy_csv": "./REPLACE_sarm.csv",
+    "atlas_level": 6,
+    "coordinate_scale": 250,
+    "coordinate_offset": [0, 0, 0],
+    "declared_space": "NMT_v2.1_sym atlas voxel index",
+    "source_units": null,
+    "source_date": null,
+    "generate_plots": false
+  },
+  "fnt": {
+    "distance": "./REPLACE_dist.txt",
+    "joined_fnt": "./REPLACE_joined.fnt",
+    "k": 2,
+    "linkage": "average",
+    "symmetrization": "max"
+  },
+  "soma": {
+    "source": "raw_swc_root",
+    "raw_swc_dir": "./REPLACE_raw_swc",
+    "units": "declared by the operator; not inferred"
+  }
+}

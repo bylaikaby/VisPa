@@ -1,5 +1,10 @@
 # VisPa change log
 
+## 1.11.0.dev18 — 2026-10-27 (local/unreleased)
+- Add `batch.remap_stepwise` to run the current ReMAP region-analysis population step and saved-score FNT clustering, then publish `vispa_bulk_jobs.json`. Source SWCs are read only. The declared fMOST destination is `remap_outputs`, `outputs`, or `resources/remap_stepwise` under `\\10.102.8.200\microscopy_data\fMOST`.
+- Add `batch.render_review_bulk` so VisPa can render Soma, Context, Sagittal and TrioPlot for those published neurons with the existing review worker. Dry run, `--limit`, and a fresh output directory are required before a share write or a full cohort.
+- Validation: new stepwise and review-bulk tests cover share-slot paths, the explicit-k linkage gate, unchanged SWC bytes, and a partial bulk receipt. A real cohort was not published to the share, and anatomical acceptance is not established.
+
 ## 1.11.0.dev17 — 2026-10-26 (local/unreleased)
 - Render the manifest-selected shared DS00 volume after verifying its SHA-256 and stable size/mtime; retain the repository candidate path as provenance without requiring that workstation-local copy. Manifest sample selection, path binding and scientific image choice remain unchanged. A mismatched shared volume still fails closed.
 - Log each skipped GUI panel and explicitly report when TrioPlot cannot be formed because a required panel failed. Grey tabs still require real generated images. Synthetic source/hash and partial-render regressions passed; shared 251637 manifest source hash was checked locally. Remote GUI and scientific acceptance remain pending.

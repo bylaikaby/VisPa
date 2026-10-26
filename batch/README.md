@@ -1,6 +1,6 @@
 # VisPa brain-view batch operator
 
-Local candidate `1.11.0.dev17`. The entry point is `python -m batch.render_brain_views` from this checkout. Each declared job renders **one OBJ mesh and one processed SWC** with VisPa's existing OpenGL worker. A region mesh must already exist as an OBJ in the same declared coordinate frame and units as the processed SWC. The configured whole-brain mesh remains the ordinary single-view default. No mesh generation, coordinate transform, cohort discovery or data fetch occurs here.
+Local candidate `1.11.0.dev18`. The entry point is `python -m batch.render_brain_views` from this checkout. Each declared job renders **one OBJ mesh and one processed SWC** with VisPa's existing OpenGL worker. A region mesh must already exist as an OBJ in the same declared coordinate frame and units as the processed SWC. The configured whole-brain mesh remains the ordinary single-view default. No mesh generation, coordinate transform, cohort discovery or data fetch occurs here.
 
 ```mermaid
 flowchart LR
@@ -37,3 +37,5 @@ For a new request, provide `schema=vispa.brain_view_batch.v1`, `vispa_config`, a
 The executed pilot PNG, adjacent snapshot receipt and shared batch receipt remain privately stored under `work/` as review evidence. The command above uses a new output root because existing outputs are never overwritten.
 
 The worker writes one PNG and adjacent JSON receipt with mesh/SWC hashes, source frame, stored units, camera settings, renderer version and PNG hash. The operator writes one `batch_receipt.json` with sorted requests and status. A failed job preserves that receipt with `partial_or_failed`, and the command exits with status 2 after printing the result rather than raising an unhandled traceback. A region OBJ becomes the root mesh for its individual job. Its bounds set the current camera distance; use a declared `camera_distance_scale` override when the region is small and review the resulting PNG for clipping. A batch of jobs is a set of independent views, not a combined multi-neuron scene. The future `Multimodal_INS/analysis_scripts` location is a planned handoff only; this operator remains in VisPa now.
+
+Region analysis through FNT clustering, and the matching VisPa review bulk, are documented in [MODULE.md](MODULE.md).

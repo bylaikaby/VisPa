@@ -1,5 +1,5 @@
-# Version: 1.11.0.dev16 (local/unreleased)
-# Last updated: 2026-10-26
+# Version: 1.11.0.dev18 (local/unreleased)
+# Last updated: 2026-10-27
 # Change history: ../../CHANGELOG.md
 name: Windows Conda Python-only check
 on:
@@ -36,4 +36,4 @@ jobs:
         shell: pwsh
         run: |
           python -m unittest discover -s tests -v
-          python -m unittest discover -s batch -p test_render_brain_views.py -v
+          python -m unittest discover -s batch -p "test_*.py" -v
