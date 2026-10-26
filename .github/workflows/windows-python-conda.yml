@@ -1,4 +1,4 @@
-# Version: 1.11.0.dev15 (local/unreleased)
+# Version: 1.11.0.dev16 (local/unreleased)
 # Last updated: 2026-10-26
 # Change history: ../../CHANGELOG.md
 name: Windows Conda Python-only check
@@ -22,11 +22,9 @@ jobs:
           environment-file: environment.yml
           miniforge-version: 26.7.2-1
           channels: conda-forge,nodefaults
-      - name: Install editable VisPa source directly
+      - name: Verify integrated package dependencies
         shell: pwsh
-        run: |
-          python -m pip install --no-build-isolation -e ".[3d,tiff]"
-          python -m pip check
+        run: python -m pip check
       - name: Verify script entry point and dry runs
         shell: pwsh
         run: |

@@ -1,4 +1,4 @@
-# Version: 1.11.0.dev14 (local/unreleased)
+# Version: 1.11.0.dev16 (local/unreleased)
 # Last updated: 2026-10-26
 # Change history: CHANGELOG.md
 name: vispa
@@ -31,3 +31,5 @@ dependencies:
   - pyopengl=3.1.10
   - freetype-py
   - hsluv
+  - pip:
+      - "-e .[3d,tiff]"

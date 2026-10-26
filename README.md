@@ -1,7 +1,7 @@
 # VisPa — Visual Projectome Analysis tool
 
 VisPa reviews macaque neuron and microscopy data configured by the DEB lab.
-This checkout identifies as **1.11.0.dev15**, without a release tag. VisPa is a
+This checkout identifies as **1.11.0.dev16**, without a release tag. VisPa is a
 Python package inside a Conda environment. Launch the GUI directly from this
 checkout with `python run_vispa.py`.
 
@@ -26,7 +26,6 @@ git clone --branch main https://github.com/bylaikaby/VisPa.git D:\vispa
 cd D:\vispa
 conda env create -f environment.yml
 conda activate vispa
-python -m pip install --no-build-isolation -e ".[3d,tiff]"
 python run_vispa.py
 ```
 
@@ -46,15 +45,16 @@ from a normal host process. Open VisPa from your normal Conda Prompt.
 
 Use `miniconda3` or `miniforge3` in that path if it is your installation folder.
 
-For a downloaded ZIP, extract it locally and run the same commands in its folder. [Conda recommends activating the environment before pip installation](https://docs.conda.io/projects/conda/en/stable/user-guide/tasks/manage-environments.html#using-pip-in-an-environment). The environment file selects conda-forge OpenBLAS; this avoids a reproduced Windows Matplotlib crash with the MKL-backed solve. Verify with `python -m pip check` and `python run_vispa.py --version`.
+For a downloaded ZIP, extract it locally and run the same commands in its folder. Conda reads the pip subsection of `environment.yml` and installs this checkout with its 3D and TIFF extras automatically. The file also selects conda-forge OpenBLAS; this avoids a reproduced Windows Matplotlib crash with the MKL-backed solve. Verify with `python -m pip check` and `python run_vispa.py --version`.
 
 `python run_vispa.py check` verifies configured files and server/cache access. A disconnected lab share can make this check fail after a successful installation. TIFF support is included through the declared package extras.
 
 ```mermaid
 flowchart LR
   Y[Checkout: environment.yml] --> C[Conda create or update]
-  C --> P[Activate vispa; pip install editable package]
-  P --> R[python run_vispa.py]
+  C --> P[Conda installs editable VisPa and extras]
+  P --> A[Activate vispa]
+  A --> R[python run_vispa.py]
   R --> G[GUI by default]
   R --> O[CLI options when supplied]
   G -. configured lab resources .-> D[External data]
@@ -62,14 +62,13 @@ flowchart LR
 
 ## Update an existing installation
 
-In Miniforge or Anaconda Prompt, from the checkout:
+In Miniforge or Anaconda Prompt, run `git pull --ff-only origin main` from
+the checkout first, then:
 
 ```powershell
 conda env update -n vispa -f environment.yml
 conda activate vispa
-python -m pip install --no-build-isolation -e ".[3d,tiff]"
-python -m pip check
-python run_vispa.py --version
+python run_vispa.py
 ```
 
 To remove the environment later, first run `conda deactivate`, then
@@ -180,7 +179,7 @@ New standalone run receipts, builds and candidate outputs live under `D:/VisPa/w
 
 VisPa includes a live per-sample IONData neuron list for the configured lab intranet and review panels for configured local microscopy resources. The live list is fetched from the neuron API; image cubes, raw SWCs, and microscopy files use separate configured hosts or shares. The package contains only server addresses and candidate sample-resource links, not source data, credentials, or local project tools. These links and checksums do not establish current share availability or scientific acceptance.
 
-This checkout is **1.11.0.dev15, without a release tag**. It preserves the
+This checkout is **1.11.0.dev16, without a release tag**. It preserves the
 existing rendering and source-verification algorithms while removing the
 retired `Visual_toolkit` compatibility namespace. The DS00 sagittal panel now
 shows one provisional soma-location marker without A/B raw-SWC traces; its
