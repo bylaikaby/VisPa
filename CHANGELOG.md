@@ -1,5 +1,8 @@
 # VisPa change log
 
+## 1.11.0.dev21 — 2026-10-27 (local/unreleased)
+- Bind an explicit manual FNT project's catalog in a verified per-user cache copy at launch, with a source/copy hash receipt. This retains manual tracing and priority while supplying the external tracer with the configured ION catalog; unlike `main_scripts/fnt/tools.py:swc_fnt_tracer`, it never rewrites the input in place. Preflight remains read-only; invalid or wrong-sample projects fail before launch. Focused FNT tests passed 16/16, the isolated full source suite passed 161/161, and bounded real preparation preserved the shared 251637/004 FNT hash and payload. External tracer and live cube loading remain unverified.
+
 ## 1.11.0.dev20 — 2026-10-26 (local/unreleased)
 - Rename the static preview tab to **SWC Brain View** and the separate OpenGL action to **SWC Brain View interactive** so each control describes its behavior. Preview status/error wording follows the new label. The internal `SWC3D` role, snapshot worker, interactive worker, image sources and rendering geometry are unchanged. Focused label/role checks and full-suite validation are recorded in the shared audit receipt; remote visual review remains pending.
 

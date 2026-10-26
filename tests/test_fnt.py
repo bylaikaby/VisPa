@@ -1,7 +1,7 @@
 """Exact native FNT route, cache, and catalog-binding checks.
 
-Version: 1.11.0.dev11 (local/unreleased)
-Last updated: 2026-10-23
+Version: 1.11.0.dev21 (local/unreleased)
+Last updated: 2026-10-27
 Change history: ../CHANGELOG.md
 """
 
@@ -11,7 +11,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from vispa.fnt import ensure_fnt, resolve_fnt_plan
+from vispa.fnt import ensure_fnt, prepare_manual_project, resolve_fnt_plan
+from vispa.cli import fnt_plan
 
 
 class _Response(io.BytesIO):
@@ -41,6 +42,62 @@ class FNTFetchTests(unittest.TestCase):
         }}}
         self.body = (b"Fast Neurite Tracer Session File 1.0\nNONE\n"
                      b"viewer.color.1=255\nBEGIN_TRACING_DATA\n1\n1\n")
+
+    def test_manual_project_precedence_and_verified_catalog_copy(self):
+        root = Path(self.temp.name) / "projects"
+        root.mkdir()
+        exe = root / "fnt-tracer.exe"
+        exe.write_bytes(b"fixture")
+        manual = root / "250432_001.fnt"
+        manual.write_bytes(self.body)
+        (root / "250432_001.decimate.fnt").write_bytes(self.body)
+        self.config["visual_toolkit"]["fnt_tracer"].update(executable=str(exe), project_root=str(root))
+        before = {p.name for p in root.iterdir()}
+        plan = fnt_plan(self.config, "250432", "001.swc")
+        self.assertEqual(plan["project"], str(manual))
+        self.assertEqual(before, {p.name for p in root.iterdir()})
+        with patch("vispa.fnt.urllib.request.urlopen", side_effect=AssertionError("no HTTP")):
+            prepared = prepare_manual_project(self.config, plan)
+        bound = Path(prepared["project"])
+        self.assertNotEqual(bound, manual)
+        self.assertEqual(manual.read_bytes(), self.body)
+        self.assertEqual(bound.read_bytes().splitlines()[1], b"http://10.10.48.110/monkeydata/250432/catalog")
+        self.assertEqual(bound.read_bytes().splitlines()[2:], self.body.splitlines()[2:])
+        self.assertEqual(prepared["command"], [str(exe), str(bound)])
+        self.assertTrue(bound.with_suffix(".json").is_file())
+        self.assertEqual(prepare_manual_project(self.config, plan)["project"], str(bound))
+
+    def test_correct_manual_catalog_stays_direct_and_invalid_source_blocks(self):
+        root = Path(self.temp.name) / "projects"
+        root.mkdir()
+        exe = root / "fnt-tracer.exe"
+        exe.write_bytes(b"fixture")
+        manual = root / "250432_001.fnt"
+        correct = self.body.replace(b"NONE", b"http://10.10.48.110/monkeydata/250432/catalog", 1)
+        manual.write_bytes(correct)
+        self.config["visual_toolkit"]["fnt_tracer"].update(executable=str(exe), project_root=str(root))
+        plan = fnt_plan(self.config, "250432", "001.swc")
+        self.assertEqual(prepare_manual_project(self.config, plan), plan)
+        self.assertEqual({p.name for p in root.iterdir()}, {exe.name, manual.name})
+        manual.write_bytes(b"malformed")
+        with self.assertRaisesRegex(ValueError, "FNT header is invalid"):
+            prepare_manual_project(self.config, plan)
+        self.assertEqual(manual.read_bytes(), b"malformed")
+
+    def test_wrong_sample_manual_catalog_fails_without_copy(self):
+        root = Path(self.temp.name) / "projects"
+        root.mkdir()
+        exe = root / "fnt-tracer.exe"
+        exe.write_bytes(b"fixture")
+        manual = root / "250432_001.fnt"
+        wrong = self.body.replace(b"NONE", b"http://10.10.48.110/monkeydata/251637/catalog", 1)
+        manual.write_bytes(wrong)
+        self.config["visual_toolkit"]["fnt_tracer"].update(executable=str(exe), project_root=str(root))
+        plan = fnt_plan(self.config, "250432", "001.swc")
+        with self.assertRaisesRegex(ValueError, "different SampleID"):
+            prepare_manual_project(self.config, plan)
+        self.assertEqual(manual.read_bytes(), wrong)
+        self.assertFalse((Path(resolve_fnt_plan(self.config, "250432", "001")["bound_path"]).parent / "manual").exists())
 
     def test_exact_route_and_dry_run_have_no_side_effects(self):
         plan = resolve_fnt_plan(self.config, "250432", "001.swc")

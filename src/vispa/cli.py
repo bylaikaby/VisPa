@@ -1,7 +1,7 @@
 """Bounded command line for one local VisPa review render or montage.
 
-Version: 1.11.0.dev20 (local/unreleased)
-Last updated: 2026-10-26
+Version: 1.11.0.dev21 (local/unreleased)
+Last updated: 2026-10-27
 Change history: CHANGELOG.md
 """
 from __future__ import annotations

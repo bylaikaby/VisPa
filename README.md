@@ -1,7 +1,7 @@
 # VisPa — Visual Projectome Analysis tool
 
 VisPa reviews macaque neuron and microscopy data configured by the DEB lab.
-This checkout identifies as **1.11.0.dev20**, without a release tag. VisPa is a
+This checkout identifies as **1.11.0.dev21**, without a release tag. VisPa is a
 Python package inside a Conda environment. Launch the GUI directly from this
 checkout with `python run_vispa.py`.
 
@@ -222,7 +222,7 @@ New standalone run receipts, builds and candidate outputs live under `D:/VisPa/w
 
 VisPa includes a live per-sample IONData neuron list for the configured lab intranet and review panels for configured local microscopy resources. The live list is fetched from the neuron API; image cubes, raw SWCs, and microscopy files use separate configured hosts or shares. The package contains only server addresses and candidate sample-resource links, not source data, credentials, or local project tools. These links and checksums do not establish current share availability or scientific acceptance.
 
-This checkout is **1.11.0.dev20, without a release tag**. It preserves the
+This checkout is **1.11.0.dev21, without a release tag**. It preserves the
 existing rendering and source-verification algorithms while removing the
 retired `Visual_toolkit` compatibility namespace. The DS00 sagittal panel now
 shows one provisional soma-location marker without A/B raw-SWC traces; its
@@ -534,6 +534,8 @@ See [CHANGELOG.md](CHANGELOG.md) for the preserved toolkit history and extractio
 
 
 ### Single-neuron resource and FNT preflight
+
+At **fnt-tracer** launch, an explicit manual project remains first choice. If its catalog line differs from the configured sample catalog, VisPa makes a verified per-user cache copy with only that line changed; a compact JSON receipt records source and copy hashes and the catalog change. The manual file and tracing payload stay unchanged. Preflight does not write this copy. A malformed or wrong-sample project stops launch. Live ION cube access still depends on the external tracer and server. The older `D:/projectome_analysis/main_scripts/fnt/tools.py:swc_fnt_tracer` converted a raw SWC into a new FNT and rewrote its line 2. The old `main_scripts/fnt_tools.py` path became a compatibility shim when the module moved; a separate `update_fnt_names_in_directory` helper edits embedded neuron names, not cube binding.
 
 Run `python run_vispa.py config-check --config settings.yaml --sample 251637 --neuron 004.swc --dry-run` for a read-only JSON inventory (file hashes, source dates unknown as null, coordinate declarations, cache references and cube route/geometry). Add `--fnt` to require both a configured executable and an exact matching manual or native cached FNT project; this mode returns failure when either is unavailable and never starts the binary. The JSON also reports `project_ready` and `executable_ready` separately. Directory references are not recursively hashed; the inventory alone does not establish complete offline panel coverage or scientific acceptance.
 

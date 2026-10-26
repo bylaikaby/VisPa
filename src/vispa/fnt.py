@@ -1,7 +1,7 @@
 """Fetch one exact native FNT project into a reusable, verified local cache.
 
-Version: 1.11.0.dev11 (local/unreleased)
-Last updated: 2026-10-23
+Version: 1.11.0.dev21 (local/unreleased)
+Last updated: 2026-10-27
 Change history: ../../CHANGELOG.md
 Status: candidate
 """
@@ -179,6 +179,15 @@ def _bind_catalog(source: Path, destination: Path, desired: str, source_info: di
         info = _inspect(Path(temp_name), max_bytes)
         if info["catalog_url"] != desired or info["node_count"] != source_info["node_count"]:
             raise ValueError("bound FNT validation failed")
+        with source.open("rb") as original, Path(temp_name).open("rb") as bound:
+            original.readline(); original.readline()
+            bound.readline(); bound.readline()
+            while True:
+                source_chunk = original.read(1024 * 1024)
+                if source_chunk != bound.read(1024 * 1024):
+                    raise ValueError("bound FNT tracing payload differs; source preserved")
+                if not source_chunk:
+                    break
         if destination.exists():
             raise FileExistsError("bound FNT cache appeared during binding; existing file preserved")
         os.replace(temp_name, destination)
@@ -186,6 +195,58 @@ def _bind_catalog(source: Path, destination: Path, desired: str, source_info: di
     finally:
         if os.path.exists(temp_name):
             os.unlink(temp_name)
+
+
+def prepare_manual_project(config: dict, plan: dict) -> dict:
+    """At launch, bind an explicit project's catalog in a verified user-cache copy."""
+    project = Path(plan["project"])
+    root = (config.get("visual_toolkit") or {}).get("fnt_tracer", {}).get("project_root")
+    if not root or project.parent != Path(root) or not plan["ready"]:
+        return plan
+    native = resolve_fnt_plan(config, plan["sample"], plan["neuron"])
+    limit = native["max_response_bytes"]
+    source_info = _inspect(project, limit)
+    desired = native["catalog_url"]
+    if source_info["catalog_url"] == desired:
+        return plan
+    parts = urllib.parse.urlsplit(source_info["catalog_url"]).path.strip("/").split("/")
+    if (len(parts) == 3 and parts[0] in {"monkeydata", "data"}
+            and parts[2] == "catalog" and parts[1] != plan["sample"]):
+        raise ValueError("manual FNT catalog declares a different SampleID; source preserved")
+    identity = hashlib.sha256((str(project.resolve()) + source_info["sha256"]).encode("utf-8")).hexdigest()[:16]
+    bound = Path(native["bound_path"]).parent / "manual" / identity / (project.stem + ".catalog-bound.fnt")
+    bound.parent.mkdir(parents=True, exist_ok=True)
+    _bind_catalog(project, bound, desired, source_info, limit)
+    if _sha256(project) != source_info["sha256"]:
+        raise ValueError("manual FNT changed during preparation; source preserved")
+    bound_info = _inspect(bound, limit)
+    receipt = {"schema": "vispa.manual-fnt-binding.v1", "source_path": str(project),
+               "source_sha256": source_info["sha256"], "bound_path": str(bound),
+               "bound_sha256": bound_info["sha256"],
+               "original_catalog": source_info["catalog_url"], "bound_catalog": desired,
+               "tracing_payload_byte_identical": True}
+    receipt_path = bound.with_suffix(".json")
+    if receipt_path.exists():
+        if json.loads(receipt_path.read_text(encoding="utf-8")) != receipt:
+            raise ValueError("manual FNT binding receipt differs; files preserved for review")
+    else:
+        fd, temp_name = tempfile.mkstemp(prefix=f".{receipt_path.name}.", suffix=".part", dir=bound.parent)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as output:
+                json.dump(receipt, output, indent=2, sort_keys=True)
+                output.write("\n")
+                output.flush()
+                os.fsync(output.fileno())
+            if receipt_path.exists():
+                raise FileExistsError("manual FNT binding receipt appeared; preserved for review")
+            os.replace(temp_name, receipt_path)
+        finally:
+            if os.path.exists(temp_name):
+                os.unlink(temp_name)
+    prepared = dict(plan)
+    prepared["project"] = str(bound)
+    prepared["command"] = [str(plan["executable"]), str(bound)]
+    return prepared
 
 
 def ensure_fnt(config: dict, sample: str, neuron: str, dry_run: bool = False) -> dict:

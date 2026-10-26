@@ -1,10 +1,10 @@
 """
 vispa_gui.py - GUI for NeuroVis Visual Toolkit
 
-Version: 1.11.0.dev20 (local/unreleased)
-Last updated: 2026-10-26
+Version: 1.11.0.dev21 (local/unreleased)
+Last updated: 2026-10-27
 Change history: ../../CHANGELOG.md
-Status: candidate (visual review pending)
+Status: candidate (GUI layout reviewed; scientific review pending)
 
 DESCRIPTION:
     Tkinter review interface for standalone VisPa panels. It uses the
@@ -1360,6 +1360,8 @@ class NeuroVisGUI:
             messagebox.showerror("fnt-tracer", "\n".join(plan["errors"]) + "\nUse FNT setup… to configure paths.")
             return
         try:
+            from .fnt import prepare_manual_project
+            plan = prepare_manual_project(configuration, plan)
             subprocess.Popen(plan["command"], cwd=os.path.dirname(plan["executable"]))
         except Exception as exc:
             messagebox.showerror("fnt-tracer", f"Could not start fnt-tracer:\n{exc}")
