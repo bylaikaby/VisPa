@@ -1,7 +1,7 @@
 """Focused regression checks for the standalone extraction seams.
 
-Version: 1.11.0.dev18 (local/unreleased)
-Last updated: 2026-10-26
+Version: 1.11.0.dev25 (local/unreleased)
+Last updated: 2026-10-27
 Change history: ../CHANGELOG.md
 """
 import copy
@@ -851,7 +851,7 @@ class ConfigTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             from importlib.resources import files
-            raw = yaml.safe_load(files("vispa").joinpath("config_deb.yaml").read_text(encoding="utf-8"))
+            raw = yaml.safe_load(files("vispa").joinpath("configs", "config_deb.yaml").read_text(encoding="utf-8"))
             raw["defaults"]["ds00_root"] = str(root / "new-ds00")
             raw["defaults"]["resample_5um_root"] = str(root / "new-5um")
             path = root / "profile.yaml"
@@ -1230,9 +1230,15 @@ class MarkerLabelPresentationTests(unittest.TestCase):
             try:
                 result = tool._draw_target_marker(ax, 10, 20, label_mode=mode)
                 self.assertEqual(result['label_text'], expected)
-                self.assertEqual([text.get_text() for text in ax.texts], [expected] if expected else [])
+                self.assertEqual([text.get_text() for text in ax.texts if text.get_text()],
+                                 [expected] if expected else [])
                 self.assertEqual(tuple(ax.collections[0].get_offsets()[0]), (10, 20))
-                self.assertEqual(tuple(ax.lines[0].get_ydata()), (20, 20))
+                fig.canvas.draw()
+                center = ax.transData.transform((10, 20))
+                self.assertEqual(len(ax.patches), 0)
+                for arrow in ax.texts[:4]:
+                    self.assertEqual(tuple(arrow.xy), (10, 20))
+                    self.assertLess(max(abs(ax.transData.transform(arrow.xy) - center)), 1e-6)
             finally:
                 plt.close(fig)
         with self.assertRaisesRegex(ValueError, 'one of'):

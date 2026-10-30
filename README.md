@@ -1,11 +1,126 @@
 # VisPa — Visual Projectome Analysis tool
 
 VisPa reviews macaque neuron and microscopy data configured by the DEB lab.
-This checkout identifies as **1.11.0.dev21**, without a release tag. VisPa is a
+This checkout identifies as **1.12.0.dev1**, without a release tag. VisPa is a
 Python package inside a Conda environment. Launch the GUI directly from this
 checkout with `python run_vispa.py`.
 
 [Install](#install-on-windows) · [Update an existing environment](#update-an-existing-vispa-environment) · [Remove the environment](#remove-the-vispa-environment)
+
+## Code layout and responsibilities
+
+One configuration manager, one data input adaptor, and a shallow rendering folder:
+
+```text
+run_vispa.py                         checkout GUI shortcut
+src/vispa/
+├── config.py                        defaults, validation, settings editing and safe saves
+├── configs/config_deb.yaml           the single packaged profile
+├── data_input_adaptor.py             dataset, raw/processed SWC and ReMAP-table inputs
+├── reviewer.py                       interactive review and preview orchestration
+├── commands.py                       command routing; installed vispa command
+├── input_resource_check.py           availability checks, not image/anatomy acceptance
+├── fnt_tracer_launcher.py            native raw-SWC session preparation and tracer launch
+├── swc_terminal_candidates.py        opt-in terminal-table API
+├── renderers/
+│   ├── microscopy_panels.py          Soma, Context, Sagittal and TrioPlot
+│   ├── swc_brain_view.py             static and interactive mesh/SWC views
+│   └── brain_volume_montage.py       separate volume montage operator
+└── legacy_gl/                       preserved low-level graphics engine
+```
+
+Small former-name modules remain as compatibility aliases to the same module
+objects; they contain no second implementation or independent state. New code
+uses the names above. YAML/JSON stores values; `config.py` owns configuration
+behavior. Packaged defaults live in `configs/`; existing explicit user profiles,
+scientific data and cache locations are not moved.
+
+```mermaid
+flowchart TD
+  A[run_vispa.py or installed vispa] --> C[commands.py]
+  C --> G[reviewer.py]
+  C --> K[config.py]
+  G --> K
+  Y[configs/config_deb.yaml or explicit user profile] --> K
+  K --> D[data_input_adaptor.py]
+  I[Dataset manifests, raw and processed SWCs, ReMAP workbooks] --> D
+  D --> P[renderers/microscopy_panels.py]
+  K --> P
+  G --> P
+  P --> O[Soma, Context, Sagittal and TrioPlot]
+  D --> B[renderers/swc_brain_view.py]
+  K --> B
+  U[One manifest-bound CHARM/SARM region OBJ] --> B
+  B --> V[SWC Brain View and interactive window]
+  D --> F[fnt_tracer_launcher.py]
+  F --> N[Legacy swc_fnt_tracer: download, native conversion, catalog, launch]
+  C --> M[renderers/brain_volume_montage.py]
+  K --> M
+  M --> Q[Montage and provenance receipt]
+  D -. optional API .-> T[swc_terminal_candidates.py]
+  T -. planned .-> R[Terminal image review]
+```
+
+Solid arrows show implemented components; terminal image-review integration is
+planned. The adaptor reads declared ReMAP/legacy Step1 results; it does not run
+ReMAP analysis, choose the newest scientific source by modification time, or
+register outputs automatically. Native raw traces and atlas/processed traces
+remain separate inputs with declared frame, units and provenance.
+
+The GUI's **fnt-tracer** action calls the borrowed legacy `swc_fnt_tracer`
+and `swc2fnt` functions in `fnt_tracer_launcher.py`. They retain the legacy
+sequence: fetch the raw SWC, convert with `fnt-from-swc`, set its catalog,
+then start `fnt-tracer`. Configuration supplies paths and URLs; bounded
+requests and subprocess logs replace the legacy unbounded retries and waits.
+Files retain their source names (`004.swc`, `004.swc.fnt`); an existing
+NeuronView session keeps `251637-004-merge.fnt`. No coordinate transform or
+guessed viewer state is added. The separate `fnt-prepare` command below remains
+an explicit cached-input operator, rather than the GUI's launch path.
+
+Inspect one neuron without downloads or writes:
+
+```powershell
+python run_vispa.py inputs --config src/vispa/configs/config_deb.yaml --sample 251637 --neuron 004.swc --dry-run
+```
+
+Add `--inspect` for file hashes, or `--workbook PATH` to select a particular
+configured ReMAP table. Multiple matching workbooks require explicit selection.
+Frame/unit values remain unknown when source evidence is absent.
+
+Prepare a native FNT session from an explicitly declared raw SWC:
+
+```powershell
+python run_vispa.py fnt-prepare --config src/vispa/configs/config_deb.yaml --sample 251637 --neuron 004.swc --raw-path PATH_TO_RAW_SWC --dry-run
+```
+
+Remove `--dry-run` to run the bounded native converter into the configured cache.
+The raw SWC and converter hashes, catalog and output receipt are checked before
+reuse and launch. A manual analysis FNT is never substituted for the raw trace.
+The GUI reports a process start separately from visible cube/image verification.
+`fnt-fetch` remains an explicit legacy portal-download command.
+
+For the current local candidate, use this review order (details and request
+reconciliation are in `work/refactor_20261027/receipt.json`):
+
+1. Restart with `python run_vispa.py` from this checkout; confirm **1.12.0.dev1**.
+   Already open older windows retain their earlier code.
+2. Open **SWC Brain View** for `251637 / 004.swc`; expect the full mesh and trace
+   without the timestamp or worker-import error. The installed reference PNG is
+   `work/refactor_20261027/outputs_dev24/251637_004_SWC_Brain_View.png`.
+3. Run **fnt-tracer**; expect `004.swc.fnt`. The borrowed function's tested log
+   reports both cube sources ready and 9/9 progress. Compare actual soma and
+   trace placement with the legacy viewer; technical loading is not anatomical
+   acceptance. No guessed transform or saved-view settings are inserted.
+4. Review panel dimensions, markers and compact legends. Style preference and
+   scientific acceptance remain separate user decisions.
+
+Output settings resolve as fresh package defaults, active profile, then explicit
+action overrides. Single panels and TrioPlot use configured dimensions/DPI and
+the same marker/trace rules; all resolved review settings contribute to the GUI
+cache identity. Legacy gain 2.0/threshold 100, scientific source selection and
+coordinate mappings are retained. Synthetic style checks do not establish
+anatomical acceptance. See `work/refactor_20261027/receipt.json` in the working
+checkout for the current verification and review guide.
 
 The default `config_deb.yaml` starts at **251637 / 004.swc** and uses the shared
 server data and dependencies:
@@ -21,7 +136,7 @@ server data and dependencies:
 
 ## Terminal candidate table (opt-in Python API)
 
-`vispa.terminal_qc.terminal_table(raw_swc, processed_swc, atlas)` returns full-graph, non-root type-2 leaf candidates and raw-frame branch measurements. `processed_swc` and `atlas` are optional. When supplied, raw and processed nodes must have the same IDs, types and parent links; processed coordinates provide atlas labels at nominal 250 µm voxel scale. File inputs carry SHA-256 byte hashes in `input_provenance`; an in-memory tree has unknown source identity. The branch `sections_crossed` value uses a nominal 3 µm raw-sampling interval and is a candidate metric, not a validated physical section count. No GUI or command entry point calls this API yet.
+`vispa.swc_terminal_candidates.terminal_table(raw_swc, processed_swc, atlas)` returns full-graph, non-root type-2 leaf candidates and raw-frame branch measurements. `processed_swc` and `atlas` are optional. When supplied, raw and processed nodes must have the same IDs, types and parent links; processed coordinates provide atlas labels at nominal 250 µm voxel scale. File inputs carry SHA-256 byte hashes in `input_provenance`; an in-memory tree has unknown source identity. The branch `sections_crossed` value uses a nominal 3 µm raw-sampling interval and is a candidate metric, not a validated physical section count. No GUI or command entry point calls this API yet.
 
 ```mermaid
 flowchart LR
@@ -222,7 +337,7 @@ New standalone run receipts, builds and candidate outputs live under `D:/VisPa/w
 
 VisPa includes a live per-sample IONData neuron list for the configured lab intranet and review panels for configured local microscopy resources. The live list is fetched from the neuron API; image cubes, raw SWCs, and microscopy files use separate configured hosts or shares. The package contains only server addresses and candidate sample-resource links, not source data, credentials, or local project tools. These links and checksums do not establish current share availability or scientific acceptance.
 
-This checkout is **1.11.0.dev21, without a release tag**. It preserves the
+This checkout is **1.12.0.dev1, without a release tag**. It preserves the
 existing rendering and source-verification algorithms while removing the
 retired `Visual_toolkit` compatibility namespace. The DS00 sagittal panel now
 shows one provisional soma-location marker without A/B raw-SWC traces; its
@@ -262,11 +377,13 @@ The one-record operation accepts `--cache-dir`, `--output-dir`, and `--dpi` (100
 
 `python run_vispa.py montage` renders one explicitly named 3D NIfTI into the preserved five DS00 views. It does not discover cohorts, read workbooks, choose files, or apply a transform. The affine must yield LPS voxel axis codes, as in the source montage. NIfTI affines map voxel indices into RAS+ world coordinates; each panel labels increasing projected anatomical directions in RAS+ millimetres. The header must declare millimetres, or the operator must explicitly declare `--units mm` when the header units are unknown; known non-mm units are rejected. The output includes a compact intensity-image legend. The `[3d]` extra provides the montage dependencies.
 
+Each view covers the complete input NIfTI voxel-cell extent: all eight outer corners, including half-voxel margins, are projected through the input affine. Foreground intensity locates the projection origin but does not crop the field of view. The adjacent v2 receipt names each extent `projected_extent_centroid_relative_mm` and records its `projection_origin_ras_world_mm`; these offsets are not absolute world coordinates. The input determines the reference extent, so provide a full reference image when full reference coverage is required.
+
 ```powershell
 python run_vispa.py montage --input 'D:\data\sample.nii.gz' --output 'D:\review\sample-5view.png' --units mm --max-voxels 64000000 --set display_gamma=0.88 --dry-run
 ```
 
-Review the resolved header, affine, setting values, output path, and receipt path. Remove `--dry-run` to write a new PNG and adjacent JSON receipt. The command requires the explicit `--units mm` declaration, refuses existing outputs and input overwrite; it hashes the source before and after rendering and removes partial outputs if rendering fails. The default bound is 64 million voxels; `--max-voxels` can change that bound explicitly. `--set KEY=JSON_VALUE` is repeatable and only accepts the settings below. The Python mapping `vispa.volume_montage.SETTING_SPECS` also provides each parameter's default, effect, unit, and validated range.
+Review the resolved header, affine, setting values, output path, and receipt path. Remove `--dry-run` to write a new PNG and adjacent JSON receipt. The command requires the explicit `--units mm` declaration, refuses existing outputs and input overwrite; it hashes the source before and after rendering and removes partial outputs if rendering fails. The default bound is 64 million voxels; `--max-voxels` can change that bound explicitly. `--set KEY=JSON_VALUE` is repeatable and only accepts the settings below. The Python mapping `vispa.renderers.brain_volume_montage.SETTING_SPECS` also provides each parameter's default, effect, unit, and validated range.
 
 | Setting | Default | Unit / valid range | Effect |
 |---|---:|---|---|
@@ -278,12 +395,12 @@ Review the resolved header, affine, setting values, output path, and receipt pat
 | `intensity_high_percentile` | 99.3 | % / 0–100 | Upper display intensity percentile |
 | `minimum_intensity_span` | 1.0 | input intensity / >0 | Minimum separation of low/high values |
 | `blur_sigma_voxels` | `[0.45,0.45,0.95]` | voxels / 0–1000 each | Downsampled-volume Gaussian blur |
-| `foreground_threshold` | 0.08 | normalized / 0–1 | Foreground bound threshold |
+| `foreground_threshold` | 0.08 | normalized / 0–1 | Threshold for foreground samples locating projection origin |
 | `min_foreground_voxels` | 1000 | voxels / ≥1 | Minimum foreground count |
-| `max_foreground_points` | 300000 | points / ≥1 | Maximum geometry samples |
-| `view_extent_percentiles` | `[0.6,99.4]` | % / 0≤low<high≤100 | Projected image bounds |
-| `depth_percentiles` | `[0.3,99.7]` | % / 0≤low<high≤100 | Ray depth bounds |
-| `projection_padding_fraction` | 0.07 | fraction / 0–1 | Image-bound padding |
+| `max_foreground_points` | 300000 | points / ≥1 | Maximum samples locating projection origin |
+| `view_extent_percentiles` | `[0.6,99.4]` | % / 0≤low<high≤100 | Legacy direct `composite_view` bounds only; no montage FOV effect |
+| `depth_percentiles` | `[0.3,99.7]` | % / 0≤low<high≤100 | Legacy direct `composite_view` depth only; no montage FOV effect |
+| `projection_padding_fraction` | 0.07 | fraction / 0–1 | Legacy direct `composite_view` padding only; no montage FOV effect |
 | `minimum_extent_mm` | 5.0 | mm / >0 | Minimum accepted view extent |
 | `projection_bin_mm` | 0.36 | mm/pixel / >0 | Projected sampling interval |
 | `horizontal_bins_px` | `[150,260]` | pixels / 1–4096 each | Output width bounds |
@@ -300,7 +417,7 @@ Review the resolved header, affine, setting values, output path, and receipt pat
 | `green_channel_scale` | 0.985 | fraction / 0–1 | Green-channel display tint |
 | `blue_channel_scale` | 0.94 | fraction / 0–1 | Blue-channel display tint |
 
-These are display settings inherited from the project montage. They do not change anatomy or establish registration or scientific acceptance.
+These are display settings inherited from the project montage. The three legacy extent settings remain accepted for configuration compatibility, but the full-volume montage ignores them. They do not change anatomy or establish registration or scientific acceptance.
 
 `environment.yml` installs the optional 3D dependencies in the Conda runtime. The legacy OpenGL viewer requires a local OBJ mesh, an explicit sample ID and processed
 SWC filename, and explicit coordinate-frame and coordinate-unit declarations in
@@ -312,16 +429,39 @@ before launching a window:
 python run_vispa.py brain-view --sample 251637 --neuron 004.swc --config 'C:\data\vispa_config.yaml' --dry-run
 ```
 
+The GUI uses the current portal soma-region field only when it resolves to one
+exact acronym in `sources.brain_view.region_mesh_root`; for example `PrCO_49`
+may select the unique `PrCO` OBJ. The legend then identifies **Bilateral soma
+region · PrCO**. Missing or ambiguous mappings remain root-plus-SWC and are
+reported as **Soma region unavailable**. There is no GUI region picker. CLI
+review may explicitly request one exact filename, display name or acronym:
+
+```powershell
+python run_vispa.py brain-view --sample 251637 --neuron 004.swc --region PrCO --dry-run
+```
+
+The selected OBJ must match `region_mesh_manifest.json` by filename, byte count
+and SHA-256. Only one region is loaded; the camera continues to use the complete
+NMT root mesh bounds.
+
+The orange trace role is **Processed neuron SWC**. High-value controls are
+public rather than hidden in renderer constants: use named CLI flags for quick
+tuning, `--set KEY=VALUE` for the complete validated settings surface,
+`vispa settings --scope brain-view` for discovery, and `camera_overrides` plus
+`region` in bounded batch jobs. Dry-run plans and receipts show resolved values.
+
 Remove `--dry-run` for an interactive review, or add `--snapshot 'D:\review\view.png'`
 for one bounded PNG plus adjacent JSON receipt. Existing outputs are never overwritten.
 The receipt records source hashes, frame/units as declared, camera/clipping settings,
 worker/runtime and renderer hash. The initial pose uses a numeric oblique display vector;
 it does not assert anatomical orientation. The renderer centers the stored mesh and SWC
-together without changing their coordinates. To tune the display, set `sources.brain_view.settings`
+together without changing their coordinates. The processed SWC's single declared
+`parent=-1` root is shown as the distinct cyan **Soma** sphere; its stored coordinate,
+color and radius are recorded without inferring anatomy or applying a transform. To tune the display, set `sources.brain_view.settings`
 keys `eye_direction`, `up`, `camera_distance_scale`, `line_width`, `soma_radius`,
-`background`, `mesh_color`, `neuron_color`, and `window_size`, or pass the matching
+`background`, `mesh_color`, `neuron_color`, `soma_color`, and `window_size`, or pass the matching
 `--eye-direction`, `--up`, `--camera-distance-scale`, `--line-width`, `--soma-radius`,
-`--background`, `--mesh-color`, `--neuron-color`, and `--window-size` flags. The core
+`--background`, `--mesh-color`, `--neuron-color`, `--soma-color`, and `--window-size` flags. The core
 package remains installable without the `[3d]` OpenGL dependencies.
 
 | Setting / CLI flag | Default | Effect | Valid range |
@@ -330,10 +470,11 @@ package remains installable without the `[3d]` OpenGL dependencies.
 | `up` / `--up X Y Z` | `[0, 0, 1]` | Initial camera up direction | Three finite values; nonzero and not parallel to `eye_direction` |
 | `camera_distance_scale` / `--camera-distance-scale` | `0.40` | Scales the bounds-fit distance (`scale × √3 × mesh diagonal`) | Positive finite number |
 | `line_width` / `--line-width` | `2.0` | Processed-neuron line width | Positive finite number |
-| `soma_radius` / `--soma-radius` | `200.0` | Processed-neuron soma display radius | Positive finite number |
+| `soma_radius` / `--soma-radius` | `500.0` | Display-only processed-SWC root marker radius; not biological soma size | Positive finite number |
 | `background` / `--background R G B` | `[0, 0, 0]` | Window background color | Each RGB component in `[0, 1]` |
 | `mesh_color` / `--mesh-color R G B` | `[0.8, 0.8, 0.8]` | Brain-mesh display color | Each RGB component in `[0, 1]` |
 | `neuron_color` / `--neuron-color R G B` | `[1, 0.5, 0]` | Processed-neuron display color | Each RGB component in `[0, 1]` |
+| `soma_color` / `--soma-color R G B` | `[0, 1, 1]` | Distinct processed-SWC root/soma marker color | Each RGB component in `[0, 1]` |
 | `window_size` / `--window-size WIDTH HEIGHT` | `[1100, 800]` | Initial viewer dimensions in pixels | Two integers, each at least 100 |
 
 ## Explicit brain-view batches (local dev13 candidate)
@@ -356,9 +497,41 @@ python -m batch.render_brain_views --jobs work/jobs/filled-local-jobs.json --out
 python -m batch.render_brain_views --jobs work/jobs/filled-local-jobs.json --output-root work/results/brain-view-batch-new-run --limit 1
 ```
 
-`--limit N` selects N sorted jobs. Full execution requires both `allow_all: true` in jobs JSON and `--all`; outputs require a fresh root. Job groups expose `sample_id`, `region_id`, existing `mesh_path` (OBJ), `mesh_label` (1–18 printable characters), exact `neuron_ids`, matching `coordinate_frame` and `coordinate_units`, optional `portal_region`, and `camera_overrides` using the brain-view setting names and valid ranges above. The single-view CLI also accepts `--mesh-path` and `--mesh-label`; when absent, the configured whole-brain mesh and its legend remain the defaults. The prior local pilot used a pre-existing whole-brain OBJ and processed SWC; its privately stored PNG verifies technical rendering and legend readability only. Region OBJ overlay/framing and anatomical acceptance remain unverified. The canonical VisPa or ReMAP environments were not changed by the disposable shared Python 3.10 validation.
+`--limit N` selects N sorted jobs. Full execution requires both `allow_all: true` in jobs JSON and `--all`; outputs require a fresh root. Job groups expose `sample_id`, stable output-group `region_id`, existing `mesh_path` (OBJ), `mesh_label` (1–18 printable characters), exact `neuron_ids`, matching `coordinate_frame` and `coordinate_units`, optional exact `region`, optional `portal_region`, and `camera_overrides` using the brain-view setting names and valid ranges above. The single-view CLI also accepts `--mesh-path`, `--mesh-label` and `--region`; when absent, the configured whole-brain mesh and its legend remain the defaults. In overlay mode, the selected region is hash-bound and the full root mesh still defines camera extent. The prior pilot and current bounded region snapshot establish technical rendering and legend readability only; anatomical acceptance remains unverified.
 
 ## Shared settings interface
+
+Saved tuning uses one configuration file and one clear precedence order:
+
+```mermaid
+flowchart LR
+  D[Packaged DEB YAML defaults] --> S[Saved visual_toolkit.settings in selected config]
+  S --> R[Resolved run settings]
+  O[One-run --set / explicit flags] --> R
+  R --> P[GUI, CLI and batch renderers]
+```
+
+Use `tuning show` to compare effective saved values with the packaged DEB
+defaults. `tuning set` and `tuning reset` are read-only previews unless
+`--write` is explicitly supplied; writes reuse the validated atomic config
+save, stale-file rejection and timestamped backup. They do not create a second
+tuning file. One-run `--set` values remain nonpersistent.
+
+```powershell
+python run_vispa.py tuning show --config C:\data\vispa_config.yaml --scope all
+python run_vispa.py tuning set --config C:\data\vispa_config.yaml --scope brain-view --set soma_radius=240 --set 'soma_color=[0,1,1]'
+python run_vispa.py tuning set --config C:\data\vispa_config.yaml --scope brain-view --set soma_radius=240 --set 'soma_color=[0,1,1]' --write
+python run_vispa.py tuning reset --config C:\data\vispa_config.yaml --scope brain-view --key soma_radius --write
+python run_vispa.py tuning reset --config C:\data\vispa_config.yaml --scope brain-view --write
+python run_vispa.py tuning reset --config C:\data\vispa_config.yaml --scope all --write
+```
+
+The Python API is `tuning_status(config, scope="all")` and
+`update_tuning(config, scope, overrides, reset_key=..., reset_scope=...,
+reset_all=..., dry_run=True)`. An unchanged file remains byte-identical. YAML
+writes retain all configuration values but may normalize formatting/comments;
+the preview reports whether comments can be retained, and every replacement
+keeps a byte-for-byte backup.
 
 `vispa settings` retains the review-only JSON schema by default. Use
 `vispa settings --scope review|brain-view|montage|all` to discover the
@@ -507,7 +680,7 @@ heterogeneous or irregular-pitch grid mapping.
 
 The GUI's **Neuron list** uses `sources.neuron_catalog.mode: live-iondata` in the packaged profile and queries `http://10.10.48.110/neuronbrowser/api/user/selectNeurons?id=<sample-id>` with a bounded timeout and response size. It validates the JSON rows and keeps exact `sampleid` and `name` values, including leading zeroes and sample suffixes. The display has two columns, **SWC ID** and **Portal region**; provenance shows whether the list came from live IONData or a dated CSV, its row count, fetch time or source date, URL or file path, and SHA-256. To add a dated snapshot alongside live mode, set `sources.neuron_catalog.snapshot_path`; in a CSV-mode profile, `sources.neuron_catalog.path` selects the CSV. If both sources are available, choose explicitly in the GUI. On existing CSV-only profiles, Live IONData is an explicit option and uses the configured host or the intranet default; the current CSV remains the default. No source is silently substituted. For a bounded backend check, run `python run_vispa.py config-check --catalog --sample 250432 --catalog-source live-iondata --dry-run` to inspect the resolved endpoint without fetching, or omit `--dry-run` to fetch just that sample's catalog and report its count and provenance. `vispa.sources.list_neurons(sample_id, config=None, source=None)` supports `live-iondata` and `csv` with the same explicit-source behavior.
 
-The optional **SWC Brain View interactive** action uses `sources.brain_view.mesh_path` and `processed_swc_root`, with declared `coordinate_frame` / `coordinate_units` and optional `settings`; `visual_toolkit.worker_python` selects its isolated worker when set. A generic config does not receive default anatomical frame or unit declarations: the worker preflight requires explicit values when 3D view is requested. The default projectome config points to the preserved root.obj and processed-SWC tree and declares their current stored convention. The handoff passes the exact current sample and neuron ID plus the portal snapshot's region when available. It never substitutes a raw SWC or downloads a model. The GUI starts the worker in a separate process, leaving the host Python imports isolated.
+The optional **SWC Brain View interactive** action uses `sources.brain_view.mesh_path`, `processed_swc_root`, and the optional manifest-bound `region_mesh_root`, with declared `coordinate_frame` / `coordinate_units` and optional `settings`; `visual_toolkit.worker_python` selects its isolated worker when set. A generic config does not receive default anatomical frame or unit declarations: the worker preflight requires explicit values when 3D view is requested. The default projectome config points to the preserved root.obj, processed-SWC tree and copied legacy CHARM/SARM OBJ dependency folder and declares their current stored convention. The handoff passes the exact current sample and neuron ID plus the portal snapshot's soma region when available. A unique acronym match adds one bilateral region overlay; no match or ambiguity remains root-only and is recorded rather than guessed. It never substitutes a raw SWC or downloads a model. The GUI starts the worker in a separate process, leaving the host Python imports isolated.
 
 `vispa.sources.IONData()` reads the configured local SWC cache first. A project can register a fallback implementing `getRawNeuronTreeByID(sample_id, neuron_id)` using `set_iondata_provider_factory(factory)`. Without a registered factory, setting `sources.http_host` and `sources.raw_swc_base` enables the built-in portal fetch: it reads the sample's `project_id` from the portal and downloads `<project>/<sample>/swc_raw/<neuron>` into `sources.legacy_raw_swc_root`. The returned tree protocol exposes `root.x/y/z`, `root.xyz`, `points`, and iterable `edges` whose `.data` contains points with `.x/y/z` attributes. The local parser rejects malformed, disconnected, cyclic, and missing-parent trees.
 
@@ -545,7 +718,7 @@ Combined review figures derive text wrapping, legend/footer height and labeled-a
 
 Soma inline-label presentation: `--set marker.label_mode=none` (default, role legend only), `short` (S), or `numbered` (1 with a thin leader). Cyan box/cross coordinates are identical in all modes. Existing label font size and offset remain tunable; `vispa settings --scope review` lists the enum and effects.
 
-GUI Render now uses the same combined legend layout as the bounded runner. Soma/Context use explicit crop-pixel index axes, all standalone PNG tabs carry role legends outside the image, and GUI cache keys include gui.py/toolkit.py hashes so local code changes invalidate earlier figure strips even when the package version stays unchanged.
+GUI Render now uses the same combined legend layout as the bounded runner. Soma/Context use explicit crop-pixel index axes, all standalone PNG tabs carry role legends outside the image, and GUI cache keys include reviewer.py/microscopy_panels.py hashes so local code changes invalidate earlier figure strips even when the package version stays unchanged.
 
 ## Python import boundary
 

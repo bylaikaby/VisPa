@@ -1,7 +1,7 @@
 """CLI contract tests for bounded standalone use.
 
-Version: 1.11.0.dev15 (local/unreleased)
-Last updated: 2026-10-26
+Version: 1.11.0.dev25 (local/unreleased)
+Last updated: 2026-10-27
 Change history: ../CHANGELOG.md
 """
 from __future__ import annotations
@@ -178,6 +178,38 @@ assert main(["settings", "--scope", "all"]) == 0
                                      text=True, capture_output=True)
             self.assertEqual(guarded.returncode, 0, guarded.stderr)
             self.assertEqual(set(json.loads(guarded.stdout)["scopes"]), {"review", "brain-view", "montage"})
+
+    def test_tuning_cli_previews_then_writes_and_reports_packaged_difference(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            config = root / "vispa.json"
+            config.write_text(json.dumps({
+                "version": 1, "samples": {}, "sources": {},
+                "visual_toolkit": {"settings": {}},
+            }), encoding="utf-8")
+            before = config.read_bytes()
+            preview = run_cli("tuning", "set", "--config", config,
+                              "--scope", "brain-view", "--set", "soma_radius=333",
+                              cwd=root)
+            self.assertEqual(preview.returncode, 0, preview.stderr)
+            self.assertTrue(json.loads(preview.stdout)["dry_run"])
+            self.assertEqual(config.read_bytes(), before)
+            written = run_cli("tuning", "set", "--config", config,
+                              "--scope", "brain-view", "--set", "soma_radius=333",
+                              "--write", cwd=root)
+            self.assertEqual(written.returncode, 0, written.stderr)
+            self.assertFalse(json.loads(written.stdout)["dry_run"])
+            shown = run_cli("tuning", "show", "--config", config,
+                            "--scope", "brain-view", cwd=root)
+            self.assertEqual(shown.returncode, 0, shown.stderr)
+            self.assertEqual(json.loads(shown.stdout)["differences"]["brain-view"]
+                             ["soma_radius"]["saved"], 333.0)
+            reset = run_cli("tuning", "reset", "--config", config,
+                            "--scope", "brain-view", "--key", "soma_radius",
+                            "--write", cwd=root)
+            self.assertEqual(reset.returncode, 0, reset.stderr)
+            self.assertNotIn("soma_radius", json.loads(reset.stdout)["status"]
+                             ["differences"]["brain-view"])
 
     def test_settings_command_reports_invalid_config_as_cli_error(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -379,7 +411,7 @@ assert main(["settings", "--scope", "all"]) == 0
 
 class FNTResourcePreflightTests(unittest.TestCase):
     def test_requires_matching_project_and_never_starts_binary(self):
-        from vispa.cli import fnt_plan
+        from vispa.cli import legacy_fnt_plan as fnt_plan
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             exe = root / 'fnt-tracer.exe'

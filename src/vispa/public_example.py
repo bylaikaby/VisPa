@@ -1,7 +1,7 @@
 """Download and render one explicitly public SWC morphology example.
 
-Version: 1.11.0.dev11 (local/unreleased)
-Last updated: 2026-10-23
+Version: 1.11.0.dev25 (local/unreleased)
+Last updated: 2026-10-27
 Change history: ../../CHANGELOG.md
 Status: candidate (public source frame and units are unspecified)
 """
@@ -52,12 +52,12 @@ def _renderer_code_sha256() -> str:
 def _configuration(config=None) -> dict:
     if isinstance(config, dict):
         return config
-    from .dataset_config import load
+    from .config import load
     return load(config)
 
 
 def _source(config: dict) -> dict:
-    from .dataset_config import validate_public_example_source
+    from .config import validate_public_example_source
     configured = (config.get("sources") or {}).get("public_example") or {}
     if not isinstance(configured, dict):
         raise ValueError("sources.public_example must be a mapping")

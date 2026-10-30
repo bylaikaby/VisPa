@@ -1,7 +1,7 @@
 """Render explicit one-mesh/one-neuron VisPa snapshots in deterministic order.
 
-Version: 1.11.0.dev14 (local/unreleased)
-Last updated: 2026-10-26
+Version: 1.11.0.dev25 (local/unreleased)
+Last updated: 2026-10-27
 Change history: ../CHANGELOG.md
 Status: candidate
 
@@ -16,7 +16,7 @@ import json
 from pathlib import Path
 import re
 
-from vispa.opengl import plan_configured_view, render_configured_snapshot
+from vispa.renderers.swc_brain_view import plan_configured_view, render_configured_snapshot
 
 
 def _sha256(path: Path) -> str:
@@ -59,6 +59,11 @@ def load_jobs(jobs_path: Path, output_root: Path, limit: int | None, all_jobs: b
             raise ValueError(
                 "mesh_label must be 1-18 printable ASCII characters; "
                 "set it explicitly when region_id is longer than 18 characters")
+        region_selection = group.get("region")
+        if (region_selection is not None and
+                (not isinstance(region_selection, str) or not region_selection.strip() or
+                 len(region_selection) > 160 or any(ord(character) < 32 for character in region_selection))):
+            raise ValueError("region must be a non-empty exact filename, display name or acronym")
         if not isinstance(group.get("coordinate_frame"), str) or not group["coordinate_frame"].strip():
             raise ValueError("coordinate_frame must be declared per group")
         if not isinstance(group.get("coordinate_units"), str) or not group["coordinate_units"].strip():
@@ -73,6 +78,7 @@ def load_jobs(jobs_path: Path, output_root: Path, limit: int | None, all_jobs: b
                             "mesh_label": label.strip(), "neuron_id": neuron,
                             "coordinate_frame": group["coordinate_frame"].strip(),
                             "coordinate_units": group["coordinate_units"].strip(),
+                            "region": region_selection.strip() if region_selection is not None else None,
                             "portal_region": group.get("portal_region", ""),
                             "camera_overrides": group.get("camera_overrides", {})})
     entries.sort(key=lambda e: (e["sample_id"], e["region_id"], e["neuron_id"]))
@@ -92,7 +98,8 @@ def load_jobs(jobs_path: Path, output_root: Path, limit: int | None, all_jobs: b
         plan = plan_configured_view(entry["sample_id"], entry["neuron_id"],
                                     entry["portal_region"], config,
                                     overrides=entry["camera_overrides"], snapshot=output,
-                                    mesh_path=entry["mesh_path"], mesh_label=entry["mesh_label"])
+                                    mesh_path=entry["mesh_path"], mesh_label=entry["mesh_label"],
+                                    region=entry["region"])
         if (plan["coordinate_frame"] != entry["coordinate_frame"] or
             plan["coordinate_units"] != entry["coordinate_units"]):
             raise ValueError("Job mesh/SWC frame and units must exactly match configured processed SWC")
@@ -118,11 +125,14 @@ def run_batch(plan: dict, *, dry_run: bool) -> dict:
                 entry["sample_id"], entry["neuron_id"], snapshot,
                 entry["portal_region"], plan["vispa_config"],
                 mesh_path=entry["mesh_path"], mesh_label=entry["mesh_label"],
+                region=entry["region"],
                 overrides=entry["camera_overrides"])
             if (receipt.get("status") != "rendered_candidate" or
                 receipt.get("output_png_sha256") != _sha256(snapshot) or
                 receipt.get("settings") != entry["preflight"]["settings"] or
                 receipt.get("mesh", {}).get("sha256") != entry["preflight"]["mesh"]["sha256"] or
+                (receipt.get("region_mesh") or {}).get("sha256") !=
+                    (entry["preflight"].get("region_mesh") or {}).get("sha256") or
                 receipt.get("processed_swc", {}).get("sha256") != entry["preflight"]["processed_swc"]["sha256"]):
                 raise RuntimeError(f"Snapshot receipt/hash mismatch: {snapshot}")
             result["completed"].append({"sample_id": entry["sample_id"],

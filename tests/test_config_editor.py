@@ -1,20 +1,151 @@
 """Focused lossless common-settings checks.
 
-Version: 1.11.0.dev17 (local/unreleased)
-Last updated: 2026-10-26
+Version: 1.11.0.dev25 (local/unreleased)
+Last updated: 2026-10-27
 Change history: ../CHANGELOG.md
 """
 import unittest
 import tempfile
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
 from vispa.config_editor import FIELDS, apply_fields, field_value
+from vispa.config import save_config, tuning_status, update_tuning
 from vispa._version import __version__
 
 
 class ConfigEditorTests(unittest.TestCase):
+    def test_tuning_preview_persist_diff_and_reset_share_one_config(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "vispa.json"
+            path.write_text(json.dumps({
+                "version": 1, "samples": {}, "sources": {},
+                "visual_toolkit": {"settings": {}},
+            }, indent=2) + "\n", encoding="utf-8")
+            original = path.read_bytes()
+            preview = update_tuning(
+                path, "brain-view", ["soma_radius=321", "soma_color=[0.1,0.2,0.3]"])
+            self.assertTrue(preview["dry_run"])
+            self.assertTrue(preview["changed"])
+            self.assertEqual(path.read_bytes(), original)
+            written = update_tuning(
+                path, "brain-view", ["soma_radius=321", "soma_color=[0.1,0.2,0.3]"],
+                dry_run=False)
+            self.assertFalse(written["dry_run"])
+            self.assertTrue(Path(written["backup"]).is_file())
+            status = tuning_status(path, "brain-view")
+            self.assertEqual(status["differences"]["brain-view"]["soma_radius"]["saved"], 321.0)
+            self.assertEqual(status["differences"]["brain-view"]["soma_color"]["saved"],
+                             [0.1, 0.2, 0.3])
+            reset = update_tuning(
+                path, "brain-view", reset_key="soma_radius", dry_run=False)
+            self.assertEqual(reset["operation"], "reset_key")
+            self.assertNotIn("soma_radius",
+                             tuning_status(path, "brain-view")["differences"]["brain-view"])
+            self.assertIn("soma_color",
+                          tuning_status(path, "brain-view")["differences"]["brain-view"])
+            update_tuning(path, "all", reset_all=True, dry_run=False)
+            self.assertEqual(tuning_status(path)["different"], 0)
+            baseline_bytes = path.read_bytes()
+            noop = update_tuning(path, "all", reset_all=True)
+            self.assertFalse(noop["changed"])
+            self.assertTrue(noop["comments_preserved"])
+            self.assertEqual(path.read_bytes(), baseline_bytes)
+
+    def test_tuning_rejects_unknown_key_before_write(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "vispa.json"
+            path.write_text('{"version":1,"samples":{},"sources":{},"visual_toolkit":{"settings":{}}}\n',
+                            encoding="utf-8")
+            before = path.read_bytes()
+            with self.assertRaises((KeyError, ValueError)):
+                update_tuning(path, "brain-view", ["mystery=1"], dry_run=False)
+            self.assertEqual(path.read_bytes(), before)
+
+    def test_save_config_protection_noop_and_backup(self):
+        import hashlib
+
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            protected = root / 'vispa_config.default.yaml'
+            with self.assertRaisesRegex(ValueError, 'read-only'):
+                save_config(protected, 'version: 1\n')
+            path = root / 'active.yaml'
+            original = b'version: 1\n'
+            path.write_bytes(original)
+            digest = hashlib.sha256(original).hexdigest()
+            self.assertEqual(save_config(path, original.decode(), digest),
+                             {'changed': False, 'backup': None})
+            self.assertFalse((root / 'config_backups').exists())
+            changed = save_config(path, 'version: 1\nvisual_toolkit: {}\n', digest)
+            self.assertTrue(changed['changed'])
+            self.assertEqual(changed['backup'].read_bytes(), original)
+            self.assertEqual(path.read_text(encoding='utf-8'),
+                             'version: 1\nvisual_toolkit: {}\n')
+            with self.assertRaisesRegex(ValueError, 'changed outside'):
+                save_config(path, 'version: 1\n', digest)
+
+    def test_save_config_backup_failure_and_concurrent_edit_preserve_source(self):
+        from vispa import config
+
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'active.yaml'
+            path.write_text('version: 1\n', encoding='utf-8')
+            with mock.patch('vispa.config.Path.mkdir', side_effect=OSError('backup unavailable')):
+                with self.assertRaisesRegex(OSError, 'backup unavailable'):
+                    save_config(path, 'version: 1\nvisual_toolkit: {}\n')
+            self.assertEqual(path.read_text(encoding='utf-8'), 'version: 1\n')
+            original_load = config.load
+
+            def external_edit(temporary):
+                path.write_text('version: 1\n# external\n', encoding='utf-8')
+                return original_load(temporary)
+
+            with mock.patch('vispa.config.load', side_effect=external_edit):
+                with self.assertRaisesRegex(ValueError, 'changed outside'):
+                    save_config(path, 'version: 1\nvisual_toolkit: {}\n')
+            self.assertEqual(path.read_text(encoding='utf-8'),
+                             'version: 1\n# external\n')
+            self.assertEqual(list((Path(folder) / 'config_backups').glob('*')), [])
+
+    def test_config_resolution_starts_from_package_defaults(self):
+        from vispa import config
+
+        before = config.review_settings_snapshot()
+        try:
+            config.apply_setting_overrides({'marker.color': '#123456'})
+            current = config.resolve_settings('review')
+            fresh = config.resolve_settings('review', config={
+                'visual_toolkit': {'settings': {}}})
+            self.assertEqual(current['marker']['color'], '#123456')
+            self.assertEqual(fresh['marker']['color'], '#00e5ee')
+        finally:
+            config.REVIEW_SETTINGS.clear()
+            config.REVIEW_SETTINGS.update(before)
+            config._sync_review_setting_constants()
+
+    def test_applying_new_profile_clears_previous_review_values(self):
+        from vispa import config
+
+        before = config.review_settings_snapshot()
+        try:
+            profile_a = {'visual_toolkit': {'settings': {
+                'review': {'marker.color': '#123456', 'figure.panel_dpi': 150}}}}
+            profile_b = {'visual_toolkit': {'settings': {}}}
+            config.apply_settings('review', {}, config=profile_a)
+            self.assertEqual(config.REVIEW_SETTINGS['marker']['color'], '#123456')
+            changed = config.apply_settings('review', {}, config=profile_b)
+            self.assertEqual(config.REVIEW_SETTINGS['marker']['color'], '#00e5ee')
+            self.assertEqual(config.REVIEW_SETTINGS['figure']['panel_dpi'], 600)
+            self.assertEqual(changed['marker.color'], '#00e5ee')
+            self.assertEqual(changed['figure.panel_dpi'], 600)
+        finally:
+            config.REVIEW_SETTINGS.clear()
+            config.REVIEW_SETTINGS.update(before)
+            config._sync_review_setting_constants()
+
     def test_central_source_routes_are_exposed_without_fixed_hosts(self):
         paths = {key for _, key, _, _ in FIELDS}
         self.assertTrue({
@@ -185,7 +316,7 @@ class SettingsWindowTests(unittest.TestCase):
             work.mkdir(exist_ok=True)
             with tempfile.TemporaryDirectory(dir=work) as folder:
                 path = Path(folder) / 'vispa_config.yaml'
-                source = Path(__file__).parents[1] / 'src' / 'vispa' / 'config_deb.yaml'
+                source = Path(__file__).parents[1] / 'src' / 'vispa' / 'configs' / 'config_deb.yaml'
                 path.write_bytes(source.read_bytes())
                 gui = NeuroVisGUI.__new__(NeuroVisGUI)
                 gui.root, gui.config_path = root, str(path)
@@ -322,7 +453,7 @@ class SettingsWindowTests(unittest.TestCase):
             work.mkdir(exist_ok=True)
             with tempfile.TemporaryDirectory(dir=work) as folder:
                 path = Path(folder) / 'vispa_config.yaml'
-                source = Path(__file__).parents[1] / 'src' / 'vispa' / 'config_deb.yaml'
+                source = Path(__file__).parents[1] / 'src' / 'vispa' / 'configs' / 'config_deb.yaml'
                 original = source.read_bytes()
                 path.write_bytes(original)
                 gui = NeuroVisGUI.__new__(NeuroVisGUI)
@@ -406,7 +537,7 @@ class SettingsWindowTests(unittest.TestCase):
 
                 before_failed_save = path.read_bytes()
                 raw.insert('end', '\n# attempted edit')
-                with (mock.patch('vispa.gui.os.makedirs', side_effect=OSError('backup unavailable')),
+                with (mock.patch('vispa.config.Path.mkdir', side_effect=OSError('backup unavailable')),
                       mock.patch('vispa.gui.messagebox.showerror') as show_error):
                     buttons['Save settings'].invoke()
                 self.assertEqual(path.read_bytes(), before_failed_save)

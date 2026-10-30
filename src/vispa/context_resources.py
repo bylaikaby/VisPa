@@ -1,7 +1,7 @@
 """Admission budgets and dated failures for sequential native context batches.
 
-Version: 1.11.0.dev11 (local/unreleased)
-Last updated: 2026-10-23
+Version: 1.11.0.dev25 (local/unreleased)
+Last updated: 2026-10-27
 Change history: ../../CHANGELOG.md
 """
 from pathlib import Path
@@ -12,7 +12,7 @@ import time
 
 import numpy as np
 
-from .toolkit import MAX_HTTP_BLOCK_BYTES, HTTP_ATTEMPTS, _read_highres_cube
+from .renderers.microscopy_panels import MAX_HTTP_BLOCK_BYTES, HTTP_ATTEMPTS, _read_highres_cube
 
 
 def atomic_json(path, value):

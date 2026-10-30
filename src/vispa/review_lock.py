@@ -1,35 +1,10 @@
-"""Shared OS ownership for regional production and candidate manifest replacement.
+"""Compatibility alias for the VisPa batch run lock.
 
-Version: 1.11.0.dev11 (local/unreleased)
-Last updated: 2026-10-23
+Version: 1.11.0.dev25 (local/unreleased)
+Last updated: 2026-10-27
 Change history: ../../CHANGELOG.md
 """
-from contextlib import contextmanager
-import os
-from pathlib import Path
+import sys
+from . import batch_run_lock as _implementation
 
-
-@contextmanager
-def exclusive_batch(path):
-    """A retained lock file is harmless; a live OS lock prevents concurrent writes."""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a+b") as stream:
-        if stream.tell() == 0:
-            stream.write(b"0")
-            stream.flush()
-        stream.seek(0)
-        if os.name == "nt":
-            import msvcrt
-            msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
-        else:
-            import fcntl
-            fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        try:
-            yield
-        finally:
-            stream.seek(0)
-            if os.name == "nt":
-                msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
-            else:
-                fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+sys.modules[__name__] = _implementation

@@ -1,10 +1,11 @@
-# Version: 1.11.0.dev16 (local/unreleased)
-# Last updated: 2026-10-26
+# Version: 1.11.0.dev24 (local/unreleased)
+# Last updated: 2026-10-27
 # Change history: ../../CHANGELOG.md
 name: Windows Conda Python-only check
 on:
   push:
     branches: [main, simplified, 'codex/**']
+  pull_request:
   workflow_dispatch:
 permissions:
   contents: read
@@ -28,10 +29,19 @@ jobs:
       - name: Verify script entry point and dry runs
         shell: pwsh
         run: |
+          $fromModule = (python -m vispa --version | Out-String).Trim()
+          $fromConsole = (vispa --version | Out-String).Trim()
+          if ($fromModule -ne $fromConsole) { throw "CLI versions differ" }
+          $repo = (Get-Location).Path
+          Push-Location $env:TEMP
+          vispa --help
+          if ($LASTEXITCODE -ne 0) { throw "Console entry failed outside checkout" }
+          Pop-Location
           python run_vispa.py --version
-          python run_vispa.py config-check --validate-only --config src/vispa/config_deb.yaml
-          python run_vispa.py example --dry-run --config src/vispa/config_deb.yaml
-          python run_vispa.py gui --dry-run --config src/vispa/config_deb.yaml --no-autoload
+          python run_vispa.py config-check --validate-only --config src/vispa/configs/config_deb.yaml
+          python run_vispa.py inputs --dry-run --config src/vispa/configs/config_deb.yaml --sample 251637 --neuron 004.swc
+          python run_vispa.py example --dry-run --config src/vispa/configs/config_deb.yaml
+          python run_vispa.py gui --dry-run --config src/vispa/configs/config_deb.yaml --no-autoload
       - name: Run source tests
         shell: pwsh
         run: |

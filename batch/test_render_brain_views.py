@@ -1,7 +1,7 @@
 """Bounded batch planning tests with synthetic local mesh/SWC inputs.
 
-Version: 1.11.0.dev14 (local/unreleased)
-Last updated: 2026-10-26
+Version: 1.11.0.dev25 (local/unreleased)
+Last updated: 2026-10-27
 Change history: ../CHANGELOG.md
 Status: candidate
 """
@@ -25,6 +25,10 @@ class BatchPlanningTests(unittest.TestCase):
         self.root = Path(temporary.name)
         self.mesh = self.root / "region.obj"
         self.mesh.write_text("v -2 -3 -4\nv 2 3 4\nf 1 2 1\n", encoding="ascii")
+        self.region_root = self.root / "regions"
+        self.region_root.mkdir()
+        (self.region_root / "amygdala (Amy).obj").write_text(
+            "v -1 -1 -1\nv 1 1 1\nf 1 2 1\n", encoding="ascii")
         swc_root = self.root / "swc" / "251637"
         swc_root.mkdir(parents=True)
         for name in ("002.swc", "001.swc"):
@@ -34,6 +38,8 @@ class BatchPlanningTests(unittest.TestCase):
             "version": 1, "base_dir": str(self.root),
             "visual_toolkit": {"worker_python": "C:/not-used/python.exe", "output_root": str(self.root / "session")},
             "sources": {"brain_view": {"mesh_path": str(self.mesh),
+                                       "region_mesh_root": str(self.region_root),
+                                       "region_color": [0.3, 0.7, 1.0],
                                        "processed_swc_root": str(self.root / "swc"),
                                        "coordinate_frame": "fixture-frame", "coordinate_units": "stored"}}}),
             encoding="utf-8")
@@ -87,6 +93,16 @@ class BatchPlanningTests(unittest.TestCase):
         plan = load_jobs(self.jobs, self.root / "output", 1, False)
         self.assertEqual(plan["jobs"][0]["mesh_label"], "anterior_insula")
         self.assertEqual(plan["jobs"][0]["preflight"]["mesh_label"], "anterior_insula")
+
+    def test_optional_region_selector_adds_one_overlay_without_changing_region_id(self):
+        self.payload["jobs"][0]["region"] = "Amy"
+        self.save()
+        plan = load_jobs(self.jobs, self.root / "output", 1, False)
+        entry = plan["jobs"][0]
+        self.assertEqual(entry["region_id"], "region")
+        self.assertEqual(entry["region"], "Amy")
+        self.assertEqual(entry["preflight"]["region_mesh"]["acronym"], "Amy")
+        self.assertEqual(entry["preflight"]["region_resolution"]["source"], "explicit")
 
     def test_failed_render_writes_receipt_and_returns_exit_two(self):
         stdout = io.StringIO()

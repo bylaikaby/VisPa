@@ -1,7 +1,7 @@
 """Tests for the extracted volume-rendering API.
 
-Version: 1.11.0.dev11 (local/unreleased)
-Last updated: 2026-10-18
+Version: 1.12.0.dev1 (local/unreleased)
+Last updated: 2026-10-29
 Change history: vispa/CHANGELOG.md
 Status: candidate
 """
@@ -50,36 +50,31 @@ def _synthetic_lps_nifti(path: Path) -> None:
 
 
 class VolumeMontageTests(unittest.TestCase):
-    def test_synthetic_lps_render_matches_pre_extraction_frames(self):
-        expected_sums = [
-            11813.373046875,
-            20046.75,
-            11417.541015625,
-            20871.560546875,
-            12277.05078125,
-        ]
-        expected_hashes = [
-            "169c81f9eaa2e69456200b2923a88d74278dd9874facba940052fea8f9eff793",
-            "e310a28d7b96941757cdd1f3c9a6c717d704a2a646b205de49149f4808c3595b",
-            "d104148ef57ec436a8bd22d603ea2dc84e9b828d22de1d8c98b8253720150f7e",
-            "1bca0a73124a59c54aabcc9a1e41258abf9370de08abbc0bfcdc8ac8f0b45d60",
-            "47aad3f00a55e967b6d3ca76d116b5ca86868d0b77dea22d8bf9825c555bc0ef",
-        ]
+    def test_synthetic_lps_render_covers_full_input_extent(self):
         with tempfile.TemporaryDirectory() as folder:
             source = Path(folder) / "synthetic.nii.gz"
             _synthetic_lps_nifti(source)
             result = montage.render_volume(source)
         self.assertEqual(montage.VIEW_KEYS, ("frontal", "superior", "back", "bottom", "coronal"))
-        self.assertEqual([frame.shape for frame in result["frames"]], [(150, 150, 3)] * 5)
-        np.testing.assert_allclose([float(frame.sum()) for frame in result["frames"]], expected_sums, rtol=1e-6, atol=1e-4)
-        self.assertEqual(
-            [hashlib.sha256(np.ascontiguousarray(frame).tobytes()).hexdigest() for frame in result["frames"]],
-            expected_hashes,
-        )
+        self.assertEqual(len(result["frames"]), 5)
+        self.assertTrue(all(frame.ndim == 3 and frame.shape[-1] == 3 for frame in result["frames"]))
+        self.assertTrue(all(float(frame.sum()) > 0 for frame in result["frames"]))
         self.assertEqual(len(result["extents_mm"]), 5)
         self.assertEqual(result["affine"][0], [-0.5, 0.0, 0.0, 20.0])
         self.assertEqual(result["voxel_axis_codes"], ["L", "P", "S"])
         self.assertEqual(result["world_axis_convention"], "RAS+")
+        self.assertEqual(result["projection_bounds_source"],
+                         "full input voxel-cell bounds; source affine; eight corners")
+        source_affine = np.asarray(result["affine"])
+        centroid = np.asarray(result["projection_origin_ras_world_mm"])
+        axes = montage.anatomical_axes(source_affine)
+        for key, extent in zip(montage.VIEW_KEYS, result["extents_mm"]):
+            forward, up = montage.view_forward_up(axes, key)
+            expected = montage.full_volume_projection_bounds((32, 34, 30), source_affine,
+                                                               centroid, forward, up)
+            np.testing.assert_allclose(extent, expected[:4], atol=1e-8)
+        self.assertAlmostEqual(result["extents_mm"][0][1] - result["extents_mm"][0][0], 16.0, places=5)
+        self.assertAlmostEqual(result["extents_mm"][0][3] - result["extents_mm"][0][2], 21.0, places=5)
 
     def test_generic_png_has_five_views_and_declared_projected_axes(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -132,7 +127,7 @@ class VolumeMontageTests(unittest.TestCase):
                                  "--units", "mm", "--set", "max_dimension=100", "--dry-run"])
             plan = json.loads(stream.getvalue())
             self.assertEqual(code, 0)
-            self.assertEqual(plan["schema"], "visual-toolkit.montage.v1")
+            self.assertEqual(plan["schema"], "visual-toolkit.montage.v2")
             self.assertEqual(plan["shape_ijk"], [32, 34, 30])
             self.assertEqual(plan["settings"]["max_dimension"], 100)
             self.assertEqual(plan["coordinate_frame"], "NIfTI voxel order LPS; world coordinates RAS+; no additional transform")
@@ -156,7 +151,12 @@ class VolumeMontageTests(unittest.TestCase):
                                        "--set", "figure_dpi=72"]), 0)
             receipt_path = output.with_suffix(".json")
             receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
-            self.assertEqual(receipt["schema"], "visual-toolkit.montage.v1")
+            self.assertEqual(receipt["schema"], "visual-toolkit.montage.v2")
+            self.assertEqual(receipt["projection_bounds_source"],
+                             "full input voxel-cell bounds; source affine; eight corners")
+            self.assertIn("projection_origin_ras_world_mm", receipt)
+            self.assertIn("projected_extent_centroid_relative_mm", receipt["views"][0])
+            self.assertNotIn("projected_extent_ras_world_mm", receipt["views"][0])
             self.assertEqual(receipt["status"], "rendered_candidate")
             self.assertEqual(receipt["input_sha256"], original_input_hash)
             self.assertEqual(receipt["sform_code"], 2)

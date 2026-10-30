@@ -3,14 +3,15 @@
 Importing the package root does not import Matplotlib, acquisition providers, or
 optional image libraries. Public names are loaded on first access.
 
-Version: 1.11.0.dev14 (local/unreleased)
-Last updated: 2026-10-26
+Version: 1.11.0.dev25 (local/unreleased)
+Last updated: 2026-10-27
 Change history: ../../CHANGELOG.md
 """
 from importlib import import_module
 from ._version import __version__
 
-_SETTINGS_NAMES = {"settings_schema", "resolve_settings", "apply_settings"}
+_SETTINGS_NAMES = {"settings_schema", "resolve_settings", "apply_settings",
+                   "tuning_status", "update_tuning"}
 _DATA_CHECK_NAMES = {"check", "data_check"}
 
 _TOOLKIT_NAMES = {
@@ -22,11 +23,11 @@ _TOOLKIT_NAMES = {
 
 def __getattr__(name):
     if name in _SETTINGS_NAMES:
-        return getattr(import_module(".settings", __name__), name)
+        return getattr(import_module(".config", __name__), name)
     if name in _DATA_CHECK_NAMES:
-        return getattr(import_module(".readiness", __name__), name)
+        return getattr(import_module(".input_resource_check", __name__), name)
     if name in _TOOLKIT_NAMES:
-        return getattr(import_module(".toolkit", __name__), name)
+        return getattr(import_module(".renderers.microscopy_panels", __name__), name)
     raise AttributeError(name)
 
 

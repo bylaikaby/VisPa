@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vispa"
-version = "1.11.0.dev21"
+dynamic = ["version"]
 description = "VisPa — Visual Projectome Analysis tool for microscopy visualization and review"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -37,4 +37,10 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-vispa = ["config_deb.yaml"]
+vispa = ["configs/*.yaml"]
+
+[project.scripts]
+vispa = "vispa.commands:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "vispa._version.__version__"}
