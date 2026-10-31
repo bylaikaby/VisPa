@@ -1,9 +1,11 @@
 """
 vispa.py - Macaque Brain Hybrid-Resolution Visualization Toolkit
 
-Version: 1.11.0.dev25 (local/unreleased)
-Last updated: 2026-10-27
+Version: 1.12.0.dev2 (local/unreleased)
+Last updated: 2026-10-31
 Change history: ../../../CHANGELOG.md
+2026-10-30: Fix review crosshair arms at 320 display pixels and reduce the
+legacy cyan square side to 65%; expose effective sizes for receipts.
 Status: candidate (visual review pending)
 
 UPDATE NOTES (v1.4.0):
@@ -228,6 +230,9 @@ ACTIVE_CONFIG = None
 RESOLUTION_LOW = [5.0, 5.0, 3.0]
 
 # Shared pure-Python defaults, schema, and validators live in vispa.config.
+TARGET_CROSSHAIR_ARM_PX = 320.0
+TARGET_BOX_SIDE_SCALE = 0.65
+
 from ..config import (REVIEW_SETTINGS, _DEFAULT_REVIEW_SETTINGS, _SETTING_SPECS,
                      review_settings_snapshot, review_settings_schema,
                      apply_setting_overrides, resolve_widefield_parameters,
@@ -1079,19 +1084,22 @@ class VisPa:
         color = color or style['color']
         res_x = float((resolution_um or (1.0, 1.0))[0])
         floor_px = float(style['min_px'] if min_px is None else min_px)
-        size_px = floor_px if not size_um else max(float(size_um) / res_x, floor_px)
+        nominal_size_px = floor_px if not size_um else max(float(size_um) / res_x, floor_px)
+        size_px = nominal_size_px * TARGET_BOX_SIDE_SCALE
         # Scatter sizes use points squared; convert the requested display pixels.
         size_pt = size_px * 72.0 / ax.figure.dpi
         ax.scatter(x, y, s=size_pt ** 2, marker='s', facecolors='none',
                    edgecolors=color, linewidth=0.9, zorder=10, label=label)
-        arms_px = float(style['crosshair_px'] if crosshair_px is None else crosshair_px)
+        # Legacy profiles pin this setting to 60 px. Keep one visible review size
+        # in every output, independent of profile and per-panel style copies.
+        arms_px = TARGET_CROSSHAIR_ARM_PX
         if arms_px > 0:
             for dx, dy in ((arms_px, 0), (-arms_px, 0),
                            (0, arms_px), (0, -arms_px)):
                 ax.annotate('', xy=(x, y), xytext=(dx, dy),
                             textcoords='offset pixels',
                             arrowprops={'arrowstyle': '-', 'color': color,
-                                        'linewidth': 1.1, 'alpha': 0.9,
+                                        'linewidth': 2.0, 'alpha': 0.9,
                                         'shrinkA': 0, 'shrinkB': 0}, zorder=11)
         text = {'none': '', 'short': 'S', 'numbered': '1'}[mode] if label else ''
         if text:

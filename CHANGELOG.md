@@ -1,5 +1,14 @@
 # VisPa change log
 
+## 1.12.0.dev2 — 2026-10-31 (local/unreleased)
+- 2026-10-30: Show a render-in-progress message and matching identity in the figure preview as soon as a new panel run starts. Clear stale preview references and pending resize callbacks; if no panel renders, show the failure in the preview instead of the initial empty-state instruction.
+- 2026-10-30: Size the neuron-list popup for display DPI and its requested content, center it over the main window, and clamp it inside visible desktop bounds. This keeps the SWC ID column and bottom actions reachable when the main window sits near a screen edge.
+- 2026-10-30: Make Open output folder use the Saving field even after a preview-only render, and report the opened path. Show an explicit SWC Brain View loading image and caption while a snapshot runs; replace them with a visible error and log entry on failure. A live snapshot rendered successfully in the latest desktop QA run; this change addresses feedback during rendering, not a confirmed renderer defect.
+- 2026-10-30: Fix the target-soma crosshair arm at 320 display pixels with a 2-point line in the shared renderer, including when older profiles request 60. A 96-pixel arm shrank to about 6 pixels in the GUI's full-image Soma preview. Soma, Context, Sagittal and TrioPlot keep the exact mapped centre and scientific coordinates. The packaged default is 320; legacy `marker.crosshair_px` remains accepted for configuration compatibility but no longer changes the drawn crosshair.
+- Record `effective_marker.crosshair_arm_px` in GUI figure fingerprints and receipts alongside the requested legacy review setting. The effective value participates in cache freshness so older receipts are re-rendered under the fixed marker style.
+- Reduce the cyan open square side to 65% of its previous display size while retaining its legacy shape, color, and exact center. Record `effective_marker.box_side_scale` in GUI fingerprints; this display-only change also invalidates older cached figures.
+- Clarify in the settings Raw YAML tab that the accepted legacy `marker.crosshair_px` key no longer controls the fixed 320-pixel drawn crosshair.
+
 ## 1.12.0.dev1 — 2026-10-29 (local/unreleased)
 - Render montage rays across the full input NIfTI voxel-cell extent by projecting all eight corners through the source affine; foreground samples still locate the projection origin. This avoids clipping reference margins; legacy direct `composite_view` bounds settings remain accepted, but do not govern `render_volume` full extent.
 - Rename montage receipt extents as centroid-relative offsets, include the RAS+ projection origin and bounds source, and advance the montage plan/receipt schema to v2. No input NIfTI or transform is modified. Ten focused synthetic tests passed. A bounded 251637 sharedPitch10 derivative comparison used identical settings and source SHA-256; scientific acceptance remains pending.

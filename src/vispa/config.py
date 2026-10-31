@@ -1,8 +1,10 @@
 """Load explicit, portable VisPa dataset configuration.
 
-Version: 1.12.0.dev1 (local/unreleased)
-Last updated: 2026-10-29
+Version: 1.12.0.dev2 (local/unreleased)
+Last updated: 2026-10-31
 Change history: ../../CHANGELOG.md
+2026-10-30: Set the review-marker crosshair default to 320 display pixels;
+retain the legacy setting as accepted compatibility metadata.
 """
 from __future__ import annotations
 
@@ -1387,7 +1389,7 @@ REVIEW_SETTINGS = {
     'marker': {
         'color': '#00e5ee',
         'min_px': 8.0,          # smallest drawn box side, in display pixels
-        'crosshair_px': 60.0,   # cross arm length from the exact centre
+        'crosshair_px': 320.0,  # cross arm length from the exact centre
         'label_fontsize': 12,
         'label_mode': 'none',
         'label_offset_px': 22.0,
@@ -1468,7 +1470,7 @@ _DEFAULT_REVIEW_SETTINGS = copy.deepcopy(REVIEW_SETTINGS)
 _SETTING_SPECS = {
     'marker.color': {'type':'color','effect':'Box and cross color in all review panels.'},
     'marker.min_px': {'type':'number','minimum':0,'minimum_exclusive':True,'maximum':None,'effect':'Minimum displayed target-box side in pixels.'},
-    'marker.crosshair_px': {'type':'number','minimum':0,'minimum_exclusive':True,'maximum':None,'effect':'Positive target crosshair arm length in display pixels.'},
+    'marker.crosshair_px': {'type':'number','minimum':0,'minimum_exclusive':True,'maximum':None,'effect':'Compatibility setting; review crosshair arms are drawn at a fixed 320 display pixels.'},
     'marker.label_fontsize': {'type':'integer','minimum':0,'minimum_exclusive':True,'maximum':None,'effect':'Target label font size in points.'},
     'marker.label_mode': {'type':'enum','choices':['none','short','numbered'],'effect':'Inline soma label: none (legend only), short S, or numbered 1 callout; marker position is unchanged.'},
     'marker.label_offset_px': {'type':'number','minimum':0,'maximum':None,'effect':'Target label offset in display pixels.'},

@@ -1,10 +1,12 @@
 """
 vispa_gui.py - GUI for NeuroVis Visual Toolkit
 
-Version: 1.11.0.dev25 (local/unreleased)
-Last updated: 2026-10-27
+Version: 1.12.0.dev2 (local/unreleased)
+Last updated: 2026-10-31
 Change history: ../../CHANGELOG.md
 Status: candidate (GUI layout reviewed; scientific review pending)
+2026-10-30: Record effective fixed crosshair and smaller legacy square separately from legacy
+profile settings in figure fingerprints and cache receipts.
 
 DESCRIPTION:
     Tkinter review interface for standalone VisPa panels. It uses the
@@ -147,6 +149,9 @@ from ._version import __version__
 from .config import _stamp
 
 SWC_BRAIN_VIEW_LABEL = "SWC Brain View"
+FIXED_CROSSHAIR_NOTICE = (
+    "Review crosshair arms are fixed at 320 display pixels. "
+    "marker.crosshair_px is retained for older profiles and does not change the drawn length.")
 SWC_BRAIN_VIEW_INTERACTIVE_LABEL = "SWC Brain View interactive"
 
 EMPTY_PREVIEW_TEXT = (
@@ -390,6 +395,8 @@ try:
     from .renderers.microscopy_panels import VisPa
     from .renderers.microscopy_panels import REVIEW_SETTINGS
     from .renderers.microscopy_panels import BLOCK_SIZE_PIXELS
+    from .renderers.microscopy_panels import TARGET_CROSSHAIR_ARM_PX
+    from .renderers.microscopy_panels import TARGET_BOX_SIDE_SCALE
     from .renderers.microscopy_panels import configure_data_sources
     from . import sources as IT
 except ImportError as e:
@@ -631,6 +638,23 @@ class NeuroVisGUI:
         width = min(self._px(1298), self.root.winfo_screenwidth() - self._px(24))
         height = min(self._px(1212), self.root.winfo_screenheight() - self._px(64))
         return f"{max(self._px(980), width)}x{max(self._px(760), height)}"
+
+    def _catalog_geometry(self, requested_width, requested_height):
+        """Fit the neuron browser near its parent within the visible desktop."""
+        left = self.root.winfo_vrootx()
+        top = self.root.winfo_vrooty()
+        screen_width = self.root.winfo_vrootwidth()
+        screen_height = self.root.winfo_vrootheight()
+        margin = self._px(24)
+        width = min(max(self._px(560), requested_width), max(1, screen_width - 2 * margin))
+        height = min(max(self._px(600), requested_height), max(1, screen_height - 2 * margin))
+        parent_x = self.root.winfo_rootx()
+        parent_y = self.root.winfo_rooty()
+        x = parent_x + (self.root.winfo_width() - width) // 2
+        y = parent_y + (self.root.winfo_height() - height) // 2
+        x = max(left + margin, min(x, left + screen_width - margin - width))
+        y = max(top + margin, min(y, top + screen_height - margin - height))
+        return width, height, x, y
 
     def build_full_gui(self):
         """Construct the Binavi-style layout: settings left, figure preview right."""
@@ -1116,9 +1140,8 @@ class NeuroVisGUI:
             return
 
         window = tk.Toplevel(self.root)
+        window.withdraw()
         window.title("Neuron list")
-        window.geometry("560x600")
-        window.minsize(460, 420)
         window.transient(self.root)
         window.grid_rowconfigure(2, weight=1)
         window.grid_columnconfigure(0, weight=1)
@@ -1165,6 +1188,12 @@ class NeuroVisGUI:
                    command=self.load_selected_catalog_row).pack(side='left')
         ttk.Button(button_row, text="Close", command=self._close_neuron_catalog).pack(side='right')
         window.protocol("WM_DELETE_WINDOW", self._close_neuron_catalog)
+        window.update_idletasks()
+        width, height, x, y = self._catalog_geometry(
+            window.winfo_reqwidth(), window.winfo_reqheight())
+        window.minsize(min(self._px(460), width), min(self._px(420), height))
+        window.geometry(f"{width}x{height}{x:+d}{y:+d}")
+        window.deiconify()
 
         if (self._catalog_sample_id == self.sample_id.get().strip()
                 and self._catalog_snapshot is not None
@@ -1599,9 +1628,37 @@ class NeuroVisGUI:
                 self._append_log(f"Panel skipped: {error}")
             self.update_status(f"⚠️ {message}; skipped: {summary}")
             if not kept:
+                self._show_render_failure(request, summary)
                 self._ui_call(messagebox.showwarning, "Panel unavailable", summary)
             return
         self.update_status(f"✅ {message}{note}  ·  {folder}")
+
+    def _begin_render_preview(self, request):
+        """Make the active render visible without presenting a prior figure."""
+        if getattr(self, 'preview_label', None) is None:
+            return
+        self.preview_files = {}
+        self._ephemeral_images = {}
+        self.current_preview = None
+        self.current_role = None
+        self._preview_photo = None
+        after_id = getattr(self, '_preview_after', None)
+        if after_id:
+            self.root.after_cancel(after_id)
+            self._preview_after = None
+        self.preview_label.configure(image='', text='Rendering figures…\nPlease wait.')
+        self.preview_caption.set(
+            f"{request.sample_id}/{request.neuron_id} · rendering")
+        self._refresh_preview_tabs()
+        self.update_status(f"Rendering figures for {request.sample_id}/{request.neuron_id}…")
+
+    def _show_render_failure(self, request, detail):
+        if not identity_matches((request.sample_id, request.neuron_id),
+                                self.sample_id.get(), self.neuron_id.get()):
+            return
+        self.preview_label.configure(image='', text=f'No figures rendered.\n{detail}')
+        self.preview_caption.set(
+            f"{request.sample_id}/{request.neuron_id} · render failed")
 
     @staticmethod
     def _friendly_error(exc):
@@ -1740,7 +1797,16 @@ class NeuroVisGUI:
         snapshot = os.path.join(
             folder,
             f"{sample}_{neuron.removesuffix('.swc')}_{_stamp()}_{time.time_ns() % 1000000:06d}_3D_SWC.png")
+        self.current_role = 'SWC3D'
+        self.current_preview = None
+        self._preview_photo = None
+        if getattr(self, '_preview_after', None):
+            self.root.after_cancel(self._preview_after)
+            self._preview_after = None
+        self.preview_label.configure(image='', text='Rendering SWC Brain View…')
+        self.preview_caption.set(f'SWC Brain View · {sample}/{neuron} · rendering')
         self.update_status("SWC Brain View · rendering template mesh and trace…")
+        self._append_log(f"SWC Brain View render started for {sample}/{neuron}")
 
         def worker():
             try:
@@ -1751,8 +1817,8 @@ class NeuroVisGUI:
                     portal_region=portal_region, config_path=self.config_path)
             except Exception as exc:
                 self._ui_call(self._hide_progress)
+                self._ui_call(self._show_swc3d_error, sample, neuron, str(exc))
                 self._ui_call(messagebox.showerror, "SWC Brain View", f"Could not render:\n{exc}")
-                self._ui_call(self.update_status, f"SWC Brain View failed: {exc}")
             else:
                 self._ui_call(
                     self._finish_swc3d, sample, neuron, snapshot,
@@ -1774,6 +1840,13 @@ class NeuroVisGUI:
                         "SWC Brain View rendered · soma region unavailable")
 
         self._launch_processing(worker)
+
+    def _show_swc3d_error(self, sample, neuron, error):
+        if identity_matches((sample, neuron), self.sample_id.get(), self.neuron_id.get()):
+            self.preview_label.configure(image='', text=f'SWC Brain View failed:\n{error}')
+            self.preview_caption.set(f'SWC Brain View · {sample}/{neuron} · failed')
+        self.update_status(f'SWC Brain View failed: {error}')
+        self._append_log(f'SWC Brain View failed for {sample}/{neuron}: {error}')
 
     def _finish_swc3d(self, sample, neuron, image_path, receipt_path, save):
         """Publish a completed SWC Brain View snapshot to the preview tab."""
@@ -1884,7 +1957,7 @@ class NeuroVisGUI:
         except Exception:
             return None
         return {
-            'style_schema': '1.11.0.dev25',
+            'style_schema': '1.12.0.dev2',
             'gui_sha256': self._file_sha256(Path(__file__)),
             'renderer_sha256': {
                 name: self._file_sha256(Path(__file__).parent / 'renderers' / name)
@@ -1895,6 +1968,8 @@ class NeuroVisGUI:
             'soma_cubes': round(cubes, 3),
             'context_um': context,
             'review_settings': json.loads(json.dumps(REVIEW_SETTINGS)),
+            'effective_marker': {'crosshair_arm_px': TARGET_CROSSHAIR_ARM_PX,
+                                 'box_side_scale': TARGET_BOX_SIDE_SCALE},
         }
 
     @staticmethod
@@ -2119,12 +2194,18 @@ class NeuroVisGUI:
             self._ui_call(self._append_log, f"FNT unavailable for {sample}/{neuron}: {exc}")
 
     def _open_output_folder(self):
-        folder = (os.path.dirname(self.current_preview)
-                  if getattr(self, 'current_preview', None) else self.output_dir.get())
+        folder = self.output_dir.get().strip()
         try:
+            if not folder:
+                folder = self._generate_default_path(self.sample_id.get())
+                self.output_dir.set(folder)
+            folder = os.path.abspath(folder)
             os.makedirs(folder, exist_ok=True)
             os.startfile(folder)
+            self.update_status(f"Opened output folder: {folder}")
+            self._append_log(f"Opened output folder: {folder}")
         except Exception as exc:
+            self.update_status(f"Could not open output folder: {folder}")
             messagebox.showerror("Open folder", f"Could not open {folder}:\n{exc}")
 
     def _open_config_yaml(self, section=None):
@@ -2206,6 +2287,8 @@ class NeuroVisGUI:
         tabs.add(advanced, text=raw_label)
         ttk.Label(advanced, text="Edit the complete configuration here. Switching to Organized editor updates its fields; Save settings writes the file.",
                   wraplength=850).pack(anchor='w', padx=8, pady=8)
+        ttk.Label(advanced, text=FIXED_CROSSHAIR_NOTICE,
+                  wraplength=850).pack(anchor='w', padx=8, pady=(0, 8))
         frame = ttk.Frame(advanced)
         frame.pack(fill='both', expand=True, padx=8, pady=4)
         frame.grid_rowconfigure(0, weight=1)
@@ -3038,6 +3121,9 @@ class NeuroVisGUI:
                     paths, errors = work(toolkit)
                 self._ui_call(self._finish, request, paths, message(request), errors)
             except Exception as e:
+                self._ui_call(self._show_render_failure, request, str(e))
+                self._ui_call(self.update_status, f"Render failed: {e}")
+                self._ui_call(self._append_log, f"Render failed: {e}")
                 self._ui_call(messagebox.showerror, "Processing Error", f"Error: {str(e)}")
             finally:
                 self._fetch_fnt(request.sample_id, request.neuron_id.removesuffix('.swc'))
@@ -3048,6 +3134,9 @@ class NeuroVisGUI:
 
     def run_selected(self, roles=None, force_review_figure=False, force_rerender=False):
         """Render the panel set; no per-panel or per-artifact selection is exposed."""
+        if getattr(self, '_operation_running', False):
+            messagebox.showwarning("Busy", "A VisPa operation is already running.")
+            return
         request = self._capture_processing_request()
         if request is None:
             return
@@ -3146,6 +3235,7 @@ class NeuroVisGUI:
                     review_session_event_id=request.review_session_event_id)
             return paths, errors
 
+        self._begin_render_preview(request)
         self._run_worker(
             request, work,
             lambda r: f"Rendered {' + '.join(rendered) if rendered else 'nothing'}")

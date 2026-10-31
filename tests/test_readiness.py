@@ -1,7 +1,7 @@
 """Checks for the public data-check API, CLI and GUI progress plumbing.
 
-Version: 1.11.0.dev25 (local/unreleased)
-Last updated: 2026-10-27
+Version: 1.12.0.dev2 (local/unreleased)
+Last updated: 2026-10-31
 Change history: ../CHANGELOG.md
 Status: candidate
 """
@@ -14,6 +14,7 @@ import hashlib
 import json
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -321,6 +322,9 @@ class ProgressBarTests(unittest.TestCase):
             gui.output_dir.get.return_value = folder
             gui.config_path = "fixture.yaml"
             gui.update_status = mock.Mock()
+            gui._append_log = mock.Mock()
+            gui.preview_label = mock.Mock()
+            gui.preview_caption = mock.Mock()
             gui._show_progress = mock.Mock()
             gui._hide_progress = mock.Mock()
             gui._finish_swc3d = mock.Mock()
@@ -340,6 +344,91 @@ class ProgressBarTests(unittest.TestCase):
             gui._finish_swc3d.assert_called_once_with(
                 "251637", "004.swc", args[2],
                 str(Path(folder) / "receipt.json"), True)
+            gui.preview_label.configure.assert_called_once_with(
+                image='', text='Rendering SWC Brain View…')
+            gui.preview_caption.set.assert_called_once_with(
+                'SWC Brain View · 251637/004.swc · rendering')
+
+    def test_open_output_folder_uses_saving_field_after_preview(self):
+        from vispa.reviewer import NeuroVisGUI
+        gui = object.__new__(NeuroVisGUI)
+        gui.current_preview = r'C:\temp\visual_toolkit_preview\deleted.png'
+        gui.output_dir = mock.Mock()
+        gui.output_dir.get.return_value = r'C:\review\saved_outputs'
+        gui.update_status = mock.Mock()
+        gui._append_log = mock.Mock()
+        with mock.patch('vispa.reviewer.os.makedirs') as mkdir, mock.patch(
+                'vispa.reviewer.os.startfile', create=True) as start:
+            gui._open_output_folder()
+        expected = str(Path(r'C:\review\saved_outputs').absolute())
+        mkdir.assert_called_once_with(expected, exist_ok=True)
+        start.assert_called_once_with(expected)
+        gui.update_status.assert_called_once_with(f'Opened output folder: {expected}')
+
+    def test_swc3d_failure_replaces_loading_state(self):
+        from vispa.reviewer import NeuroVisGUI
+        gui = object.__new__(NeuroVisGUI)
+        gui.sample_id = mock.Mock()
+        gui.sample_id.get.return_value = '251637'
+        gui.neuron_id = mock.Mock()
+        gui.neuron_id.get.return_value = '004.swc'
+        gui.preview_label = mock.Mock()
+        gui.preview_caption = mock.Mock()
+        gui.update_status = mock.Mock()
+        gui._append_log = mock.Mock()
+        gui._show_swc3d_error('251637', '004.swc', 'worker exited')
+        gui.preview_label.configure.assert_called_once_with(
+            image='', text='SWC Brain View failed:\nworker exited')
+        gui.preview_caption.set.assert_called_once_with(
+            'SWC Brain View · 251637/004.swc · failed')
+
+    def test_neuron_catalog_geometry_fits_screen_at_high_dpi(self):
+        from vispa.reviewer import NeuroVisGUI
+        gui = object.__new__(NeuroVisGUI)
+        gui.scale = 2.0
+        gui.root = mock.Mock()
+        gui.root.winfo_vrootx.return_value = 0
+        gui.root.winfo_vrooty.return_value = 0
+        gui.root.winfo_vrootwidth.return_value = 1920
+        gui.root.winfo_vrootheight.return_value = 1080
+        gui.root.winfo_rootx.return_value = -300
+        gui.root.winfo_rooty.return_value = -200
+        gui.root.winfo_width.return_value = 1000
+        gui.root.winfo_height.return_value = 800
+        width, height, x, y = gui._catalog_geometry(900, 1000)
+        self.assertEqual((width, height), (1120, 984))
+        self.assertGreaterEqual(x, 48)
+        self.assertGreaterEqual(y, 48)
+        self.assertLessEqual(x + width, 1920 - 48)
+        self.assertLessEqual(y + height, 1080 - 48)
+
+    def test_render_preview_replaces_old_image_and_failure_message(self):
+        from vispa.reviewer import NeuroVisGUI
+        gui = object.__new__(NeuroVisGUI)
+        gui.preview_label = mock.Mock()
+        gui.preview_caption = mock.Mock()
+        gui.root = mock.Mock()
+        gui._preview_after = 'old-resize'
+        gui.preview_files = {'Soma': 'old.png'}
+        gui._ephemeral_images = {'Soma': object()}
+        gui.current_preview = 'old.png'
+        gui._preview_photo = object()
+        gui._refresh_preview_tabs = mock.Mock()
+        gui.update_status = mock.Mock()
+        gui.sample_id = mock.Mock()
+        gui.sample_id.get.return_value = '251637'
+        gui.neuron_id = mock.Mock()
+        gui.neuron_id.get.return_value = '005.swc'
+        request = SimpleNamespace(sample_id='251637', neuron_id='005.swc')
+        gui._begin_render_preview(request)
+        self.assertEqual(gui.preview_files, {})
+        self.assertIsNone(gui.current_preview)
+        gui.root.after_cancel.assert_called_once_with('old-resize')
+        gui.preview_label.configure.assert_called_with(
+            image='', text='Rendering figures…\nPlease wait.')
+        gui._show_render_failure(request, 'source missing')
+        gui.preview_label.configure.assert_called_with(
+            image='', text='No figures rendered.\nsource missing')
 
     def test_render_requires_loaded_soma_not_zero_placeholder(self):
         from vispa.gui import NeuroVisGUI
