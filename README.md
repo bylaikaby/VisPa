@@ -1,11 +1,11 @@
 # VisPa — Visual Projectome Analysis tool
 
 VisPa reviews macaque neuron and microscopy data configured by the DEB lab.
-This checkout identifies as **1.12.0.dev2**, without a release tag. VisPa is a
+This checkout identifies as **1.12.0.dev3**, without a release tag. VisPa is a
 Python package inside a Conda environment. Launch the GUI directly from this
 checkout with `python run_vispa.py`.
 
-[Install](#install-on-windows) · [Update an existing environment](#update-an-existing-vispa-environment) · [Remove the environment](#remove-the-vispa-environment)
+[Install](#install-on-windows) · [Update an existing environment](#update-an-existing-vispa-environment) · [Remove VisPa](#remove-vispa)
 
 ## ReMAP review bridge
 
@@ -110,7 +110,7 @@ The GUI reports a process start separately from visible cube/image verification.
 For the current local candidate, use this review order (details and request
 reconciliation are in `work/refactor_20261027/receipt.json`):
 
-1. Restart with `python run_vispa.py` from this checkout; confirm **1.12.0.dev2**.
+1. Restart with `python run_vispa.py` from this checkout; confirm **1.12.0.dev3**.
    Already open older windows retain their earlier code.
 2. Open **SWC Brain View** for `251637 / 004.swc`; expect the full mesh and trace
    without the timestamp or worker-import error. The installed reference PNG is
@@ -171,11 +171,12 @@ git clone --branch main https://github.com/bylaikaby/VisPa.git D:\vispa
 cd D:\vispa
 conda env create -f environment.yml
 conda activate vispa
+python -m pip install "remap[plots] @ git+https://github.com/bylaikaby/ReMAP.git@main"
 python run_vispa.py
 ```
 
-If Conda reports that the `vispa` prefix already exists, [update it](#update-an-existing-vispa-environment) or [remove it](#remove-the-vispa-environment) before creating it again. Recloning the repository does not remove the environment.
-Activation selects the environment's Python; `run_vispa.py` starts the GUI.
+If `vispa` already exists, [update it](#update-an-existing-vispa-environment), or create a separate new environment with `conda env create -n vispa-new -f environment.yml` and activate `vispa-new`. Recloning the repository does not remove an environment.
+Activation selects the environment's Python; `run_vispa.py` starts the GUI. The ReMAP Git command requires repository access. If you already have a trusted local ReMAP checkout, use `python -m pip install "D:/ReMAP[plots]"` instead. Both packages then use the same `vispa` environment.
 
 If the Windows `conda.exe` launcher itself fails, run the environment create or
 update command as `python -m conda env ...` from the base Conda Prompt. If
@@ -190,7 +191,7 @@ from a normal host process. Open VisPa from your normal Conda Prompt.
 
 Use `miniconda3` or `miniforge3` in that path if it is your installation folder.
 
-For a downloaded ZIP, extract it locally and run the same commands in its folder. Conda reads the pip subsection of `environment.yml` and installs this checkout with its 3D and TIFF extras automatically. The file also selects conda-forge OpenBLAS; this avoids a reproduced Windows Matplotlib crash with the MKL-backed solve. Verify with `python -m pip check` and `python run_vispa.py --version`.
+For a downloaded ZIP, extract it locally and run the same commands in its folder. Conda reads the pip subsection of `environment.yml` and installs this checkout with its 3D and TIFF extras automatically. The file also selects conda-forge OpenBLAS; this avoids a reproduced Windows Matplotlib crash with the MKL-backed solve. Verify with `python -m pip check`, `python -m vispa --version` and `python -m remap --version`.
 
 `python run_vispa.py check` verifies configured files and server/cache access. A disconnected lab share can make this check fail after a successful installation. TIFF support is included through the declared package extras.
 
@@ -199,7 +200,8 @@ flowchart LR
   Y[Checkout: environment.yml] --> C[Conda create or update]
   C --> P[Conda installs editable VisPa and extras]
   P --> A[Activate vispa]
-  A --> R[python run_vispa.py]
+  A --> X[Install ReMAP with plots into same environment]
+  X --> R[python run_vispa.py]
   R --> G[GUI by default]
   R --> O[CLI options when supplied]
   G -. configured lab resources .-> D[External data]
@@ -207,18 +209,27 @@ flowchart LR
 
 ## Update an existing VisPa environment
 
-In Miniforge or Anaconda Prompt, update the checkout and environment:
+In Miniforge or Anaconda Prompt, inspect the checkout first:
 
 ```powershell
 cd D:\vispa
+git status --short --branch
+git branch --show-current
+```
+
+A ZIP download has no Git history and cannot use `git pull`. For Git updates, clone into a new folder and keep the old folder and its data until reviewed.
+
+Continue only on `main` with a clean working tree. If it is dirty or has diverged, inspect and resolve it yourself; do not reset or autostash it. Then:
+
+```powershell
 git pull --ff-only origin main
 conda env update -n vispa -f environment.yml
 conda activate vispa
+python -m pip install --force-reinstall --no-deps "remap[plots] @ git+https://github.com/bylaikaby/ReMAP.git@main"
 python run_vispa.py
 ```
 
-The YAML automatically reinstalls editable VisPa and its extras. Use your
-checkout's actual path if it is not `D:\vispa`.
+Use the checkout's actual path if it is not `D:\vispa`.
 
 ### Adopt new lab defaults
 
@@ -230,20 +241,23 @@ python run_vispa.py gui --config '\\10.102.8.200\microscopy_data\fMOST\resources
 
 `python run_vispa.py check` must report **All configured resources ready** before rendering. Each line includes its resolved file, folder, or server location.
 
-## Remove the VisPa environment
+## Remove VisPa
 
-In Miniforge or Anaconda Prompt:
+To remove an old VisPa package while keeping ReMAP and data in its existing environment:
+
+```powershell
+conda activate <old-environment-name>
+python -m pip uninstall vispa
+```
+
+After the new shared environment is verified, you may remove an old environment named `vispa` only if it is distinct from the new environment and no longer needed:
 
 ```powershell
 conda deactivate
 conda env remove -n vispa
-conda env list
 ```
 
-The last command lets you confirm `vispa` is gone. Removal deletes that Conda
-environment and its installed packages. It preserves the repository, per-user
-VisPa configuration and cache, and scientific data stored outside the
-environment. To install again, follow [Install on Windows](#install-on-windows).
+This optional command removes all packages in that environment, including ReMAP. Repositories, user configuration, caches and scientific data stored outside it remain in place. Check the environment name before removal.
 
 ## Create or select a configuration
 
@@ -287,8 +301,7 @@ directory.
 `python run_vispa.py` is the single GUI and command entry point in this checkout.
 
 The [Windows Conda workflow](.github/workflows/windows-python-conda.yml) creates
-the declared environment, installs the editable package, checks the script
-entry point and dry runs, and runs the source suite.
+the declared environment, installs editable VisPa, checks shared analysis-library imports and the script entry point, and runs source and batch tests. ReMAP itself is installed separately by the command above and is tested locally when repository access is available.
 
 ## GUI walkthrough
 
@@ -345,7 +358,7 @@ New standalone run receipts, builds and candidate outputs live under `D:/VisPa/w
 
 VisPa includes a live per-sample IONData neuron list for the configured lab intranet and review panels for configured local microscopy resources. The live list is fetched from the neuron API; image cubes, raw SWCs, and microscopy files use separate configured hosts or shares. The package contains only server addresses and candidate sample-resource links, not source data, credentials, or local project tools. These links and checksums do not establish current share availability or scientific acceptance.
 
-This checkout is **1.12.0.dev2, without a release tag**. It preserves the
+This checkout is **1.12.0.dev3, without a release tag**. It preserves the
 existing rendering and source-verification algorithms while removing the
 retired `Visual_toolkit` compatibility namespace. The DS00 sagittal panel now
 shows one provisional soma-location marker without A/B raw-SWC traces; its
@@ -355,11 +368,12 @@ private source files are included; the package profile declares server
 endpoints and ten known sample mappings without copying images or SWCs.
 `extraction_manifest.json` records the historical extraction snapshot and is
 excluded from source distributions. The historical dev6 receipt does not
-verify this dev11 candidate.
+verify the current candidate.
 
 
-The supported Windows route is Conda plus `python -m`. Keep the VisPa environment
-separate from the projectome analysis interpreter. Run the source test command
+The supported Windows route is Conda plus `python -m`. VisPa and ReMAP share
+the `vispa` environment; an existing broader Projectome environment can remain
+unchanged. Run the source test command
 `python -m unittest discover -s tests -v` inside that environment. Older
 pip/venv/executable artifacts are historical and are not required.
 

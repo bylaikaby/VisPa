@@ -1,5 +1,8 @@
 # VisPa change log
 
+## 1.12.0.dev3 — 2026-10-31 (local/unreleased)
+- Add the missing ReMAP analysis and plotting dependencies to the VisPa Conda environment. The guide installs ReMAP explicitly into that same environment, keeps update operations fast-forward-only, and distinguishes uninstalling VisPa from deleting an entire environment. A genuinely fresh Conda solve and explicit ReMAP Git installation passed; all eight ReMAP core/plot requirements are covered. A disposable old-VisPa install/uninstall retained ReMAP and all shared libraries, followed by successful dev3 reinstall and pip check. All 220 source and 19 batch tests passed in the fresh environment.
+
 ## 1.12.0.dev2 — 2026-10-31 (local/unreleased)
 - Restore the repository-only ReMAP stepwise and review-batch bridge: reject ambiguous FNT marker identities; report requested/realized cuts with no final K; bind review config and native SWC hashes; require four distinct nonempty verified and decoded PNGs for complete status. Thirteen focused bridge tests passed, including Windows case-collision refusal; bounded synthetic ReMAP dev9 population and FNT execution passed. Final integrated validation passed 220 source and 19 batch tests, plus installed-wheel version/help and local-array rendering. No anatomical acceptance or type-penalty reproduction is implied.
 - 2026-10-30: Show a render-in-progress message and matching identity in the figure preview as soon as a new panel run starts. Clear stale preview references and pending resize callbacks; if no panel renders, show the failure in the preview instead of the initial empty-state instruction.

@@ -1,6 +1,6 @@
 # ReMAP-to-VisPa batch bridge
 
-Candidate 1.12.0.dev2; repository checkout operator, not currently included as an installed wheel command. One JSON case declares exact source and destination paths. [Example](remap_stepwise.example.json) contains placeholders.
+Candidate 1.12.0.dev3; repository checkout operator, not currently included as an installed wheel command. One JSON case declares exact source and destination paths. [Example](remap_stepwise.example.json) contains placeholders.
 
 ```mermaid
 flowchart LR

@@ -1,6 +1,6 @@
 """Launch VisPa from this checkout.
 
-Version: 1.12.0.dev2 (local/unreleased)
+Version: 1.12.0.dev3 (local/unreleased)
 Last updated: 2026-10-31
 Change history: CHANGELOG.md
 """

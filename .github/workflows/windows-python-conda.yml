@@ -1,5 +1,5 @@
-# Version: 1.11.0.dev24 (local/unreleased)
-# Last updated: 2026-10-27
+# Version: 1.12.0.dev3 (local/unreleased)
+# Last updated: 2026-10-31
 # Change history: ../../CHANGELOG.md
 name: Windows Conda Python-only check
 on:
@@ -25,7 +25,11 @@ jobs:
           channels: conda-forge,nodefaults
       - name: Verify integrated package dependencies
         shell: pwsh
-        run: python -m pip check
+        run: |
+          python -m pip check
+          if ($LASTEXITCODE -ne 0) { throw "Dependency check failed" }
+          python -c "import numpy, pandas, nibabel, scipy, sklearn, openpyxl, matplotlib, seaborn; print('Shared analysis dependencies import successfully')"
+          if ($LASTEXITCODE -ne 0) { throw "Shared dependency import failed" }
       - name: Verify script entry point and dry runs
         shell: pwsh
         run: |
@@ -46,4 +50,6 @@ jobs:
         shell: pwsh
         run: |
           python -m unittest discover -s tests -v
-          python -m unittest discover -s batch -p test_render_brain_views.py -v
+          if ($LASTEXITCODE -ne 0) { throw "Source tests failed" }
+          python -m unittest discover -s batch -p "test_*.py" -v
+          if ($LASTEXITCODE -ne 0) { throw "Batch tests failed" }

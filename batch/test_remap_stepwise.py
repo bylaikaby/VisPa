@@ -1,6 +1,6 @@
 """Stepwise region-to-FNT planning tests with local stand-ins for ReMAP.
 
-Version: 1.12.0.dev2 (local/unreleased)
+Version: 1.12.0.dev3 (local/unreleased)
 Last updated: 2026-10-31
 Change history: ../CHANGELOG.md
 Status: candidate

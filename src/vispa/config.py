@@ -1,6 +1,6 @@
 """Load explicit, portable VisPa dataset configuration.
 
-Version: 1.12.0.dev2 (local/unreleased)
+Version: 1.12.0.dev3 (local/unreleased)
 Last updated: 2026-10-31
 Change history: ../../CHANGELOG.md
 2026-10-30: Set the review-marker crosshair default to 320 display pixels;
