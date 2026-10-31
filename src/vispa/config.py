@@ -1469,7 +1469,7 @@ def review_settings_snapshot() -> dict:
 _DEFAULT_REVIEW_SETTINGS = copy.deepcopy(REVIEW_SETTINGS)
 _SETTING_SPECS = {
     'marker.color': {'type':'color','effect':'Box and cross color in all review panels.'},
-    'marker.min_px': {'type':'number','minimum':0,'minimum_exclusive':True,'maximum':None,'effect':'Minimum displayed target-box side in pixels.'},
+    'marker.min_px': {'type':'number','minimum':0,'minimum_exclusive':True,'maximum':None,'effect':'Nominal target-box minimum side in pixels; the renderer applies a 0.65 side scale.'},
     'marker.crosshair_px': {'type':'number','minimum':0,'minimum_exclusive':True,'maximum':None,'effect':'Compatibility setting; review crosshair arms are drawn at a fixed 320 display pixels.'},
     'marker.label_fontsize': {'type':'integer','minimum':0,'minimum_exclusive':True,'maximum':None,'effect':'Target label font size in points.'},
     'marker.label_mode': {'type':'enum','choices':['none','short','numbered'],'effect':'Inline soma label: none (legend only), short S, or numbered 1 callout; marker position is unchanged.'},

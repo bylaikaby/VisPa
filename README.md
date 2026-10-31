@@ -7,6 +7,10 @@ checkout with `python run_vispa.py`.
 
 [Install](#install-on-windows) · [Update an existing environment](#update-an-existing-vispa-environment) · [Remove the environment](#remove-the-vispa-environment)
 
+## ReMAP review bridge
+
+The checkout-only `batch.remap_stepwise` and `batch.render_review_bulk` operators connect explicit ReMAP inputs and saved FNT scores to VisPa review panels. Start with a dry run and one case; see the [batch bridge guide](batch/MODULE.md) for inputs, output contracts and limits. These modules are not installed wheel commands. Their outputs are technical candidates requiring separate anatomical review.
+
 ## Code layout and responsibilities
 
 One configuration manager, one data input adaptor, and a shallow rendering folder:
@@ -58,7 +62,11 @@ flowchart TD
   K --> M
   M --> Q[Montage and provenance receipt]
   D -. optional API .-> T[swc_terminal_candidates.py]
-  T -. planned .-> R[Terminal image review]
+  R[Repository batch.remap_stepwise: explicit case] --> S[ReMAP population and saved FNT candidate]
+  S --> W[Repository batch.render_review_bulk]
+  K --> W
+  W --> O
+  T -. planned .-> TR[Terminal image review]
 ```
 
 Solid arrows show implemented components; terminal image-review integration is

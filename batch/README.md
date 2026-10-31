@@ -39,3 +39,7 @@ For a new request, provide `schema=vispa.brain_view_batch.v1`, `vispa_config`, a
 The executed pilot PNG, adjacent snapshot receipt and shared batch receipt remain privately stored under `work/` as review evidence. The command above uses a new output root because existing outputs are never overwritten.
 
 The worker writes one PNG and adjacent JSON receipt with root/optional-region/SWC hashes, source frame, stored units, camera settings, renderer version and PNG hash. The operator writes one `batch_receipt.json` with sorted requests and status. A failed job preserves that receipt with `partial_or_failed`, and the command exits with status 2 after printing the result rather than raising an unhandled traceback. For the new overlay mode, camera distance remains based on the declared root/reference mesh, not the smaller region. A batch of jobs is a set of independent views, not a combined multi-neuron scene. The future `Multimodal_INS/analysis_scripts` location is a planned handoff only; this operator remains in VisPa now.
+
+## ReMAP region and FNT review bridge
+
+For the separate declared-case ReMAP and VisPa bulk workflow, see [the bridge module guide](MODULE.md). This checkout-only candidate uses saved FNT scores and local configured raw SWCs; it does not claim anatomical acceptance or select a final cluster count.
