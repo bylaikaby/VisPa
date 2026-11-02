@@ -1,5 +1,10 @@
 # VisPa change log
 
+## 1.13.0 — 2026-11-02
+- Release the reviewed GUI figure, strict cortical region, exact workbook laterality, and Windows saved-path improvements from dev4 under one package version. The 3D worker leaves subcortical portal numeric namespaces unmapped and never infers neuron side from portal suffixes.
+- Add `scripts/uninstall_vispa.ps1` for an explicit Python environment, with dry run, VisPa-only pip removal and ReMAP retention check. Document wheel install/upgrade through the same interpreter without changing dependencies.
+- Make Windows source-test path assertions compare existing file identity, allowing equivalent long and 8.3 temporary-directory aliases on GitHub Actions without weakening source or sample checks.
+
 ## 1.12.0.dev4 — 2026-11-02 (isolated candidate)
 - Correct the portal namespace contract: cortical numeric suffixes are side-collapsed canonical keys, so the worker requires a matching CHARM left/right pair with the same verified OBJ and records no neuron hemisphere. Subcortical suffixes such as `Cl_304` do not share the SARM index namespace and fail closed. The separately sourced FULL Summary row supplies neuron laterality.
 - Add a read-only per-sample FULL workbook Summary lookup for neuron laterality, requiring exact sample/neuron identity and consistent `Soma_Side`/`Soma_Region`, with workbook hash and sheet/row provenance; missing, duplicate and conflicting records remain unknown. Label mapped hierarchy side in brain-view receipts as atlas-label identity, not neuron laterality. The QA-local profile points to the existing neuron-table root; shared profiles and workbooks are unchanged.

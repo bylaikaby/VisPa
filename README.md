@@ -193,6 +193,16 @@ Use `miniconda3` or `miniforge3` in that path if it is your installation folder.
 
 For a downloaded ZIP, extract it locally and run the same commands in its folder. Conda reads the pip subsection of `environment.yml` and installs this checkout with its 3D and TIFF extras automatically. The file also selects conda-forge OpenBLAS; this avoids a reproduced Windows Matplotlib crash with the MKL-backed solve. Verify with `python -m pip check`, `python -m vispa --version` and `python -m remap --version`.
 
+For a Python environment that already has the declared VisPa dependencies, install or upgrade only VisPa from a wheel with that environment's interpreter:
+
+```powershell
+& 'C:\path\to\env\python.exe' -m pip install --upgrade --no-deps 'C:\path\to\vispa-1.13.0-py3-none-any.whl'
+& 'C:\path\to\env\python.exe' -m vispa --version
+& 'C:\path\to\env\python.exe' -m pip check
+```
+
+`--no-deps` leaves other installed packages unchanged; use the Conda workflow above for a fresh environment that needs dependencies.
+
 `python run_vispa.py check` verifies configured files and server/cache access. A disconnected lab share can make this check fail after a successful installation. TIFF support is included through the declared package extras.
 
 ```mermaid
@@ -246,9 +256,11 @@ python run_vispa.py gui --config '\\10.102.8.200\microscopy_data\fMOST\resources
 To remove an old VisPa package while keeping ReMAP and data in its existing environment:
 
 ```powershell
-conda activate <old-environment-name>
-python -m pip uninstall vispa
+& '.\scripts\uninstall_vispa.ps1' -Python 'C:\path\to\env\python.exe' -DryRun
+& '.\scripts\uninstall_vispa.ps1' -Python 'C:\path\to\env\python.exe'
 ```
+
+The script prints the exact interpreter, checks pip, removes only `vispa`, verifies its absence, and checks that an already installed ReMAP remains. It does not remove the environment, dependencies, configuration, caches, outputs or source checkouts. Run it from this repository root or use the script's absolute path.
 
 After the new shared environment is verified, you may remove an old environment named `vispa` only if it is distinct from the new environment and no longer needed:
 

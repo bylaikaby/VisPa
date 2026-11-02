@@ -1,7 +1,7 @@
 """
 vispa_gui.py - GUI for NeuroVis Visual Toolkit
 
-Version: 1.12.0.dev4 (local/unreleased)
+Version: 1.13.0 (local/unreleased)
 Last updated: 2026-11-02
 Change history: ../../CHANGELOG.md
 Status: candidate (GUI layout reviewed; scientific review pending)

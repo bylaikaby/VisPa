@@ -1,8 +1,9 @@
 """Exact native FNT route, cache, and catalog-binding checks.
 
-Version: 1.11.0.dev25 (local/unreleased)
-Last updated: 2026-10-27
+Version: 1.13.0 (local/unreleased)
+Last updated: 2026-11-02
 Change history: ../CHANGELOG.md
+2026-11-02: Compare native raw files by identity across Windows path aliases.
 """
 
 import io
@@ -324,7 +325,7 @@ class FNTFetchTests(unittest.TestCase):
         self.config["visual_toolkit"]["fnt_tracer"]["converter_executable"] = str(binary)
         self.config["visual_toolkit"]["fnt_tracer"]["max_response_bytes"] = 4096
         plan = resolve_native_fnt_plan(self.config, "251637", "004.swc")
-        self.assertEqual(plan["raw_path"], str(raw))
+        self.assertTrue(Path(plan["raw_path"]).samefile(raw))
         self.assertFalse(Path(plan["project_path"]).exists())
         self.assertEqual(prepare_native_fnt(self.config, "251637", "004", dry_run=True)["status"], "planned")
         self.assertFalse(Path(plan["project_path"]).exists())
@@ -378,7 +379,7 @@ class FNTFetchTests(unittest.TestCase):
         self.config["visual_toolkit"]["fnt_tracer"]["project_root"] = str(manual)
         plan = resolve_native_fnt_plan(self.config, "251637", "004")
         self.assertEqual(Path(plan["project_path"]).name, "004.swc.fnt")
-        self.assertEqual(plan["raw_path"], str(raw))
+        self.assertTrue(Path(plan["raw_path"]).samefile(raw))
         self.assertNotIn("projects", plan["project_path"])
         self.assertEqual(plan["source_declaration"], "sources.legacy_raw_swc_root")
         self.config["sources"].pop("legacy_raw_swc_root")
@@ -402,7 +403,7 @@ class FNTFetchTests(unittest.TestCase):
         portal.parent.mkdir(parents=True)
         portal.write_bytes(self.body)
         plan = native_cli_fnt_plan(self.config, "251637", "004")
-        self.assertEqual(plan["native_plan"]["raw_path"], str(raw))
+        self.assertTrue(Path(plan["native_plan"]["raw_path"]).samefile(raw))
         self.assertNotIn(str(wrong), str(plan.get("project")))
         self.assertNotIn(str(portal), str(plan.get("project")))
 

@@ -1,6 +1,6 @@
 """Load explicit, portable VisPa dataset configuration.
 
-Version: 1.12.0.dev4 (local/unreleased)
+Version: 1.13.0 (local/unreleased)
 Last updated: 2026-11-02
 Change history: ../../CHANGELOG.md
 2026-11-02: Resolve an optional local NMT level-6 region OBJ map path for
