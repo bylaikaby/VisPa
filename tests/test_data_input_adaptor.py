@@ -178,7 +178,7 @@ class AdaptorTests(unittest.TestCase):
                 return real_is_file(swc) if path == redirected else real_is_file(path)
 
             def samefile(path, other):
-                if path == redirected.parent.parent and other == root:
+                if path == redirected.parent.parent and real_samefile(other, root):
                     return True
                 return real_samefile(path, other)
 
