@@ -1,8 +1,9 @@
 """Bounded read-only adaptor checks.
 
-Version: 1.11.0.dev25 (local/unreleased)
-Last updated: 2026-10-27
+Version: 1.13.0.dev0 (local/unreleased)
+Last updated: 2026-11-02
 Change history: ../CHANGELOG.md
+2026-11-02: Match redirected SWC fixtures across Windows long and 8.3 paths.
 """
 import tempfile
 import json
@@ -169,7 +170,7 @@ class AdaptorTests(unittest.TestCase):
             real_samefile = Path.samefile
 
             def resolve(path, *args, **kwargs):
-                if path == swc:
+                if real_is_file(path) and real_samefile(path, swc):
                     return redirected
                 return real_resolve(path, *args, **kwargs)
 
@@ -177,7 +178,7 @@ class AdaptorTests(unittest.TestCase):
                 return real_is_file(swc) if path == redirected else real_is_file(path)
 
             def samefile(path, other):
-                if path == redirected.parent.parent and other == root:
+                if path == redirected.parent.parent and real_samefile(other, root):
                     return True
                 return real_samefile(path, other)
 

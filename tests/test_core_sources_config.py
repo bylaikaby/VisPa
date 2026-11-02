@@ -1,8 +1,9 @@
 """Focused regression checks for the standalone extraction seams.
 
-Version: 1.11.0.dev25 (local/unreleased)
-Last updated: 2026-10-27
+Version: 1.13.0.dev0 (local/unreleased)
+Last updated: 2026-11-02
 Change history: ../CHANGELOG.md
+2026-11-02: Compare source identity across Windows long and 8.3 path aliases.
 """
 import copy
 import io
@@ -491,7 +492,7 @@ class ConfigTests(unittest.TestCase):
                 toolkit.SAMPLE_PATHS = {"SYNTH": {}}
                 source_record = toolkit._source_record("SYNTH")
                 self.assertEqual(source_record["expected_geometry"], toolkit.EXPECTED_GEOMETRY["SYNTH"])
-                self.assertEqual(source_record["path"], str(server))
+                self.assertTrue(Path(source_record["path"]).samefile(server))
                 local.unlink()
                 self.assertEqual(toolkit._source_record("SYNTH")["sha256"], toolkit._sha256(server))
                 local.write_bytes(b"synthetic source")

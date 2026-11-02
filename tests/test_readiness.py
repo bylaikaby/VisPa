@@ -1,7 +1,7 @@
 """Checks for the public data-check API, CLI and GUI progress plumbing.
 
-Version: 1.12.0.dev2 (local/unreleased)
-Last updated: 2026-10-31
+Version: 1.13.0.dev0 (local/unreleased)
+Last updated: 2026-11-02
 Change history: ../CHANGELOG.md
 Status: candidate
 """
@@ -226,6 +226,22 @@ class DataCheckTests(unittest.TestCase):
 
 
 class ProgressBarTests(unittest.TestCase):
+    def test_sagittal_hint_preserves_fractional_spacing_from_filename(self):
+        from vispa.gui import NeuroVisGUI
+        from vispa.renderers import microscopy_panels
+
+        gui = object.__new__(NeuroVisGUI)
+        gui.sample_id = mock.Mock()
+        gui.sample_id.get.return_value = "252383"
+        gui.sagittal_hint = mock.Mock()
+        with mock.patch.dict(microscopy_panels.SAMPLE_PATHS, {
+                "252383": {"ds00_processed":
+                           "sample-252383_100x100x89.56_orient-LPS.nii"}}):
+            gui._refresh_sagittal_hint()
+        text = gui.sagittal_hint.configure.call_args.kwargs["text"]
+        self.assertIn("100×100×89.56 µm", text)
+        self.assertIn("filename declares LPS orientation", text)
+
     def test_determinate_resource_check_uses_progress_bar(self):
         from vispa.gui import NeuroVisGUI
         gui = object.__new__(NeuroVisGUI)
@@ -486,9 +502,72 @@ class ProgressBarTests(unittest.TestCase):
         gui._portal_region_cache = {"251637": {"004.swc": "PrCO_49"}}
         gui._neuron_lookup_state = "found"
         gui.neuron_status_var = mock.Mock()
+        gui.region_status_var = mock.Mock()
         gui._update_neuron_status()
-        gui.neuron_status_var.set.assert_called_once_with(
-            "Neuron: found · PrCO_49")
+        gui.neuron_status_var.set.assert_called_once_with("Neuron status: found")
+        gui.region_status_var.set.assert_called_once_with(
+            "Region: PrCO_49 · side unverified")
+
+    def test_neuron_side_uses_exact_workbook_result_not_portal_index(self):
+        from vispa.gui import NeuroVisGUI
+        gui = object.__new__(NeuroVisGUI)
+        gui.sample_id = mock.Mock()
+        gui.sample_id.get.return_value = '251637'
+        gui.neuron_id = mock.Mock()
+        gui.neuron_id.get.return_value = '004.swc'
+        gui._portal_region_cache = {'251637': {'004.swc': 'PrCO_49'}}
+        gui._neuron_side_cache = {('251637', '004.swc'): {
+            'status': 'verified', 'side': 'Right'}}
+        gui._neuron_lookup_state = 'found'
+        gui.neuron_status_var = mock.Mock()
+        gui.region_status_var = mock.Mock()
+        gui._update_neuron_status()
+        gui.region_status_var.set.assert_called_once_with(
+            'Region: PrCO_49 · Right')
+
+    def test_stale_workbook_result_does_not_change_selected_identity(self):
+        from vispa.gui import NeuroVisGUI
+        gui = object.__new__(NeuroVisGUI)
+        gui.sample_id = mock.Mock()
+        gui.sample_id.get.return_value = '252714'
+        gui.neuron_id = mock.Mock()
+        gui.neuron_id.get.return_value = '008.swc'
+        gui._neuron_side_pending = {('251637', '004.swc')}
+        gui._neuron_side_cache = {}
+        gui._append_log = mock.Mock()
+        gui._update_neuron_status = mock.Mock()
+        gui._store_neuron_side(('251637', '004.swc'), {
+            'status': 'verified', 'side': 'Right', 'source': {}})
+        gui._update_neuron_status.assert_not_called()
+        gui._append_log.assert_not_called()
+
+    def test_region_status_clears_on_identity_change_and_ignores_old_sample_error(self):
+        from vispa.gui import NeuroVisGUI
+        gui = object.__new__(NeuroVisGUI)
+        gui.sample_id = mock.Mock()
+        gui.sample_id.get.return_value = "252714"
+        gui.neuron_id = mock.Mock()
+        gui.neuron_id.get.return_value = "008.swc"
+        gui._portal_region_cache = {"252384": {"008.swc": "Tpt_200"}}
+        gui._neuron_lookup_state = "waiting"
+        gui.neuron_status_var = mock.Mock()
+        gui.region_status_var = mock.Mock()
+        gui._update_neuron_status()
+        gui.neuron_status_var.set.assert_called_once_with("Neuron status: waiting to load")
+        gui.region_status_var.set.assert_called_once_with("Region: checking")
+        gui.region_status_var.reset_mock()
+        gui._set_region_lookup_error("252384", "008.swc", "old failure")
+        gui.region_status_var.set.assert_not_called()
+        gui._set_region_lookup_error("252714", "007.swc", "old neuron failure")
+        gui.region_status_var.set.assert_not_called()
+
+    def test_guide_sections_cover_review_and_recovery(self):
+        from vispa.gui import NeuroVisGUI
+        guide = NeuroVisGUI._guide_sections()
+        self.assertEqual(len(guide), 6)
+        content = " ".join(text for _, lines in guide for text in lines)
+        for term in ("F5", "NIfTI", "3D SWC", "fnt-tracer", "receipt", "retry"):
+            self.assertIn(term, content)
 
 
 if __name__ == "__main__":

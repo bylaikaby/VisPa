@@ -1,0 +1,79 @@
+{
+  "schema": "vispa-nmt-reviewed-nomenclature-aliases.v1",
+  "manifest_sha256": "f9d88592cf58d2bd7a7f209526ab90f49a36b797c0a145c23caabf12defa9f34",
+  "scope": "Exact hierarchy nomenclature spelling/punctuation equivalence only; no geometry or anatomical acceptance",
+  "aliases": [
+    {
+      "family": "CHARM",
+      "left_index": 122,
+      "acronym": "area_7a",
+      "level6_name": "caudal_inferior_parietal_lobule_area_7a_(Opt/PG)",
+      "obj_file": "caudal_inferior_parietal_lobule_area_7a_(Opt-PG) (area_7a).obj",
+      "obj_sha256": "a5315aeb6c497d40d797170b99affd2e06a8426fe3d5b18a0a16c8ce4e8defae"
+    },
+    {
+      "family": "CHARM",
+      "left_index": 123,
+      "acronym": "area_7b",
+      "level6_name": "rostral_inferior_parietal_lobule_area_7b_(PFG/PF)",
+      "obj_file": "rostral_inferior_parietal_lobule_area_7b_(PFG-PF) (area_7b).obj",
+      "obj_sha256": "19a37a40fe72eb9f8ddd6fc7138ce4da77d45a1e858e5ae4ec78d7b587da15b2"
+    },
+    {
+      "family": "CHARM",
+      "left_index": 156,
+      "acronym": "EC",
+      "level6_name": "caudal_division_of_entrorhinal_cortex",
+      "obj_file": "caudal_division_of_entorhinal_cortex (EC).obj",
+      "obj_sha256": "f3b845850e13a4afbf80039d98cd7ec670d70dc1b66a6875afb3b459bb95ac0b"
+    },
+    {
+      "family": "CHARM",
+      "left_index": 157,
+      "acronym": "ECL",
+      "level6_name": "caudal_limiting_division_of_entrorhinal_cortex",
+      "obj_file": "caudal_limiting_division_of_entorhinal_cortex (ECL).obj",
+      "obj_sha256": "b439ac9561a95bb53e548f60302791663f0eb6f6ef23fa3be27e172ae9639c90"
+    },
+    {
+      "family": "SARM",
+      "left_index": 1089,
+      "acronym": "MEm",
+      "level6_name": "medial_eminence",
+      "obj_file": "medial_emminence (MEm).obj",
+      "obj_sha256": "ce6b691dcdd2b88d5a5f46b33d1c0f64e5ebb110073f34fc3a6089208a3ef9cb"
+    },
+    {
+      "family": "SARM",
+      "left_index": 1097,
+      "acronym": "JPLH",
+      "level6_name": "juxtaparaventricular_lateral_hypothalamus",
+      "obj_file": "justaparaventricular_lateral_hypothalamus (JPLH).obj",
+      "obj_sha256": "2c0d3940c3d0c570c517436ce3500ece0009b35d56af4068a33d4ee74da70b99"
+    },
+    {
+      "family": "SARM",
+      "left_index": 1183,
+      "acronym": "MiTg",
+      "level6_name": "microcellular_tegmentum",
+      "obj_file": "mircrocellular_tegmentum (MiTg).obj",
+      "obj_sha256": "30cdaf10927403f1383de620c6b824a441796d73f5fc5698a6d1e2663e802d8f"
+    },
+    {
+      "family": "SARM",
+      "left_index": 1194,
+      "acronym": "OM",
+      "level6_name": "oculomotor_nuclei",
+      "obj_file": "occulomotor_nuclei (OM).obj",
+      "obj_sha256": "a856e613f961e20979778ae1ea787d9ea3de291c93fdc366e9cdd9205b435dc9"
+    },
+    {
+      "family": "SARM",
+      "left_index": 1209,
+      "acronym": "n3",
+      "level6_name": "oculomotor_nerve",
+      "obj_file": "occulomotor_nerve (n3).obj",
+      "obj_sha256": "7c55f0168feb5f67c5f3b0876bd4e253b956ee5b590ea521e6e4a5d8e56b955b"
+    }
+  ]
+}

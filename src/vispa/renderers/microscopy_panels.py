@@ -1,9 +1,12 @@
 """
 vispa.py - Macaque Brain Hybrid-Resolution Visualization Toolkit
 
-Version: 1.12.0.dev3 (local/unreleased)
-Last updated: 2026-10-31
+Version: 1.13.0.dev0 (local/unreleased)
+Last updated: 2026-11-02
 Change history: ../../../CHANGELOG.md
+2026-11-02: Enlarge review figure title, axis, and legend text for fitted GUI previews.
+2026-11-02: Escape only unencodable characters in saved-path console messages
+on Windows so a Unicode output directory cannot abort a completed render.
 2026-10-30: Fix review crosshair arms at 320 display pixels and reduce the
 legacy cyan square side to 65%; expose effective sizes for receipts.
 Status: candidate (visual review pending)
@@ -107,6 +110,15 @@ from ..image_geometry import (
     clip_segment, percentile_normalize,
 )
 from .._version import __version__
+
+
+def _print_saved_path(label, path):
+    """Keep a saved figure valid when a legacy console cannot encode its path."""
+    message = f"  > {label}: {path}"
+    encoding = getattr(sys.stdout, "encoding", None)
+    if encoding:
+        message = message.encode(encoding, errors="backslashreplace").decode(encoding)
+    print(message)
 
 # Respect the caller's chosen backend (the bulk runners explicitly use Agg).
 
@@ -1163,9 +1175,9 @@ class VisPa:
             ax.text(bx + bar_px / 2, by - 20, bar_label, color='white', ha='center',
                     fontweight='bold')
         if panel.get('axis_labels'):
-            ax.set_xlabel(panel['axis_labels'][0], color='white', fontsize=9)
-            ax.set_ylabel(panel['axis_labels'][1], color='white', fontsize=9)
-            ax.tick_params(colors='white', labelsize=8)
+            ax.set_xlabel(panel['axis_labels'][0], color='white', fontsize=12)
+            ax.set_ylabel(panel['axis_labels'][1], color='white', fontsize=12)
+            ax.tick_params(colors='white', labelsize=10)
             for spine in ax.spines.values():
                 spine.set_color('white')
                 spine.set_visible(False)
@@ -1184,7 +1196,7 @@ class VisPa:
         fig, ax = plt.subplots(figsize=self.PANEL_FIGSIZE, facecolor='black', dpi=self.PANEL_DPI)
         ax.set_facecolor('black')
         self._draw_panel(ax, panel)
-        ax.set_title(title, color='white', fontsize=12)
+        ax.set_title(title, color='white', fontsize=15)
         self._draw_role_legend(fig, ax, panel.get('legend') or [])
         safe_region = self._sanitize_filename(soma_region) if soma_region else ""
         region_part = f"_{safe_region}" if safe_region else ""
@@ -1193,7 +1205,7 @@ class VisPa:
         fig.savefig(save_path, bbox_inches='tight', pad_inches=0.1, facecolor='black',
                     dpi=self.PANEL_DPI)
         plt.close(fig)
-        print(f"  > Plot saved: {save_path}")
+        _print_saved_path("Plot saved", save_path)
         return dict(panel, title=title, output_png=save_path)
 
     def plot_soma_block(self, volume_3d, origin, resolution, soma_coords, neuron_id,
@@ -1438,7 +1450,7 @@ class VisPa:
 
         fig.savefig(save_path, bbox_inches='tight', pad_inches=0.1,
                     facecolor='black', dpi=self.PANEL_DPI)
-        print(f"  > Plot saved: {save_path}")
+        _print_saved_path("Plot saved", save_path)
         plt.close(fig)
         return save_path
 
@@ -1475,13 +1487,13 @@ class VisPa:
         position = ax.get_position()
         width = position.width * fig.bbox.width
         columns = min(len(entries), 3)
-        widths = [renderer.get_text_width_height_descent(label, FontProperties(size=9), False)[0] + 50 for label in labels]
+        widths = [renderer.get_text_width_height_descent(label, FontProperties(size=11), False)[0] + 50 for label in labels]
         while columns > 1 and sum(sorted(widths, reverse=True)[:columns]) > width:
             columns -= 1
         top = (ax.get_tightbbox(renderer).y0 - 8.0) / fig.bbox.height
         fig.legend(handles, labels, loc='upper left', bbox_to_anchor=(position.x0, top),
                    bbox_transform=fig.transFigure, ncol=columns, frameon=False,
-                   labelcolor='white', fontsize=9, borderaxespad=0, handlelength=1.4)
+                   labelcolor='white', fontsize=11, borderaxespad=0, handlelength=1.4)
 
     def plot_tri_plot(self, panels, neuron_id, output_dir=None, suffix="TriPlot",
                       soma_region=None, soma_coords=None, dpi=None, header=None,
@@ -1514,7 +1526,7 @@ class VisPa:
             title = panel.get('title') or self._title_text(
                 neuron_id, panel.get('suffix', suffix), soma_region, soma_coords,
                 panel['fov_um'], panel['depth_um'])
-            ax.set_title(title, color='white', fontsize=11)
+            ax.set_title(title, color='white', fontsize=14)
             ax.set_anchor('N')
         if legend:
             legend_ax = fig.add_subplot(grid[1, :])
@@ -1571,7 +1583,7 @@ class VisPa:
         fig.savefig(save_path, bbox_inches='tight', pad_inches=0.15, facecolor='black',
                     dpi=dpi or self.TRIO_DPI)
         plt.close(fig)
-        print(f"  > Tri-plot saved: {save_path}")
+        _print_saved_path("Tri-plot saved", save_path)
         return save_path
 
     def _draw_shared_legend(self, ax, panels, neuron_id, header=None, caveats=None):
@@ -1607,9 +1619,9 @@ class VisPa:
                     line = candidate
             return '\n'.join(lines + ([line] if line else []))
         heading = wrapped(header or f"{self.sample_id} | {neuron_id} | review panels: "
-                + " · ".join(f"{i + 1} {role}" for i, role in enumerate(roles)), 12, 'bold')
+                + " · ".join(f"{i + 1} {role}" for i, role in enumerate(roles)), 15, 'bold')
         heading_artist = ax.text(0.0, 1.0, heading,
-                color='white', fontsize=12, fontweight='bold', va='top', ha='left',
+                color='white', fontsize=15, fontweight='bold', va='top', ha='left',
                 transform=ax.transAxes)
         heading_height = heading_artist.get_window_extent(renderer).height
         legend_top = 1.0 - (heading_height + 6.0) / height
@@ -1629,18 +1641,18 @@ class VisPa:
             labels.append(label)
         if handles:
             columns = min(len(labels), 5)
-            widths = [renderer.get_text_width_height_descent(label, FontProperties(size=10), False)[0] + 64 for label in labels]
+            widths = [renderer.get_text_width_height_descent(label, FontProperties(size=12), False)[0] + 64 for label in labels]
             while columns > 1 and sum(sorted(widths, reverse=True)[:columns]) > width:
                 columns -= 1
             legend = ax.legend(handles, labels, loc='upper left', frameon=False,
-                               ncol=columns, fontsize=10, labelcolor='white',
+                               ncol=columns, fontsize=12, labelcolor='white',
                                handlelength=1.4, columnspacing=1.8, handletextpad=0.6,
                                bbox_to_anchor=(0.0, legend_top), borderaxespad=0.0)
             for text in legend.get_texts():
                 text.set_color('white')
         legend_height = legend.get_window_extent(renderer).height if handles else 0.0
         notes_top = 1.0 - (heading_height + legend_height + 12.0) / height
-        notes_artist = ax.text(0.0, notes_top, wrapped("  ".join(notes), 9), color='#dddddd', fontsize=9, va='top',
+        notes_artist = ax.text(0.0, notes_top, wrapped("  ".join(notes), 11), color='#dddddd', fontsize=11, va='top',
                 ha='left', transform=ax.transAxes)
         return heading_height + legend_height + notes_artist.get_window_extent(renderer).height + 24.0
 

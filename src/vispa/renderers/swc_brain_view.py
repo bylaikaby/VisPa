@@ -1,9 +1,14 @@
 """Explicit local-input launcher for the isolated legacy OpenGL viewer.
 
-Version: 1.11.0.dev25 (local/unreleased)
-Last updated: 2026-10-27
+Version: 1.13.0.dev0 (local/unreleased)
+Last updated: 2026-11-02
 Change history: ../../../CHANGELOG.md
 Status: candidate
+2026-11-02: Resolve side-collapsed cortical portal keys to bilateral OBJs;
+withhold unverified subcortical numeric namespaces and neuron-side inference.
+2026-11-02: Accept underscores inside exact portal-region acronyms such as area_7a_122.
+2026-11-02: Optionally bind portal acronym and CHARM/SARM level-6 index to a
+hash-verified region OBJ map; missing or ambiguous mappings stay unavailable.
 
 This module stays standard-library-only until a render is requested. It never
 looks up cohort data, fetches sources, transforms coordinates, or mirrors SWCs.
@@ -35,7 +40,7 @@ DEFAULT_WORKER_CANDIDATES = (
 from ..config import BRAIN_VIEW_DEFAULT_SETTINGS as DEFAULT_SETTINGS
 _IDENT = re.compile(r"^[A-Za-z0-9_-]+$")
 _REGION_NAME = re.compile(r"^(?P<display>.+?)\s*\((?P<acronym>[^()]+)\)$")
-_PORTAL_SUFFIX = re.compile(r"^(?P<acronym>[A-Za-z][A-Za-z0-9-]*?)_[0-9]+$")
+_PORTAL_SUFFIX = re.compile(r"^(?P<acronym>[A-Za-z][A-Za-z0-9_-]*?)_(?P<index>[0-9]+)$")
 _SETTINGS_KEYS = frozenset(DEFAULT_SETTINGS)
 
 
@@ -198,6 +203,71 @@ def _region_manifest(source: dict) -> tuple[dict | None, dict | None]:
                      "total_bytes": payload.get("total_bytes")}
 
 
+def _hierarchy_region(source: dict, query: str, manifest_info: dict | None) -> tuple[dict | None, dict | None]:
+    """Resolve a side-collapsed cortical portal key to one bilateral OBJ.
+
+    The portal number is not a neuron-side index. Subcortical portal numbers
+    have a different, unverified namespace and are withheld.
+    """
+    map_value = source.get("region_hierarchy_map")
+    if map_value is None:
+        return None, None
+    if manifest_info is None:
+        raise ValueError("region_hierarchy_map requires a region_manifest")
+    path = Path(map_value).expanduser().resolve()
+    if not path.is_file() or path.stat().st_size > 4 * 1024 * 1024:
+        raise ValueError("region hierarchy map is missing or exceeds 4 MiB")
+    digest = _sha256(path)
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if (payload.get("schema") != "vispa-nmt-level6-region-obj-map.v2" or
+            payload.get("source_sha256", {}).get("mesh_manifest") != manifest_info["sha256"]):
+        raise ValueError("region hierarchy map schema or mesh manifest hash differs")
+    entries = payload.get("entries")
+    if not isinstance(entries, list) or len(entries) > 2048:
+        raise ValueError("invalid region hierarchy map entries")
+    suffix = _PORTAL_SUFFIX.fullmatch(query)
+    if suffix is None:
+        return None, {"status": "unmatched", "reason": "portal region lacks a level-6 acronym/index"}
+    index = int(suffix.group("index"))
+    acronym = suffix.group("acronym").casefold()
+    matches = [item for item in entries if
+               isinstance(item, dict) and item.get("level6_index") == index and
+               isinstance(item.get("acronym"), str) and item["acronym"].casefold() == acronym]
+    if len(matches) != 1:
+        sarm_acronym = any(isinstance(item, dict) and item.get("family") == "SARM" and
+                            isinstance(item.get("acronym"), str) and
+                            item["acronym"].casefold() == acronym for item in entries)
+        return None, {"status": "unmatched" if not matches else "ambiguous",
+                      "reason": ("portal numeric namespace differs from NMT SARM index; no verified bridge"
+                                 if sarm_acronym and not matches else
+                                 "portal acronym/index has no unique level-6 identity")}
+    entry = matches[0]
+    if entry.get("family") != "CHARM" or entry.get("side") != "CL":
+        return None, {"status": "unmatched", "reason":
+                      "portal numeric namespace is unverified for non-cortical or side-specific NMT indices"}
+    partner = [item for item in entries if isinstance(item, dict) and
+               item.get("family") == "CHARM" and item.get("side") == "CR" and
+               item.get("level6_index") == index + 500 and
+               isinstance(item.get("acronym"), str) and item["acronym"].casefold() == acronym]
+    if len(partner) != 1 or partner[0].get("mesh") != entry.get("mesh"):
+        return None, {"status": "unmatched", "reason":
+                      "cortical portal key does not resolve to one shared bilateral OBJ"}
+    if entry.get("status") != "unique" or not isinstance(entry.get("mesh"), dict):
+        return None, {"status": "unmatched", "reason": "level-6 identity has no unique OBJ",
+                      "hierarchy": {key: entry.get(key) for key in
+                                    ("family", "side", "level6_index", "level6_abbr")}}
+    mesh = entry["mesh"]
+    if (not isinstance(mesh.get("file"), str) or Path(mesh["file"]).name != mesh["file"] or
+            not isinstance(mesh.get("sha256"), str) or
+            not re.fullmatch(r"[0-9a-fA-F]{64}", mesh["sha256"])):
+        raise ValueError("invalid mapped region OBJ identity")
+    return mesh, {"status": "selected", "reason": "side-collapsed cortical portal key and verified bilateral OBJ",
+                  "canonical_region_key": {"family": "CHARM", "acronym": entry["acronym"],
+                                           "portal_index": index, "left_atlas_index": index,
+                                           "right_atlas_index": index + 500},
+                  "hierarchy_map": {"path": str(path), "sha256": digest}}
+
+
 def _plan_region(source: dict, requested: str | None, portal_region: str) -> tuple[dict | None, dict, dict | None]:
     """Resolve explicit selection strictly; portal metadata may only select uniquely."""
     root = source.get("region_mesh_root")
@@ -217,29 +287,47 @@ def _plan_region(source: dict, requested: str | None, portal_region: str) -> tup
     query = raw_query
     normalized = False
     if not explicit:
-        direct = _region_matches(region_mesh_inventory(root), query)
-        if len(direct) == 1:
-            entry, match_kind = direct[0], "portal_exact"
-        elif len(direct) > 1:
-            resolution.update(status="ambiguous", reason="portal region matches multiple OBJ files")
+        if _PORTAL_SUFFIX.fullmatch(query) and source.get("region_hierarchy_map") is None:
+            resolution.update(status="unmatched",
+                              reason="numeric portal region requires sources.brain_view.region_hierarchy_map for atlas index and OBJ identity validation")
             return None, resolution, manifest_info
+        mapped, map_resolution = _hierarchy_region(source, query, manifest_info)
+        if map_resolution is not None and mapped is None:
+            resolution.update(map_resolution)
+            return None, resolution, manifest_info
+        if mapped is not None:
+            entry, match_kind = resolve_region_mesh(root, mapped["file"])
+            if (entry["filename"] != mapped["file"] or
+                    manifest_files is None or
+                    manifest_files.get(mapped["file"].casefold(), {}).get("sha256") != mapped["sha256"].lower()):
+                raise ValueError("mapped region OBJ differs from dependency manifest")
+            resolution.update(map_resolution)
+            resolution["portal_namespace"] = "side-collapsed CHARM cortical key"
+            resolution["neuron_side"] = "unverified by this worker"
         else:
-            suffix = _PORTAL_SUFFIX.fullmatch(query)
-            if suffix is None:
-                resolution.update(status="unmatched", reason="portal region has no exact OBJ match")
+            direct = _region_matches(region_mesh_inventory(root), query)
+            if len(direct) == 1:
+                entry, match_kind = direct[0], "portal_exact"
+            elif len(direct) > 1:
+                resolution.update(status="ambiguous", reason="portal region matches multiple OBJ files")
                 return None, resolution, manifest_info
-            query = suffix.group("acronym")
-            normalized = True
-            try:
-                entry, match_kind = resolve_region_mesh(root, query)
-            except ValueError as exc:
-                resolution.update(status="unmatched", reason=str(exc), normalized_query=query)
-                return None, resolution, manifest_info
-            if match_kind != "acronym":
-                resolution.update(status="unmatched",
-                                  reason="normalized portal region did not match an exact acronym",
-                                  normalized_query=query)
-                return None, resolution, manifest_info
+            else:
+                suffix = _PORTAL_SUFFIX.fullmatch(query)
+                if suffix is None:
+                    resolution.update(status="unmatched", reason="portal region has no exact OBJ match")
+                    return None, resolution, manifest_info
+                query = suffix.group("acronym")
+                normalized = True
+                try:
+                    entry, match_kind = resolve_region_mesh(root, query)
+                except ValueError as exc:
+                    resolution.update(status="unmatched", reason=str(exc), normalized_query=query)
+                    return None, resolution, manifest_info
+                if match_kind != "acronym":
+                    resolution.update(status="unmatched",
+                                      reason="normalized portal region did not match an exact acronym",
+                                      normalized_query=query)
+                    return None, resolution, manifest_info
     else:
         entry, match_kind = resolve_region_mesh(root, query)
     path = Path(entry["path"])
@@ -260,7 +348,7 @@ def _plan_region(source: dict, requested: str | None, portal_region: str) -> tup
     legend_label = (f"Region · {short_label}" if explicit else
                     f"Bilateral soma region · {short_label}")
     compact_label = (f"Region · {short_label}" if explicit else f"Soma · {short_label}")
-    resolution.update(status="selected", reason="unique exact region OBJ match",
+    resolution.update(status="selected", reason=resolution["reason"] or "unique exact region OBJ match",
                       match_kind=match_kind, normalized_query=query if normalized else None)
     return {**entry, "sha256": digest, "stat": stat, "manifest_entry": manifest_entry,
             "legend_label": legend_label, "compact_label": compact_label,
@@ -321,6 +409,12 @@ def plan_configured_view(sample_id: str, neuron_id: str, portal_region: str = ""
     swc_before = (swc_stat, _sha256(swc))
     soma_root = _swc_root_coordinate(swc)
     region_mesh, region_resolution, region_manifest = _plan_region(source, region, portal_region)
+    # The portal numeric suffix may collapse laterality (e.g. PrCO_49 for a
+    # workbook-recorded CR_PrCO neuron). A mapped hierarchy side describes the
+    # atlas label used for OBJ lookup, never the neuron's hemisphere.
+    if region_resolution.get("canonical_region_key"):
+        region_resolution["portal_namespace"] = "side-collapsed CHARM cortical key"
+        region_resolution["neuron_side"] = "unverified by this worker"
     from ..config import resolve_settings, config_source
     settings = resolve_settings("brain-view", overrides, config=config)
     settings_config_path = (config_source(config) if source.get("settings") or
