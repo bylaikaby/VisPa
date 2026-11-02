@@ -37,7 +37,7 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-vispa = ["configs/*.yaml"]
+vispa = ["configs/*.yaml", "assets/*.png", "assets/*.ico"]
 
 [project.scripts]
 vispa = "vispa.commands:main"

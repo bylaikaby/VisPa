@@ -10,6 +10,7 @@ profile settings in figure fingerprints and cache receipts.
 2026-11-02: Pass a validated current-sample portal region to brain-view after manual identity entry.
 2026-11-02: Separate neuron and purple region status, move the workflow guide to a top-bar window, and stack full-width plotting cards in their original left-panel section with source hints visible and aligned typography.
 2026-11-02: Read exact-neuron FULL workbook laterality off the UI thread, guard stale identity results, and fit the preview above the full bottom action bar.
+2026-11-02: Show the user-supplied VisPa artwork in the GUI title bar and taskbar from packaged image assets.
 
 DESCRIPTION:
     Tkinter review interface for standalone VisPa panels. It uses the
@@ -148,6 +149,7 @@ import shutil
 import subprocess
 from pathlib import Path
 from dataclasses import dataclass
+from importlib import resources
 from ._version import __version__
 from .config import _stamp
 
@@ -166,6 +168,23 @@ try:  # preview pane only; the rest of the GUI works without Pillow
     from PIL import Image, ImageTk
 except Exception:  # pragma: no cover - environment without Pillow
     Image = ImageTk = None
+
+
+def _apply_window_icon(root):
+    """Use the packaged user artwork for Tk and the Windows title bar."""
+    assets = resources.files('vispa').joinpath('assets')
+    try:
+        with resources.as_file(assets.joinpath('vispa.png')) as png:
+            root._vispa_icon_photo = tk.PhotoImage(file=str(png))
+            root.iconphoto(True, root._vispa_icon_photo)
+    except (OSError, tk.TclError):
+        pass  # A missing icon must not prevent review work.
+    if sys.platform == 'win32':
+        try:
+            with resources.as_file(assets.joinpath('vispa.ico')) as ico:
+                root.iconbitmap(default=str(ico))
+        except (OSError, tk.TclError):
+            pass
 
 
 class _LogStream:
@@ -429,6 +448,7 @@ class NeuroVisGUI:
         self.identity_source = identity_source
         self.root = root
         self.root.title(f"VisPa {__version__} · local review")
+        _apply_window_icon(self.root)
         # Design sizes below are quoted in 96-dpi pixels. Tk fonts follow the
         # display DPI, so the container geometry must follow the same factor or
         # a 200 % display renders text 1.75x larger than the fixed column.

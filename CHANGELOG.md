@@ -1,6 +1,7 @@
 # VisPa change log
 
 ## 1.13.0.dev0 — 2026-11-02 (development build)
+- Package the exact user-supplied VisPa PNG and a multi-size ICO made from it; use them for the GUI window icon and Desktop shortcut without changing the artwork. The GUI continues if a platform cannot load an icon.
 - Package the reviewed GUI figure, strict cortical region, exact workbook laterality, and Windows saved-path improvements from dev4 in the first 1.13 development build. The 3D worker leaves subcortical portal numeric namespaces unmapped and never infers neuron side from portal suffixes.
 - Add `scripts/uninstall_vispa.ps1` for an explicit Python environment, with dry run, VisPa-only pip removal and ReMAP retention check. Document wheel install/upgrade through the same interpreter without changing dependencies.
 - Make Windows source-test path assertions compare existing file identity, allowing equivalent long and 8.3 temporary-directory aliases on GitHub Actions without weakening source or sample checks.
