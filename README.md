@@ -451,10 +451,11 @@ before launching a window:
 python run_vispa.py brain-view --sample 251637 --neuron 004.swc --config 'C:\data\vispa_config.yaml' --dry-run
 ```
 
-The GUI uses the current portal soma-region field only when it resolves to one
-exact acronym in `sources.brain_view.region_mesh_root`; for example `PrCO_49`
-may select the unique `PrCO` OBJ. The legend then identifies **Bilateral soma
-region · PrCO**. Missing or ambiguous mappings remain root-plus-SWC and are
+The GUI passes the current portal soma-region field to the 3D worker. A numeric
+portal key such as `PrCO_49` may select a verified bilateral `PrCO` OBJ only
+through the optional hierarchy map described below; numeric keys never use
+acronym-only fallback. The legend identifies **Bilateral soma region · PrCO**.
+Missing or ambiguous mappings remain root-plus-SWC and are
 reported as **Soma region unavailable**. There is no GUI region picker. CLI
 review may explicitly request one exact filename, display name or acronym:
 
@@ -498,6 +499,32 @@ package remains installable without the `[3d]` OpenGL dependencies.
 | `neuron_color` / `--neuron-color R G B` | `[1, 0.5, 0]` | Processed-neuron display color | Each RGB component in `[0, 1]` |
 | `soma_color` / `--soma-color R G B` | `[0, 1, 1]` | Distinct processed-SWC root/soma marker color | Each RGB component in `[0, 1]` |
 | `window_size` / `--window-size WIDTH HEIGHT` | `[1100, 800]` | Initial viewer dimensions in pixels | Two integers, each at least 100 |
+
+An optional `sources.brain_view.region_hierarchy_map` can bind a cortical portal
+key such as `PrCO_49` to a verified pair of CHARM level-6 labels and one hashed
+OBJ from `sources.brain_view.region_manifest`. Generate the local map with
+`python batch/build_region_hierarchy_map.py --charm CHARM_key_table.csv --sarm
+SARM_key_table.csv --mesh-manifest region_mesh_manifest.json --aliases
+batch/reviewed_nmt_region_aliases.json --output region_map.json`. The builder
+requires an exact hierarchy full-name match or one explicit nomenclature alias
+bound to family, level-6 index, acronym, full name, OBJ filename and manifest
+hash. Missing meshes, unreviewed aliases, ambiguous names and a changed
+manifest remain unavailable. The included aliases address nine exact spelling
+or punctuation differences; SARM CAP remains withheld because its acronym
+collides with an unrelated mesh. These names do not establish geometry.
+The map is opt-in and does not infer anatomical alignment, neuron laterality or any
+coordinate transform. Cortical portal suffixes are side-collapsed canonical
+keys: `PrCO_49` occurs for a workbook-recorded right `CR_PrCO` neuron, while
+CHARM atlas indices are `CL_PrCO=49` and `CR_PrCO=549`. The worker verifies
+that both CHARM sides select the same OBJ, records the canonical region key,
+and does not report a neuron side. Subcortical portal suffixes have an
+unverified namespace (`Cl_304` differs from SARM `SL_Cl=1004`); they remain
+unmapped until a source-backed namespace bridge is supplied. Portal numbers
+must never be treated as D99 labels or side-specific NMT indices.
+Without the map, numeric portal region labels leave the region mesh unavailable
+with a receipt reason; they are not reduced to acronym-only guesses. An
+operator can still request an exact filename/acronym with `--region`, which is
+reported as an explicit selection rather than a verified atlas-index mapping.
 
 ## Explicit brain-view batches (local dev13 candidate)
 
@@ -702,7 +729,7 @@ heterogeneous or irregular-pitch grid mapping.
 
 The GUI's **Neuron list** uses `sources.neuron_catalog.mode: live-iondata` in the packaged profile and queries `http://10.10.48.110/neuronbrowser/api/user/selectNeurons?id=<sample-id>` with a bounded timeout and response size. It validates the JSON rows and keeps exact `sampleid` and `name` values, including leading zeroes and sample suffixes. The display has two columns, **SWC ID** and **Portal region**; provenance shows whether the list came from live IONData or a dated CSV, its row count, fetch time or source date, URL or file path, and SHA-256. To add a dated snapshot alongside live mode, set `sources.neuron_catalog.snapshot_path`; in a CSV-mode profile, `sources.neuron_catalog.path` selects the CSV. If both sources are available, choose explicitly in the GUI. On existing CSV-only profiles, Live IONData is an explicit option and uses the configured host or the intranet default; the current CSV remains the default. No source is silently substituted. For a bounded backend check, run `python run_vispa.py config-check --catalog --sample 250432 --catalog-source live-iondata --dry-run` to inspect the resolved endpoint without fetching, or omit `--dry-run` to fetch just that sample's catalog and report its count and provenance. `vispa.sources.list_neurons(sample_id, config=None, source=None)` supports `live-iondata` and `csv` with the same explicit-source behavior.
 
-The optional **SWC Brain View interactive** action uses `sources.brain_view.mesh_path`, `processed_swc_root`, and the optional manifest-bound `region_mesh_root`, with declared `coordinate_frame` / `coordinate_units` and optional `settings`; `visual_toolkit.worker_python` selects its isolated worker when set. A generic config does not receive default anatomical frame or unit declarations: the worker preflight requires explicit values when 3D view is requested. The default projectome config points to the preserved root.obj, processed-SWC tree and copied legacy CHARM/SARM OBJ dependency folder and declares their current stored convention. The handoff passes the exact current sample and neuron ID plus the portal snapshot's soma region when available. A unique acronym match adds one bilateral region overlay; no match or ambiguity remains root-only and is recorded rather than guessed. It never substitutes a raw SWC or downloads a model. The GUI starts the worker in a separate process, leaving the host Python imports isolated.
+The optional **SWC Brain View interactive** action uses `sources.brain_view.mesh_path`, `processed_swc_root`, and the optional manifest-bound `region_mesh_root`, with declared `coordinate_frame` / `coordinate_units` and optional `settings`; `visual_toolkit.worker_python` selects its isolated worker when set. A generic config does not receive default anatomical frame or unit declarations: the worker preflight requires explicit values when 3D view is requested. The default projectome config points to the preserved root.obj, processed-SWC tree and copied legacy CHARM/SARM OBJ dependency folder and declares their current stored convention. The handoff passes the exact current sample and neuron ID plus the portal snapshot's soma region when available. A verified cortical canonical key may add one bilateral region overlay; no match or ambiguity remains root-only and is recorded rather than guessed. It never substitutes a raw SWC or downloads a model. The GUI starts the worker in a separate process, leaving the host Python imports isolated.
 
 `vispa.sources.IONData()` reads the configured local SWC cache first. A project can register a fallback implementing `getRawNeuronTreeByID(sample_id, neuron_id)` using `set_iondata_provider_factory(factory)`. Without a registered factory, setting `sources.http_host` and `sources.raw_swc_base` enables the built-in portal fetch: it reads the sample's `project_id` from the portal and downloads `<project>/<sample>/swc_raw/<neuron>` into `sources.legacy_raw_swc_root`. The returned tree protocol exposes `root.x/y/z`, `root.xyz`, `points`, and iterable `edges` whose `.data` contains points with `.x/y/z` attributes. The local parser rejects malformed, disconnected, cyclic, and missing-parent trees.
 

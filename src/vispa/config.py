@@ -1,8 +1,10 @@
 """Load explicit, portable VisPa dataset configuration.
 
-Version: 1.12.0.dev3 (local/unreleased)
-Last updated: 2026-10-31
+Version: 1.12.0.dev4 (local/unreleased)
+Last updated: 2026-11-02
 Change history: ../../CHANGELOG.md
+2026-11-02: Resolve an optional local NMT level-6 region OBJ map path for
+strict portal-region index/mesh preflight.
 2026-10-30: Set the review-marker crosshair default to 320 display pixels;
 retain the legacy setting as accepted compatibility metadata.
 """
@@ -546,6 +548,9 @@ def load(path: str | Path | None = None, base_dir: str | Path | None = None) -> 
         if brain_view.get("region_manifest") is not None:
             brain_view["region_manifest"] = _resolve(
                 brain_view["region_manifest"], configured_base)
+        if brain_view.get("region_hierarchy_map") is not None:
+            brain_view["region_hierarchy_map"] = _resolve(
+                brain_view["region_hierarchy_map"], configured_base)
         brain_view["region_color"] = _parse_color(
             brain_view.get("region_color", [0.3, 0.7, 1.0]),
             "sources.brain_view.region_color")

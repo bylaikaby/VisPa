@@ -1,9 +1,10 @@
 """Contract tests for the lazy original-engine OpenGL worker.
 
-Version: 1.11.0.dev25 (local/unreleased)
-Last updated: 2026-10-27
+Version: 1.12.0.dev4 (local/unreleased)
+Last updated: 2026-11-02
 Change history: ../CHANGELOG.md
 Status: candidate
+2026-11-02: Cover portal numeric key refusal without a verified hierarchy map.
 """
 import contextlib
 import io
@@ -138,12 +139,13 @@ class LegacyOpenGLPlanningTests(unittest.TestCase):
         self.assertEqual(plan["region_manifest"]["schema"],
                          "vispa-region-mesh-dependency-manifest-v1")
 
-    def test_portal_suffix_selects_only_one_exact_acronym_or_stays_root_only(self):
+    def test_numeric_portal_suffix_requires_hierarchy_map(self):
         self._configure_regions(["precentral_opercular_cortex (PrCO).obj"])
         selected = opengl.plan_configured_view(
             "251637", "001.swc", "PrCO_49", self.config)
-        self.assertEqual(selected["region_mesh"]["acronym"], "PrCO")
-        self.assertEqual(selected["region_resolution"]["normalized_query"], "PrCO")
+        self.assertIsNone(selected["region_mesh"])
+        self.assertEqual(selected["region_resolution"]["status"], "unmatched")
+        self.assertIn("region_hierarchy_map", selected["region_resolution"]["reason"])
         unmatched = opengl.plan_configured_view(
             "251637", "001.swc", "Unknown_49", self.config)
         self.assertIsNone(unmatched["region_mesh"])
@@ -170,7 +172,7 @@ class LegacyOpenGLPlanningTests(unittest.TestCase):
     def test_worker_adds_one_region_overlay_without_changing_root_camera_basis(self):
         self._configure_regions(["amygdala (Amy).obj"], manifest=True)
         plan = opengl.plan_configured_view(
-            "251637", "001.swc", "Amy_16", self.config)
+            "251637", "001.swc", config_path=self.config, region="Amy")
         events = []
 
         class FakeViewer:
@@ -330,8 +332,8 @@ class LegacyOpenGLPlanningTests(unittest.TestCase):
                 "251637", "001.swc", "PrCO_49", self.config)
         portal_command = popen.call_args.args[0]
         self.assertFalse(any(argument.startswith("--region=") for argument in portal_command))
-        self.assertEqual(result.vispa_plan["region_mesh"]["legend_label"],
-                         "Bilateral soma region · PrCO")
+        self.assertIsNone(result.vispa_plan["region_mesh"])
+        self.assertIn("region_hierarchy_map", result.vispa_plan["region_resolution"]["reason"])
 
         with mock.patch.object(opengl.subprocess, "Popen", return_value=mock.Mock()) as popen:
             opengl.launch_configured_view(

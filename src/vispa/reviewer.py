@@ -1,12 +1,15 @@
 """
 vispa_gui.py - GUI for NeuroVis Visual Toolkit
 
-Version: 1.12.0.dev3 (local/unreleased)
-Last updated: 2026-10-31
+Version: 1.12.0.dev4 (local/unreleased)
+Last updated: 2026-11-02
 Change history: ../../CHANGELOG.md
 Status: candidate (GUI layout reviewed; scientific review pending)
 2026-10-30: Record effective fixed crosshair and smaller legacy square separately from legacy
 profile settings in figure fingerprints and cache receipts.
+2026-11-02: Pass a validated current-sample portal region to brain-view after manual identity entry.
+2026-11-02: Separate neuron and purple region status, move the workflow guide to a top-bar window, and stack full-width plotting cards in their original left-panel section with source hints visible and aligned typography.
+2026-11-02: Read exact-neuron FULL workbook laterality off the UI thread, guard stale identity results, and fit the preview above the full bottom action bar.
 
 DESCRIPTION:
     Tkinter review interface for standalone VisPa panels. It uses the
@@ -524,6 +527,11 @@ class NeuroVisGUI:
         self._catalog_source_choices = {}
         self._catalog_rows_by_iid = {}
         self._portal_region_cache = {}
+        self._portal_region_snapshots = {}
+        self._neuron_tables_root = (configuration.get('sources', {})
+                                    .get('neuron_tables', {}).get('root'))
+        self._neuron_side_cache = {}
+        self._neuron_side_pending = set()
         self._neuron_catalog_window = None
         self.neuron_catalog_table = None
         self.neuron_catalog_load_button = None
@@ -532,7 +540,10 @@ class NeuroVisGUI:
         self.build_full_gui()
         self.sample_id.trace_add('write', lambda *_: self._refresh_portal_region())
         self.neuron_id.trace_add('write', lambda *_: self._refresh_portal_region())
+        self.sample_id.trace_add('write', lambda *_: self._refresh_neuron_side())
+        self.neuron_id.trace_add('write', lambda *_: self._refresh_neuron_side())
         self._refresh_portal_region()
+        self._refresh_neuron_side()
 
         # Start the identity lookup before the later resource-check callback so
         # the sample-section status and coordinates populate without waiting
@@ -636,7 +647,7 @@ class NeuroVisGUI:
     def _window_geometry(self):
         """Design-sized window, clamped to the visible screen on high-DPI use."""
         width = min(self._px(1298), self.root.winfo_screenwidth() - self._px(24))
-        height = min(self._px(1212), self.root.winfo_screenheight() - self._px(64))
+        height = min(self._px(1212), self.root.winfo_screenheight() - self._px(96))
         return f"{max(self._px(980), width)}x{max(self._px(760), height)}"
 
     def _catalog_geometry(self, requested_width, requested_height):
@@ -677,6 +688,8 @@ class NeuroVisGUI:
                  fg=C['header_muted'], font=('Segoe UI', 9)).pack(side='left')
         self._flat_button(header, "Settings", self._open_config_yaml,
                           small=True).pack(side='right', padx=P(16))
+        self._flat_button(header, "Guide", self._open_guide,
+                          small=True).pack(side='right', padx=(0, P(4)))
 
         # Left column: scrollable setting cards, fixed to the mockup's 392 px.
         left = tk.Frame(self.root, bg=C['page'])
@@ -713,79 +726,28 @@ class NeuroVisGUI:
         body = self._card(inner, "Sample")
         self._field(body, "Sample ID", self.sample_id, 0, width=16)
         self._field(body, "Neuron ID", self.neuron_id, 1, width=16)
-        self.neuron_status_var = tk.StringVar(value="Neuron: not loaded")
-        status_box = tk.Frame(body, bg=C['accent_soft'], highlightthickness=1,
-                              highlightbackground=C['border'])
-        status_box.grid(row=2, column=0, columnspan=3, sticky='ew',
+        self.neuron_status_var = tk.StringVar(value="Neuron status: not loaded")
+        self.region_status_var = tk.StringVar(value="Region: unavailable")
+        status_row = tk.Frame(body, bg=C['card'])
+        status_row.grid(row=2, column=0, columnspan=3, sticky='ew',
                         pady=(P(4), P(2)))
-        tk.Label(status_box, textvariable=self.neuron_status_var,
-                 bg=C['accent_soft'], fg=C['text'], anchor='w',
-                 font=('Segoe UI', 9, 'bold'), justify='left',
-                 wraplength=P(270)).pack(fill='x', padx=P(8), pady=P(5))
+        for column, (variable, fill) in enumerate((
+                (self.neuron_status_var, C['accent_soft']),
+                (self.region_status_var, '#eee8f8'))):
+            status_row.grid_columnconfigure(column, weight=1)
+            box = tk.Frame(status_row, bg=fill, highlightthickness=1,
+                           highlightbackground=C['border'])
+            box.grid(row=0, column=column, sticky='nsew',
+                     padx=(0, P(3)) if column == 0 else (P(3), 0))
+            tk.Label(box, textvariable=variable, bg=fill, fg=C['text'],
+                     anchor='w', font=('Segoe UI', 9, 'bold'), justify='left',
+                     wraplength=P(155)).pack(fill='x', padx=P(7), pady=P(5))
         self.neuron_catalog_open_button = self._flat_button(
             body, "Neuron list", self._open_neuron_catalog, primary=True)
         self.neuron_catalog_open_button.grid(
             row=3, column=0, columnspan=3, sticky='ew', pady=(P(4), P(2)))
 
-        # Review steps: one row per stage, all six visible without scrolling.
-        steps_body = self._card(inner, "Step guide")
-        steps_body.grid_columnconfigure(0, weight=1)
-        steps_canvas = tk.Canvas(steps_body, bg=C['card'], highlightthickness=0,
-                                 height=P(230))
-        steps_scroll = ttk.Scrollbar(steps_body, orient='vertical',
-                                     command=steps_canvas.yview)
-        steps_canvas.configure(yscrollcommand=steps_scroll.set)
-        steps_canvas.grid(row=0, column=0, sticky='ew')
-        steps_scroll.grid(row=0, column=1, sticky='ns')
-        steps_inner = tk.Frame(steps_canvas, bg=C['card'])
-        steps_window = steps_canvas.create_window((0, 0), window=steps_inner, anchor='nw')
-        steps_inner.grid_columnconfigure(0, weight=1)
-        steps_inner.bind(
-            '<Configure>',
-            lambda event: steps_canvas.configure(scrollregion=steps_canvas.bbox('all')))
-        steps_canvas.bind(
-            '<Configure>',
-            lambda event: steps_canvas.itemconfigure(steps_window, width=event.width))
-        for widget in (steps_canvas, steps_inner):
-            widget.bind(
-                '<MouseWheel>',
-                lambda event: steps_canvas.yview_scroll(int(-event.delta / 120), 'units'))
-        steps = (
-            ("IDENTITY", "Sample + Neuron",
-             "A valid identity loads the raw SWC root automatically. The status "
-             "bar reports whether the neuron was found and its portal region."),
-            ("TARGET", "Target soma coordinate (µm)",
-             "The SWC root fills X/Y/Z in micrometres. Edit the triplet if the "
-             "marker sits off the soma."),
-            ("ACQUIRE", "Soma Plot cubes",
-             "Reuse 0.65 µm CH1 cubes in the VisPa download cache. "
-             "Missing cubes are downloaded and checked before drawing."),
-            ("FALLBACK", "Missing cube",
-             "The portal fetch is cached before the panel is drawn. A failed cube "
-             "leaves that panel unavailable without discarding the others."),
-            ("REVIEW", "Render, save and Update figures",
-             "Render builds Soma, Context, Sagittal and TrioPlot. Save outputs "
-             "writes them; unticked is preview only. Timestamped PNGs are kept "
-             "and the receipt records the newest set."),
-            ("3D VIEW", "Open the processed trace in the template brain",
-             "Uses the configured processed SWC and brain mesh. fnt-tracer opens "
-             "the matching <sample>_<neuron>.fnt project."),
-            ("FNT", "Open the matching fnt-tracer project",
-             "Launches the configured fnt-tracer program with this neuron's "
-             "matching project from VisPa's FNT cache, if available."),
-        )
-        for index, (name, headline, detail) in enumerate(steps):
-            self._review_step(steps_inner, index, index + 1, name, headline, detail,
-                              highlight=(index == 5))
-        def bind_step_wheel(widget):
-            widget.bind(
-                '<MouseWheel>',
-                lambda event: steps_canvas.yview_scroll(int(-event.delta / 120), 'units'))
-            for child in widget.winfo_children():
-                bind_step_wheel(child)
-        bind_step_wheel(steps_inner)
-
-        body = self._card(inner, "Target soma (µm)")
+        body = self._card(inner, "Target soma coordinates (µm)")
         for column, (label, variable) in enumerate((
                 ("X", self.x_coord), ("Y", self.y_coord), ("Z", self.z_coord))):
             tk.Label(body, text=label, bg=C['card'], fg=C['muted'],
@@ -800,66 +762,63 @@ class NeuroVisGUI:
                        padx=(P(6), P(8)), pady=P(3), ipady=P(3))
             body.grid_columnconfigure(column * 2 + 1, weight=1)
 
-        # Plotting settings: geometry only. The window always produces the
-        # complete panel set, so there is no per-panel selection to tick.
-        body = self._card(inner, "Plotting settings")
-        boxes = tk.Frame(body, bg=C['card'])
-        boxes.grid(row=0, column=0, sticky='nsew')
-        boxes.grid_columnconfigure(0, weight=7)
-        boxes.grid_columnconfigure(1, weight=5)
-        boxes.grid_rowconfigure(0, weight=1)
-        soma_box = tk.Frame(boxes, bg=C['card'], highlightthickness=1,
-                            highlightbackground=C['border'])
-        soma_box.grid(row=0, column=0, sticky='nsew', padx=(0, P(4)))
-        ctx_box = tk.Frame(boxes, bg=C['card'], highlightthickness=1,
+        # Keep plotting settings in the original left-panel position. Each
+        # plot gets a full-width horizontal card with its source visible.
+        body = self._card(inner, 'Plotting settings')
+        body.grid_columnconfigure(0, weight=1)
+
+        def plot_box(row, title):
+            box = tk.Frame(body, bg=C['card'], highlightthickness=1,
                            highlightbackground=C['border'])
-        ctx_box.grid(row=0, column=1, sticky='nsew', padx=(P(4), 0))
-        tk.Label(soma_box, text="Soma plot", bg=C['card'], fg=C['header'],
-                 font=('Segoe UI', 9, 'bold')).grid(
-                     row=0, column=0, columnspan=3, sticky='w',
-                     padx=P(8), pady=(P(6), P(2)))
-        self._field(soma_box, "Window (blocks)", self.soma_cubes, 1, width=5)
-        tk.Label(
-            soma_box,
-            text=(f"Block 0.234×0.234×0.27 mm · 1 block = 234 µm · "
-                  f"default {REVIEW_SETTINGS['soma_window']['cubes_xy']:g}"),
-            bg=C['card'], fg=C['muted'], font=('Segoe UI', 8),
-            wraplength=P(150), justify='left').grid(
-                row=2, column=0, columnspan=3, sticky='w',
-                padx=P(8), pady=(P(2), 0))
-        tk.Label(soma_box, textvariable=self.soma_source, bg=C['card'],
-                 fg=C['muted'], font=('Segoe UI', 8), wraplength=P(150),
-                 justify='left').grid(
-                     row=3, column=0, columnspan=3, sticky='w',
-                     padx=P(8), pady=(0, P(6)))
-        tk.Label(ctx_box, text="Context plot", bg=C['card'], fg=C['header'],
-                 font=('Segoe UI', 9, 'bold')).grid(
-                     row=0, column=0, columnspan=3, sticky='w',
-                     padx=P(8), pady=(P(6), P(2)))
-        self._field(ctx_box, "W (µm)", self.width_um, 1, width=5)
-        self._field(ctx_box, "H (µm)", self.height_um, 2, width=5)
-        self._field(ctx_box, "D (µm)", self.depth_um, 3, width=5)
-        tk.Label(ctx_box, text="3 µm per section", bg=C['card'], fg=C['muted'],
-                 font=('Segoe UI', 8), wraplength=P(130), justify='left').grid(
-                     row=4, column=0, columnspan=3, sticky='w',
-                     padx=P(8), pady=(P(2), 0))
-        tk.Label(ctx_box, textvariable=self.context_source, bg=C['card'],
-                 fg=C['muted'], font=('Segoe UI', 8), wraplength=P(130),
-                 justify='left').grid(
-                     row=5, column=0, columnspan=3, sticky='w',
-                     padx=P(8), pady=(0, P(6)))
-        sagittal_box = tk.Frame(body, bg=C['card'], highlightthickness=1,
-                                highlightbackground=C['border'])
-        sagittal_box.grid(row=1, column=0, sticky='ew', pady=(P(6), 0))
-        sagittal_box.grid_columnconfigure(0, weight=1)
-        tk.Label(sagittal_box, text="Sagittal", bg=C['card'], fg=C['header'],
-                 font=('Segoe UI', 9, 'bold')).grid(
-                     row=0, column=0, sticky='w', padx=P(8), pady=(P(4), P(2)))
-        self.sagittal_hint = tk.Label(sagittal_box, text="", bg=C['card'],
-                                      fg=C['muted'], font=('Segoe UI', 8),
-                                      wraplength=P(330), justify='left')
-        self.sagittal_hint.grid(row=1, column=0, sticky='w', padx=P(8),
-                                pady=(0, P(5)))
+            box.grid(row=row, column=0, sticky='ew',
+                     pady=(0 if row == 0 else P(4), P(4)))
+            tk.Label(box, text=title, bg=C['card'], fg=C['header'],
+                     font=('Segoe UI', 9, 'bold'), justify='left').pack(
+                         anchor='w', padx=P(6), pady=(P(5), P(3)))
+            return box
+
+        def plot_source(box, text=None, variable=None):
+            tk.Label(box, text=text, textvariable=variable, bg=C['card'],
+                     fg=C['muted'], font=('Segoe UI', 9), justify='left',
+                     anchor='w', wraplength=P(340)).pack(fill='x', padx=P(6),
+                                                       pady=(0, P(3)))
+
+        soma_box = plot_box(0, 'Soma plot')
+        plot_source(soma_box, text='Window (blocks)')
+        tk.Entry(soma_box, textvariable=self.soma_cubes, width=5, relief='flat',
+                 bg=C['field'], fg=C['text'], highlightthickness=1,
+                 highlightbackground='#8fa3b2', highlightcolor=C['accent'],
+                 font=('Segoe UI', 9), insertbackground=C['text']).pack(
+                     anchor='w', padx=P(6), pady=(0, P(4)), ipady=P(1))
+        plot_source(soma_box, text=(
+            f"Block 234×234×270 µm · XY: 1 block = 234 µm · "
+            f"default {REVIEW_SETTINGS['soma_window']['cubes_xy']:g}"))
+        plot_source(soma_box, variable=self.soma_source)
+
+        ctx_box = plot_box(1, 'Context plot')
+        ctx_fields = tk.Frame(ctx_box, bg=C['card'])
+        ctx_fields.pack(fill='x', padx=P(6), pady=(0, P(4)))
+        for column, (label, variable) in enumerate((
+                ('W', self.width_um), ('H', self.height_um),
+                ('D', self.depth_um))):
+            field = tk.Frame(ctx_fields, bg=C['card'])
+            field.grid(row=0, column=column, sticky='ew', padx=P(1))
+            ctx_fields.grid_columnconfigure(column, weight=1)
+            tk.Label(field, text=label, bg=C['card'], fg=C['muted'],
+                     font=('Segoe UI', 9)).pack(anchor='w')
+            tk.Entry(field, textvariable=variable, width=4, relief='flat',
+                     bg=C['field'], fg=C['text'], highlightthickness=1,
+                     highlightbackground='#8fa3b2', highlightcolor=C['accent'],
+                     font=('Segoe UI', 9), insertbackground=C['text']).pack(
+                         fill='x', ipady=P(1))
+        plot_source(ctx_box, text='Dimensions in µm · 3 µm per section')
+        plot_source(ctx_box, variable=self.context_source)
+
+        sagittal_box = plot_box(2, 'Sagittal')
+        self.sagittal_hint = tk.Label(sagittal_box, text='', bg=C['card'],
+                                      fg=C['muted'], font=('Segoe UI', 9),
+                                      anchor='w', wraplength=P(340), justify='left')
+        self.sagittal_hint.pack(fill='x', padx=P(6), pady=(0, P(4)))
         for variable in (self.sample_id, self.neuron_id, self.plot_sagittal):
             variable.trace_add('write', lambda *_: self._refresh_sagittal_hint())
         self._refresh_sagittal_hint()
@@ -900,6 +859,7 @@ class NeuroVisGUI:
         preview_card = tk.Frame(right, bg=C['card'], highlightbackground=C['border'],
                                 highlightthickness=1)
         preview_card.grid(row=0, column=0, sticky='nsew')
+        preview_card.grid_propagate(False)
         head = tk.Frame(preview_card, bg='#6b4fa0')
         head.pack(fill='x', pady=(0, P(6)))
         tk.Label(head, text="Figure preview", bg='#6b4fa0', fg='#ffffff',
@@ -916,8 +876,10 @@ class NeuroVisGUI:
             variable.trace_add('write', lambda *_: self._refresh_preview_identity())
         self._refresh_preview_identity()
         self.preview_holder = tk.Frame(preview_card, bg=C['preview_bg'],
+                                       height=P(520),
                                        highlightbackground='#0b141c', highlightthickness=1)
         self.preview_holder.pack(fill='both', expand=True, padx=P(14), pady=(0, P(8)))
+        self.preview_holder.pack_propagate(False)
         self.preview_label = tk.Label(
             self.preview_holder, bg=C['preview_bg'], fg='#c9d6de', justify='center',
             font=('Segoe UI', 11), text=EMPTY_PREVIEW_TEXT)
@@ -1051,6 +1013,74 @@ class NeuroVisGUI:
         self.root.after(150, self._drain_log)
 
     # ---------- styling and preview helpers ----------
+    def _open_guide(self):
+        """Show the scrollable workflow reference on demand."""
+        window = getattr(self, '_guide_window', None)
+        if window is not None and window.winfo_exists():
+            window.deiconify()
+            window.lift()
+            return
+        C = self.COLORS
+        P = self._px
+        window = tk.Toplevel(self.root)
+        self._guide_window = window
+        window.title('VisPa · Guide')
+        window.configure(bg=C['page'])
+        width, height, x, y = self._catalog_geometry(P(690), P(700))
+        window.geometry(f'{width}x{height}+{x}+{y}')
+        window.minsize(P(480), P(400))
+        window.protocol('WM_DELETE_WINDOW', window.destroy)
+        tk.Label(window, text='Review workflow', bg=C['page'], fg=C['header'],
+                 font=('Segoe UI', 14, 'bold')).pack(anchor='w', padx=P(16), pady=(P(14), P(5)))
+        outer = tk.Frame(window, bg=C['page'])
+        outer.pack(fill='both', expand=True, padx=P(12), pady=(0, P(12)))
+        canvas = tk.Canvas(outer, bg=C['page'], highlightthickness=0)
+        scrollbar = ttk.Scrollbar(outer, orient='vertical', command=canvas.yview)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side='left', fill='both', expand=True)
+        scrollbar.pack(side='right', fill='y')
+        inner = tk.Frame(canvas, bg=C['page'])
+        window_id = canvas.create_window((0, 0), window=inner, anchor='nw')
+        inner.bind('<Configure>', lambda event: canvas.configure(scrollregion=canvas.bbox('all')))
+        canvas.bind('<Configure>', lambda event: canvas.itemconfigure(window_id, width=event.width))
+        for section, details in self._guide_sections():
+            card = self._card(inner, section)
+            for detail in details:
+                tk.Label(card, text='• ' + detail, bg=C['card'], fg=C['text'],
+                         anchor='w', justify='left', wraplength=P(610),
+                         font=('Segoe UI', 9)).pack(fill='x', pady=(0, P(5)))
+        def on_wheel(event):
+            canvas.yview_scroll(int(-event.delta / 120), 'units')
+        def bind_wheel(widget):
+            widget.bind('<MouseWheel>', on_wheel)
+            for child in widget.winfo_children():
+                bind_wheel(child)
+        bind_wheel(inner)
+
+    @staticmethod
+    def _guide_sections():
+        """Keep workflow guidance available without occupying the review pane."""
+        return (
+            ('1 · Select a neuron', (
+                'Enter Sample ID and Neuron ID, or choose an exact SWC ID from Neuron list. The two status boxes report neuron lookup and portal region separately.',
+                'Changing identity clears the previous coordinates and previews. Check the new identity before rendering.')),
+            ('2 · Check sources and target', (
+                'A valid identity loads the raw SWC root into X/Y/Z in µm. Edit the coordinates when the marker needs correction; use the displayed source hints to inspect the configured context.',
+                'A zero coordinate is accepted when explicitly supplied; inspect the marker rather than treating zero as a missing value.')),
+            ('3 · Render and inspect', (
+                'Render (F5) builds Soma, Context, Sagittal and TrioPlot. Switch tabs to inspect each completed figure, marker position and axes.',
+                'Soma uses cached 0.65 µm CH1 cubes when available; missing cubes may be fetched. A failed input or panel is reported in the status/log.')),
+            ('4 · Save and provenance', (
+                'Save outputs writes figures and Soma NIfTI to the Saving folder; with Save outputs off, figures are temporary previews.',
+                'Open output folder opens the Saving folder. Check the run receipt for identity, sources, parameters and paths; cached inputs may be reused.')),
+            ('5 · Brain view and FNT', (
+                'The 3D SWC tab renders the configured processed trace and brain mesh. Region overlay requires configured region assets and a resolved region; inspect its status and log when unavailable.',
+                'Open interactive 3D view launches the optional local viewer. Open fnt-tracer launches the matching local FNT project when the program and project are available.')),
+            ('6 · Settings and recovery', (
+                'Settings edits the current profile. Save and reload it before relying on changed paths, output options or mesh settings; inspect the settings validation message.',
+                'For missing sources, failed downloads or rendering errors, read the status/log, correct the identity or configuration, then retry. Do not interpret a missing figure as an anatomical result.')),
+        )
+
     def _card(self, parent, title, subtitle=None):
         C = self.COLORS
         P = self._px
@@ -1072,18 +1102,18 @@ class NeuroVisGUI:
         C = self.COLORS
         P = self._px
         tk.Label(parent, text=label, bg=C['card'], fg=C['muted'],
-                 font=('Segoe UI', 9)).grid(row=row, column=column, sticky='w',
+                 font=('Segoe UI', 10)).grid(row=row, column=column, sticky='w',
                                             pady=P(1))
         entry = tk.Entry(parent, textvariable=variable, width=width, relief='flat',
                          bg=C['field'], fg=C['text'], highlightthickness=1,
                          highlightbackground='#8fa3b2', highlightcolor=C['accent'],
-                         font=('Segoe UI', 9), insertbackground=C['text'])
+                         font=('Segoe UI', 10), insertbackground=C['text'])
         entry.grid(row=row, column=column + 1, sticky='ew',
                    padx=(P(8), P(6)), pady=P(1), ipady=P(2))
         parent.grid_columnconfigure(column + 1, weight=1)
         if hint:
             tk.Label(parent, text=hint, bg=C['card'], fg=C['muted'],
-                     font=('Segoe UI', 8)).grid(row=row, column=column + 2,
+                     font=('Segoe UI', 9)).grid(row=row, column=column + 2,
                                                 sticky='w', padx=(0, P(4)),
                                                 pady=P(1))
         return entry
@@ -1093,15 +1123,18 @@ class NeuroVisGUI:
         C = self.COLORS
         fill = color or (C['accent'] if primary else C['card'])
         hover = active or (C['accent_dark'] if primary else '#e7eef3')
+        outlined = text in {'Guide', 'Settings', 'Browse…',
+                            'Open output folder', 'FNT setup…', 'Check data'}
         return tk.Button(
-            parent, text=text, command=command, relief='flat', bd=0,
+            parent, text=text, command=command,
+            relief='raised' if outlined else 'flat', bd=1 if outlined else 0,
             bg=fill,
             fg='#ffffff' if primary else C['text'],
             activebackground=hover,
             activeforeground='#ffffff' if primary else C['text'],
             highlightthickness=1,
             highlightbackground=fill if primary else '#8da1b2',
-            font=('Segoe UI', 9 if small else 10, 'bold'),
+            font=('Segoe UI', 10 if small else 11, 'bold'),
             padx=10 if small else 24, pady=3 if small else 9, cursor='hand2')
 
     def _refresh_preview_identity(self):
@@ -1358,14 +1391,19 @@ class NeuroVisGUI:
 
     def _current_portal_region(self, sample_id, neuron_id):
         """Return the current cached catalog region when its snapshot is valid."""
-        portal_region = ""
+        if sample_id != self.sample_id.get().strip():
+            return ""
         snapshot = self._catalog_snapshot
-        if (self._catalog_sample_id == sample_id and snapshot is not None
-                and IT.catalog_snapshot_unchanged(snapshot)):
-            portal_region = next((
+        if self._catalog_sample_id == sample_id and snapshot is not None:
+            if not IT.catalog_snapshot_unchanged(snapshot):
+                return ""
+            return next((
                 row["portal_region"] for row in self._catalog_rows_by_iid.values()
                 if row["neuron_id"] == neuron_id), "")
-        return portal_region
+        snapshot = getattr(self, "_portal_region_snapshots", {}).get(sample_id)
+        if snapshot is None or not IT.catalog_snapshot_unchanged(snapshot):
+            return ""
+        return self._portal_region_cache.get(sample_id, {}).get(neuron_id, "")
 
     def _on_fnt_tracer(self):
         """Run the borrowed legacy FNT-tools sequence in the background."""
@@ -1517,14 +1555,15 @@ class NeuroVisGUI:
                     str(row["neuron_id"]): (row.get("portal_region") or "Unassigned")
                     for row in result["rows"]}
             except Exception as exc:
-                self._ui_call(self._set_neuron_status, f"Neuron: region unavailable ({exc})")
+                self._ui_call(self._set_region_lookup_error, sample, neuron, str(exc))
                 return
-            self._ui_call(self._store_portal_regions, sample, mapping)
+            self._ui_call(self._store_portal_regions, sample, mapping, result)
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _store_portal_regions(self, sample, mapping):
+    def _store_portal_regions(self, sample, mapping, snapshot):
         self._portal_region_cache[sample] = mapping
+        self._portal_region_snapshots[sample] = snapshot
         if self.sample_id.get().strip() == sample:
             self._apply_portal_region(self.neuron_id.get().strip(), mapping)
 
@@ -1536,28 +1575,76 @@ class NeuroVisGUI:
         if variable is not None:
             variable.set(message)
 
+    def _set_region_status(self, message):
+        variable = getattr(self, "region_status_var", None)
+        if variable is not None:
+            variable.set(message)
+
+    def _set_region_lookup_error(self, sample, neuron, detail):
+        if (self.sample_id.get().strip(), self.neuron_id.get().strip()) == (sample, neuron):
+            self._set_region_status(f"Region: unavailable ({detail})")
+
+    def _refresh_neuron_side(self):
+        """Read an exact-neuron workbook off the UI thread when configured."""
+        sample = self.sample_id.get().strip()
+        neuron = self.neuron_id.get().strip()
+        identity = (sample, neuron)
+        if (not self._neuron_tables_root or not sample or not neuron or
+                identity in self._neuron_side_cache or identity in self._neuron_side_pending):
+            return
+        self._neuron_side_pending.add(identity)
+
+        def worker():
+            try:
+                from .neuron_side import lookup_neuron_side
+                result = lookup_neuron_side(self._neuron_tables_root, sample, neuron)
+            except Exception as exc:
+                result = {'status': 'unknown', 'side': None,
+                          'reason': f'FULL workbook lookup failed: {exc}', 'source': None}
+            self._ui_call(self._store_neuron_side, identity, result)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _store_neuron_side(self, identity, result):
+        self._neuron_side_pending.discard(identity)
+        self._neuron_side_cache[identity] = result
+        if (self.sample_id.get().strip(), self.neuron_id.get().strip()) != identity:
+            return
+        if result.get('status') == 'verified':
+            source = result.get('source') or {}
+            self._append_log(
+                f"Neuron side {result['side']} from FULL Summary row {source.get('row')} "
+                f"({Path(str(source.get('path', ''))).name}, SHA256 {source.get('sha256', '')})")
+        self._update_neuron_status()
+
     def _update_neuron_status(self):
-        """Show lookup state and portal region in the Sample-section status panel."""
+        """Keep neuron lookup and region boxes current for the selected identity."""
         sample = self.sample_id.get().strip()
         neuron = self.neuron_id.get().strip()
         if not sample or not neuron:
-            self._set_neuron_status("Neuron: not loaded")
+            self._set_neuron_status("Neuron status: not loaded")
+            self._set_region_status("Region: unavailable")
             return
         mapping = self._portal_region_cache.get(sample) or {}
         region = mapping.get(neuron)
-        region_text = f" · {region}" if region else ""
+        side_result = getattr(self, '_neuron_side_cache', {}).get((sample, neuron)) or {}
+        side = (side_result['side'] if
+                side_result.get('status') == 'verified' else 'side unverified')
         state = getattr(self, "_neuron_lookup_state", "idle")
+        self._set_region_status(
+            f"Region: {region} · {side}" if region else
+            "Region: unavailable" if state == "not_found" else "Region: checking")
         if state == "found":
-            self._set_neuron_status(f"Neuron: found{region_text}")
+            self._set_neuron_status("Neuron status: found")
         elif state == "not_found":
-            self._set_neuron_status("Neuron: not found")
+            self._set_neuron_status("Neuron status: not found")
         elif state == "error":
             detail = getattr(self, "_neuron_lookup_error", None)
-            self._set_neuron_status(f"Neuron: lookup failed{(': ' + str(detail)) if detail else ''}")
+            self._set_neuron_status(f"Neuron status: lookup failed{(': ' + str(detail)) if detail else ''}")
         elif state in {"checking", "waiting"}:
-            self._set_neuron_status(f"Neuron: {'checking' if state == 'checking' else 'waiting to load'}{region_text}")
+            self._set_neuron_status(f"Neuron status: {'checking' if state == 'checking' else 'waiting to load'}")
         else:
-            self._set_neuron_status(f"Neuron: not loaded{region_text}")
+            self._set_neuron_status("Neuron status: not loaded")
 
     def _refresh_dataset_sources(self):
         sample = self.sample_id.get().strip() or 'sample'
@@ -1692,7 +1779,7 @@ class NeuroVisGUI:
                     orientation = match.group(1).upper()
             resolution = 'resolution unknown'
             if ds_name:
-                size = re.search(r'(\d+)x(\d+)x(\d+)', ds_name)
+                size = re.search(r'(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)', ds_name)
                 if size:
                     resolution = '×'.join(size.groups()) + ' µm'
             if not ds_path:
@@ -1700,7 +1787,7 @@ class NeuroVisGUI:
             else:
                 ok, text = True, (
                     f"DS00 processed volume · {resolution} · "
-                    f"{orientation} orientation\n"
+                    f"filename declares {orientation} orientation\n"
                     f"File: {ds_name}")
         except Exception as exc:
             ok, text = False, f"Sagittal: source check failed ({exc})"

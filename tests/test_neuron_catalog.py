@@ -1,8 +1,9 @@
 """Exact-source catalog and stale GUI selection checks.
 
-Version: 1.11.0.dev11 (local/unreleased)
-Last updated: 2026-10-22
+Version: 1.12.0.dev4 (local/unreleased)
+Last updated: 2026-11-02
 Change history: ../CHANGELOG.md
+2026-11-02: Cover manual-identity portal-region handoff and underscore acronyms.
 """
 import csv
 import hashlib
@@ -307,6 +308,47 @@ class NeuronCatalogTests(unittest.TestCase):
         self.assertTrue(catalog_matches_sample("250442L", "250442L"))
         self.assertFalse(catalog_matches_sample("250442", "250442L"))
         self.assertFalse(catalog_matches_sample("250442L", "250442"))
+
+    def test_manual_identity_uses_only_current_valid_portal_snapshot(self):
+        from vispa.reviewer import NeuroVisGUI
+
+        gui = NeuroVisGUI.__new__(NeuroVisGUI)
+        gui.sample_id = type("Variable", (), {"get": lambda self: "252384"})()
+        gui._catalog_sample_id = "251637"
+        gui._catalog_snapshot = {"sample_id": "251637"}
+        gui._catalog_rows_by_iid = {"old": {"neuron_id": "008.swc", "portal_region": "PrCO_49"}}
+        gui._portal_region_cache = {
+            "252384": {"008.swc": "Tpt_200"},
+            "252714": {"008.swc": "area_7a_122"},
+        }
+        gui._portal_region_snapshots = {"252384": {"sample_id": "252384"}}
+        with mock.patch("vispa.sources.catalog_snapshot_unchanged", return_value=True):
+            self.assertEqual(gui._current_portal_region("252384", "008.swc"), "Tpt_200")
+            self.assertEqual(gui._current_portal_region("252384", "009.swc"), "")
+            self.assertEqual(gui._current_portal_region("252714", "008.swc"), "")
+        with mock.patch("vispa.sources.catalog_snapshot_unchanged", return_value=False):
+            self.assertEqual(gui._current_portal_region("252384", "008.swc"), "")
+
+    def test_portal_suffix_with_internal_underscore_requires_hierarchy_map(self):
+        from vispa.renderers.swc_brain_view import _plan_region
+
+        with tempfile.TemporaryDirectory() as temp:
+            filename = "caudal_inferior_parietal_lobule_area_7a_(Opt-PG) (area_7a).obj"
+            (Path(temp) / filename).write_text("v 0 0 0\n", encoding="utf-8")
+            selected, resolution, _ = _plan_region(
+                {"region_mesh_root": temp, "region_color": [0.2, 0.4, 0.8]},
+                None, "area_7a_122")
+            self.assertIsNone(selected)
+            self.assertEqual(resolution["status"], "unmatched")
+            self.assertIn("region_hierarchy_map", resolution["reason"])
+            (Path(temp) / "second_area (area_7a).obj").write_text(
+                "v 0 0 0\n", encoding="utf-8")
+            selected, resolution, _ = _plan_region(
+                {"region_mesh_root": temp, "region_color": [0.2, 0.4, 0.8]},
+                None, "area_7a_122")
+            self.assertIsNone(selected)
+            self.assertEqual(resolution["status"], "unmatched")
+            self.assertIn("region_hierarchy_map", resolution["reason"])
 
 
 if __name__ == "__main__":
