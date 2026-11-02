@@ -1,6 +1,6 @@
 """Exact-identity neuron laterality from a declared per-sample FULL workbook.
 
-Version: 1.13.0 (local/unreleased)
+Version: 1.13.0.dev0 (local/unreleased)
 Last updated: 2026-11-02
 Change history: ../../../CHANGELOG.md
 The workbook's recorded side is distinct from a portal region code or atlas mesh side.

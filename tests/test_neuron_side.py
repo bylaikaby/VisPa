@@ -1,6 +1,6 @@
 """Focused exact-identity neuron-side source tests.
 
-Version: 1.13.0 (local/unreleased)
+Version: 1.13.0.dev0 (local/unreleased)
 Last updated: 2026-11-02
 Change history: ../CHANGELOG.md
 """

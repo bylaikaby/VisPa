@@ -1,5 +1,5 @@
 # VisPa-only uninstall for the explicitly selected Python environment.
-# Version: 1.13.0
+# Version: 1.13.0.dev0
 # Last updated: 2026-11-02
 # Change history: ../CHANGELOG.md
 param(

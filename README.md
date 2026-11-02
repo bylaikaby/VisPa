@@ -196,7 +196,7 @@ For a downloaded ZIP, extract it locally and run the same commands in its folder
 For a Python environment that already has the declared VisPa dependencies, install or upgrade only VisPa from a wheel with that environment's interpreter:
 
 ```powershell
-& 'C:\path\to\env\python.exe' -m pip install --upgrade --no-deps 'C:\path\to\vispa-1.13.0-py3-none-any.whl'
+& 'C:\path\to\env\python.exe' -m pip install --upgrade --no-deps 'C:\path\to\vispa-1.13.0.dev0-py3-none-any.whl'
 & 'C:\path\to\env\python.exe' -m vispa --version
 & 'C:\path\to\env\python.exe' -m pip check
 ```

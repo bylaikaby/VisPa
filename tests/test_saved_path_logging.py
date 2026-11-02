@@ -1,6 +1,6 @@
 """Saved-path logging through GUI and legacy Windows text streams.
 
-Version: 1.13.0 (local/unreleased)
+Version: 1.13.0.dev0 (local/unreleased)
 Last updated: 2026-11-02
 Change history: ../CHANGELOG.md
 """
