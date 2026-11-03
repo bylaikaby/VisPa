@@ -1,7 +1,7 @@
 """Bounded command line for one local VisPa review render or montage.
 
-Version: 1.12.0.dev1 (local/unreleased)
-Last updated: 2026-10-29
+Version: 1.13.0.dev5 (local/unreleased)
+Last updated: 2026-11-03
 Change history: ../../CHANGELOG.md
 """
 from __future__ import annotations
@@ -669,6 +669,29 @@ def _parser():
     render.add_argument("--config")
     render.add_argument("--set", action="append", default=[], metavar="PATH=VALUE")
     render.add_argument("--dry-run", action="store_true")
+    terminal = commands.add_parser("terminal-inspect", help="plot one SWC terminal with XY context and YZ sagittal image planes")
+    terminal.add_argument("--input", help="optional local finite ZYX .npy image; otherwise use configured sample source")
+    terminal.add_argument("--sample", help="configured sample for native resampled TIFF sections")
+    terminal.add_argument("--config", help="VisPa source configuration for configured sample")
+    terminal.add_argument("--swc", required=True, help="raw SWC in the image's declared physical frame")
+    terminal.add_argument("--subject", required=True)
+    terminal.add_argument("--subject-folder", help="explicit <sample>(<monkey>)_vispa output folder")
+    terminal.add_argument("--soma", required=True, help="soma identifier for output grouping")
+    terminal.add_argument("--node-id", required=True, type=int)
+    terminal.add_argument("--origin", nargs=3, type=float, metavar=("X", "Y", "Z"))
+    terminal.add_argument("--resolution", nargs=3, type=float, metavar=("X", "Y", "Z"))
+    terminal.add_argument("--coordinate-frame", default="native fMOST raw SWC XYZ")
+    terminal.add_argument("--output-root", required=True)
+    terminal.add_argument("--table", help="normalized JSON table with rows containing node_id and raw_xyz_um")
+    terminal.add_argument("--remap-one-neuron", help="ReMAP remap.one_neuron.v1 JSON with per-leaf voxel and region records")
+    terminal.add_argument("--remap-workbook", help="ReMAP population workbook Terminal_Sites sheet for exact-neuron region membership only")
+    terminal.add_argument("--processed-swc", help="processed graph paired to raw SWC for ReMAP voxel matching")
+    terminal.add_argument("--table-source", choices=("vispa", "remap", "portal"), default="vispa")
+    terminal.add_argument("--leaf-scope", choices=("axon", "all"), default="axon")
+    terminal.add_argument("--set", action="append", default=[], metavar="KEY=VALUE")
+    terminal.add_argument("--dry-run", action="store_true")
+    terminal_settings = commands.add_parser("terminal-settings", help="show validated terminal plot tuning keys")
+    terminal_settings.add_argument("--config", help="VisPa profile whose review context defaults are inherited")
     montage = commands.add_parser("montage", help="render one local LPS NIfTI volume as a five-view montage")
     montage.add_argument("--input", required=True, help="one local 3D NIfTI image (.nii or .nii.gz), validated as LPS voxel axis codes")
     montage.add_argument("--output", required=True, help="new PNG path; adjacent JSON receipt uses the same stem")
@@ -779,6 +802,28 @@ def main(argv=None):
     if args.command == "render":
         try:
             return _render(args)
+        except (OSError, RuntimeError, ValueError, KeyError) as exc:
+            parser.error(str(exc))
+    if args.command == "terminal-settings":
+        from .terminal_inspection import settings_schema
+        print(json.dumps(settings_schema(args.config), indent=2))
+        return 0
+    if args.command == "terminal-inspect":
+        try:
+            from .terminal_inspection import inspect
+            print(json.dumps(inspect(input_path=args.input, swc_path=args.swc,
+                subject=args.subject, soma=args.soma, node_id=args.node_id,
+                origin=args.origin, resolution=args.resolution,
+                coordinate_frame=args.coordinate_frame, output_root=args.output_root,
+                table_path=args.table, table_source=args.table_source,
+                leaf_scope=args.leaf_scope, settings=args.set, dry_run=args.dry_run,
+                sample=args.sample, config_path=args.config,
+                remap_one_neuron_path=args.remap_one_neuron,
+                processed_swc_path=args.processed_swc,
+                remap_workbook_path=args.remap_workbook,
+                subject_folder=args.subject_folder),
+                indent=2, default=str))
+            return 0
         except (OSError, RuntimeError, ValueError, KeyError) as exc:
             parser.error(str(exc))
     if args.command == "example":

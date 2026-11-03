@@ -1,9 +1,12 @@
 """
 vispa.py - Macaque Brain Hybrid-Resolution Visualization Toolkit
 
-Version: 1.13.0.dev0 (local/unreleased)
-Last updated: 2026-11-02
+Version: 1.13.0.dev5 (local/unreleased)
+Last updated: 2026-11-03
 Change history: ../../../CHANGELOG.md
+2026-11-03: Allow terminal target markers and recorded table sites in established
+context panels; keep full DS sagittal root verification with terminal target option.
+2026-11-03: Support declared line width for terminal sagittal SWC segments.
 2026-11-02: Enlarge review figure title, axis, and legend text for fitted GUI previews.
 2026-11-02: Escape only unencodable characters in saved-path console messages
 on Windows so a Unicode output directory cannot abort a completed render.
@@ -1137,10 +1140,11 @@ class VisPa:
         else:
             ax.imshow(display, origin='upper')
         if panel.get('edge_segments'):
+            trace_width = float(panel.get('trace_line_width', 0.7))
             ax.add_collection(LineCollection(panel['edge_segments'], colors='black',
-                                             linewidths=1.4, alpha=.55, zorder=3))
+                                             linewidths=2 * trace_width, alpha=.55, zorder=3))
             ax.add_collection(LineCollection(panel['edge_segments'], colors='red',
-                                             linewidths=.7, alpha=.9, zorder=4))
+                                             linewidths=trace_width, alpha=.9, zorder=4))
         for points, color, linestyle, linewidth, alpha in panel.get('traces') or []:
             ax.plot(points[:, 0], points[:, 1], color=color, linestyle=linestyle,
                     linewidth=linewidth, alpha=alpha, solid_capstyle='round')
@@ -1152,6 +1156,10 @@ class VisPa:
             # moving it; the shared helper always draws the box and the cross on the
             # exact position, so a panel cannot ship a marker without a cross.
             options = marker[5] if len(marker) > 5 and isinstance(marker[5], dict) else {}
+            if options.get('site_marker'):
+                ax.scatter(x, y, s=36, marker='o', facecolors='none',
+                           edgecolors=color, linewidth=1.4, zorder=12, label=label)
+                continue
             self._draw_target_marker(
                 ax, x, y, color=color, size_um=size_um, label=label,
                 min_px=options.get('min_px', marker_min_px),
@@ -1183,6 +1191,10 @@ class VisPa:
                 spine.set_visible(False)
         else:
             ax.axis('off')
+        if panel.get('lock_image_extent'):
+            # Terminal overlays must retain the full image reference extent.
+            ax.set_xlim(-0.5, w - 0.5)
+            ax.set_ylim(h - 0.5, -0.5)
 
     def _save_panel_plot(self, panel, neuron_id, suffix, soma_region=None,
                          soma_coords=None, output_dir=None):
@@ -1260,7 +1272,8 @@ class VisPa:
 
     def plot_widefield_context(self, volume_3d, origin, resolution, soma_coords, neuron_id,
                              suffix="WideField", manual_threshold=None, bg_intensity=None,
-                             swc_tree=None, soma_region=None, output_dir=None):
+                             swc_tree=None, soma_region=None, output_dir=None,
+                             target_label="Target Soma", recorded_sites_xyz_um=()):
         """
         Plots Green Intensity on Dark Background + SWC Overlay using MIP.
         Includes soma region in filename and title.
@@ -1306,7 +1319,7 @@ class VisPa:
         overlay_um = float(
             REVIEW_SETTINGS['context'].get('swc_overlay_depth_um', 100.0))
         half_um = overlay_um / 2.0
-        overlay_note = f"Trace from SWC ±{half_um:g} µm"
+        overlay_note = f"Trace from SWC ({target_label} ±{half_um:g} µm)"
         segments = []
         if swc_tree:
             soma_local_z = ((float(soma_coords[2]) - float(origin[2]))
@@ -1322,8 +1335,22 @@ class VisPa:
         role_legend = [('patch', 'gray', 'widefield grayscale base'),
                        ('patch', 'green', 'widefield green channel · 5 µm')]
         if segments:
-            role_legend.append(('line', 'red', f'Trace from SWC (soma ±{half_um:g} µm)'))
-        role_legend.append(('marker', TARGET_MARKER_COLOR, 'soma location (box + cross, not to scale)'))
+            role_legend.append(('line', 'red', f'Trace from SWC ({target_label} ±{half_um:g} µm)'))
+        role_legend.append(('marker', TARGET_MARKER_COLOR, f'{target_label} (box + cross, not to scale)'))
+        recorded_markers = []
+        for site in recorded_sites_xyz_um:
+            if not (float(origin[2]) <= float(site[2]) <
+                    float(origin[2])+float(volume_3d.shape[0])*float(resolution[2])):
+                continue
+            site_x = (float(site[0])-float(origin[0]))/float(resolution[0])
+            site_y = (float(site[1])-float(origin[1]))/float(resolution[1])
+            if not (0 <= site_x < w and 0 <= site_y < h):
+                continue
+            recorded_markers.append((site_x, site_y,
+                                     'magenta', 12.0, 'Recorded table site',
+                                     {'site_marker': True}))
+        if recorded_markers:
+            role_legend.append(('marker', 'magenta', 'recorded terminal table sites in image Z slab'))
         output_png = self._finalize_plot(
             fig, ax, sx, sy, resolution, neuron_id, suffix, volume_3d.shape[0],
             marker_color=TARGET_MARKER_COLOR, soma_region=soma_region,
@@ -1337,7 +1364,7 @@ class VisPa:
             'depth_um': float(volume_3d.shape[0]) * float(resolution[2]),
             'scale_bar_um': float(scale_bar_um),
             'markers': [(sx, sy, TARGET_MARKER_COLOR,
-                         20.0 if resolution[0] < 1.0 else 200.0, 'Target Soma')],
+                         20.0 if resolution[0] < 1.0 else 200.0, target_label)] + recorded_markers,
             'edge_segments': segments, 'traces': [],
             'axis_labels': ('Source X (crop pixel index; axis unvalidated)',
                             'Source Y (crop pixel index; axis unvalidated)'),
@@ -2294,6 +2321,7 @@ def prepare_sagittal_panel(
     source: SagittalDSContext | None = None,
     declared_side: str | None = None,
     allow_missing_swc: bool = False,
+    target_node_id: int | None = None,
 ) -> dict[str, Any]:
     """Prepare one soma-centred sagittal panel for the shared review style.
 
@@ -2340,12 +2368,19 @@ def prepare_sagittal_panel(
         if not np.allclose(root_xyz, soma_xyz_um, atol=1e-3, rtol=0):
             raise ValueError(f"SWC root {root_xyz} does not match requested soma {soma_xyz_um}")
         swc_note = None
-    center_i = int(round(root_xyz[0] / 100.0))
+    target_xyz = root_xyz
+    if target_node_id is not None:
+        if swc is None:
+            raise ValueError("terminal target requires a verified SWC")
+        if target_node_id not in by_id:
+            raise ValueError(f"terminal node {target_node_id} absent from SWC")
+        target_xyz = by_id[target_node_id]["xyz_um"]
+    center_i = int(round(target_xyz[0] / 100.0))
     if source is None:
         planes, geometry = _read_sagittal_planes(ds_path, (center_i,), EXPECTED_GEOMETRY.get(sample_id))
         plane = planes[center_i]
     else:
-        plane, center_i = source.plane_for_soma(root_xyz)
+        plane, center_i = source.plane_for_soma(target_xyz)
         geometry = source.geometry
 
     spacing_i_mm, spacing_j_mm, spacing_k_mm = (float(value) for value in geometry["spacing_mm_ijk"])
@@ -2360,7 +2395,7 @@ def prepare_sagittal_panel(
     full_display = np.flipud(normalized.T)
 
     soma_mapping = mappings[0]
-    soma_j, soma_k = _out_ijk(root_xyz, soma_mapping, geometry)[1:]
+    soma_j, soma_k = _out_ijk(target_xyz, soma_mapping, geometry)[1:]
     if crop_half_width_mm is None:
         j0, j1, k0, k1 = 0, shape_j, 0, shape_k
         center_j, center_k = shape_j / 2.0, shape_k / 2.0
@@ -2371,7 +2406,7 @@ def prepare_sagittal_panel(
         half_k = int(math.ceil(crop_half_width_mm / spacing_k_mm))
         j0, j1 = max(0, int(center_j) - half_j), min(shape_j, int(center_j) + half_j + 1)
         k0, k1 = max(0, int(center_k) - half_k), min(shape_k, int(center_k) + half_k + 1)
-        view_note = f"{crop_half_width_mm:g} mm crop centred on the soma marker"
+        view_note = f"{crop_half_width_mm:g} mm crop centred on the {'terminal' if target_node_id is not None else 'soma'} marker"
     if j1 <= j0 or k1 <= k0:
         raise ValueError(f"Soma crop is empty for j=[{j0},{j1}) k=[{k0},{k1})")
     display = full_display[shape_k - k1:shape_k - k0, j0:j1]
@@ -2383,13 +2418,14 @@ def prepare_sagittal_panel(
     if soma_inside:
         style = _marker_style()
         markers.append((
-            soma_j - j0, (k1 - 1) - soma_k, style["color"], None, "Target Soma",
+            soma_j - j0, (k1 - 1) - soma_k, style["color"], None,
+            "Target Terminal" if target_node_id is not None else "Target Soma",
             {"min_px": style["min_px"], "crosshair_px": style["crosshair_px"],
              "label_fontsize": style["label_fontsize"],
              "label_offset_px": style["label_offset_px"]},
         ))
 
-    hemisphere = _hemisphere_from_index(root_xyz, geometry)
+    hemisphere = _hemisphere_from_index(target_xyz, geometry)
     declared_name = {"L": "Left", "LEFT": "Left", "R": "Right", "RIGHT": "Right"}.get(
         str(declared_side).strip().upper()) if declared_side else None
     panel = {
@@ -2408,12 +2444,15 @@ def prepare_sagittal_panel(
                         f"NIfTI k | {spacing_k_mm:.2f} mm/voxel"),
         "legend": [("patch", "#9a9a9a", "DS00 N4 intensity (gray)")],
         "notes": [f"Whole-plane p1–p99.5 gray; {view_note}; {slab_thickness_mm:.2f} mm i slab; "
-                  "target square and crosshair mark the provisional soma position "
+                  f"target square and crosshair mark the provisional {'terminal' if target_node_id is not None else 'soma'} position "
                   "(drawn larger for visibility, not to scale); no raw-SWC trace is drawn."
                   + (f" Hemisphere label follows the volume i convention ({'large' if hemisphere == 'Left' else 'small'} i = "
+                     f"{hemisphere}); laterality is not visually confirmed."
+                     if hemisphere and target_node_id is not None else
+                     f" Hemisphere label follows the volume i convention ({'large' if hemisphere == 'Left' else 'small'} i = "
                      f"{hemisphere}); workbook Soma_Side comparison is recorded in the manifest, "
                      "and laterality is not visually confirmed." if hemisphere else "")]
-                  + ([] if soma_inside else ["the soma marker lies outside this panel"]),
+                  + ([] if soma_inside else [f"the {'terminal' if target_node_id is not None else 'soma'} marker lies outside this panel"]),
         "role": "Sagittal context (DS00 N4)",
         "suffix": "Sagittal",
     }
@@ -2427,6 +2466,8 @@ def prepare_sagittal_panel(
                  "coordinate_frame": "raw SWC XYZ, declared micrometres; axes/origin/laterality unvalidated",
                  "soma_xyz_um": list(root_xyz)} if swc is not None else None),
         "sagittal_slice_i": center_i,
+        "target_node_id": target_node_id,
+        "target_xyz_um": list(target_xyz),
         "slab_i_bounds": [low_i, high_i],
         "crop_jk": [j0, j1, k0, k1],
         "crop_center_jk": [round(center_j, 3), round(center_k, 3)],
@@ -2445,13 +2486,14 @@ def prepare_sagittal_panel(
             "declared_normalized": declared_name,
             "agreement": (None if hemisphere is None or declared_name is None
                           else hemisphere == declared_name),
-            "basis": ("converted-volume i convention (large i = Left), cross-checked against the "
-                      "active workbook Soma_Side for 252527; not a visually confirmed laterality"),
+            "basis": ("converted-volume i convention (large i = Left); terminal laterality is not cross-checked against Soma_Side"
+                      if target_node_id is not None else
+                      "converted-volume i convention (large i = Left), cross-checked against the active workbook Soma_Side for 252527; not a visually confirmed laterality"),
         },
         "panel_style": "vispa review panel style (Soma/Context/Sagittal)",
         "limits": [
             "The live CH00DS manifest and image hash bind the processed source; this confirms source identity, not anatomical correctness.",
-            "The single soma marker uses a provisional NRRD/SWC mapping; it is not accepted by in-bounds or signal plausibility alone.",
+            f"The selected {'terminal' if target_node_id is not None else 'soma'} marker uses a provisional NRRD/SWC mapping; in-bounds placement alone does not validate it.",
             "The constant-i plane is a nominal sagittal candidate; SWC-to-image origin and anatomical laterality remain unvalidated.",
             "Panel markers are enlarged for visibility and are not to scale; the white bar carries the physical scale.",
             "Acquisition dates are unknown. No transform, resampling, SWC edit, or scientific acceptance is implied.",

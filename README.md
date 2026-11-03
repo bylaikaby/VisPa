@@ -791,3 +791,63 @@ rewritten. The GitHub repository is `bylaikaby/VisPa`; each lab user can extract
 it into their own local source folder.
 
 The offline wheel command above uses an explicit placeholder path; substitute the exact built wheel recorded in the [current run receipt](work/fnt_onboarding_20261022/run_receipt.json). That receipt is the current installation and verification entry point.
+# Terminal inspection (candidate)
+
+`vispa terminal-inspect` plans or renders one childless SWC terminal. The default
+scope is non-root type-2 axon leaves; `--leaf-scope all` includes every non-root
+leaf. `vispa terminal-settings` lists the validated tuning keys, which can be
+set with repeated `--set KEY=VALUE` flags. Run with `--dry-run` first.
+The configured mode inherits the active VisPa review context size and style:
+`context.width_um`, `context.height_um`, `context.depth_um`,
+`context.swc_overlay_depth_um`, `scale_bar_um.context`, and
+`figure.review_dpi`. The packaged defaults are 8000 × 8000 × 30 µm,
+100 µm trace overlay depth, 500 µm scale bar, and 200 dpi. Use independent
+`--set width_um=...`, `--set height_um=...`, or `--set depth_um=...` overrides
+for a different field of view. The command checks the requested voxel count
+against a 64 million voxel bound before acquisition. Older half-size keys
+`context_radius_um`, `context_depth_radius_um`, and `slab_half_depth_um`
+remain accepted as aliases.
+
+Example for the active 251637 / 004 profile (replace the profile and cache
+paths if your installation differs):
+
+```powershell
+python -m vispa terminal-inspect --sample 251637 --config "$env:LOCALAPPDATA/VisPa/profiles/deb_config.yaml" --swc "$env:LOCALAPPDATA/VisPa/cache/swc_raw/251637/004.swc" --subject 251637 --soma 004 --node-id 414 --output-root work/terminal_inspection --dry-run
+```
+
+For the configured microscopy source, supply `--sample`, `--config`, `--swc`,
+`--subject`, `--soma`, `--node-id`, and `--output-root`. The command obtains a
+complete native 5 µm stack around the target and uses the existing VisPa context
+panel plus a full processed-DS sagittal overview. Source acquisition rejects
+missing sections. The sagittal raw-SWC mapping is provisional. A local finite
+ZYX `.npy` can instead be supplied with `--input`, `--origin X Y Z`,
+`--resolution X Y Z`, and `--coordinate-frame`; this is a bounded test/local
+image path, and its YZ panel covers only that image's extent.
+
+Optional `--table` accepts a normalized JSON object with `rows`, each with a
+`node_id` and `raw_xyz_um: [x,y,z]`; `coordinate_frame` should match the image
+frame. `--table-source vispa|remap|portal` labels the provenance. This is an
+import contract for exported records, not a direct workbook reader. The selected
+SWC leaf and table-recorded sites have distinct roles in the legend. A table
+record is not a scientific acceptance mark. Outputs are created under
+`<output-root>/<sample>(<monkey>)_vispa/neuron_swc_<soma>/terminals/` for configured
+subjects (for example `Vispa_outputs/251637(936)_vispa/neuron_swc_004/terminals/`),
+with dated neuron metadata beside `terminals/` and a PNG-adjacent provenance
+receipt. `--subject-folder` can explicitly select a folder of the same form
+when the configured monkey ID is unavailable. Existing terminal outputs are
+never overwritten.
+
+For ReMAP, use `--remap-one-neuron` with a `remap.one_neuron.v1` result and
+`--processed-swc` for the same graph; the configured processed SWC root is used
+when that path is omitted. VisPa matches ReMAP's recorded terminal voxel to
+processed SWC graph leaves and places the corresponding raw SWC sites in the
+microscopy panels. A shared voxel can carry one region across multiple leaves
+only when every ReMAP row at that voxel agrees on the region; the receipt records
+the ambiguity. `--remap-workbook` reads the exact sample/neuron rows from the
+population workbook `Terminal_Sites` sheet to record region membership. That
+sheet groups by region and cannot identify an individual endpoint. The selected
+terminal's provisional region comes from its matched ReMAP site, and the title
+says “Terminal <node>”. Without a matched site, the title says “unresolved”.
+The context and full sagittal panels both show clipped raw SWC traces; the
+sagittal mapping and slab thickness are recorded in the receipt. Set
+`sagittal_slab_um` and `sagittal_trace_width` with `--set` when needed.

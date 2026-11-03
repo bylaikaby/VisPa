@@ -772,3 +772,11 @@ baseline (titles/filenames only, no voxel changes).
   `resource/segmented_cubes/<sample>`.
 - Reference baseline for the v1.7.0 comparison; the fixed frame clipped the status bar
   once review actions were added, which v1.6.0/v1.7.0 fixed.
+# 2026-11-03 — Terminal inspection candidate
+
+- Place configured outputs under the declared root as `<sample>(<monkey>)_vispa/neuron_swc_<soma>/terminals`, with a narrow subject-folder override and monkey/source identities in neuron metadata.
+- Link ReMAP one-neuron site records to raw/processed SWC graph leaves by recorded voxel with exact source identity, and read population `Terminal_Sites` rows only as region membership. Show the selected terminal's provisional region in both titles. Add candidate-mapped, clipped raw SWC trace to the full sagittal plane with slab/line-width settings and provenance; expand soma-folder metadata.
+- Inherit the configured VisPa review context width, height, depth, SWC overlay depth, scale bar, and output DPI for terminal views. Expose independent bounded dimensions and retain half-size overrides as aliases.
+- Add bounded `terminal-inspect` command for one childless non-root axon node (or explicit all-leaf scope), with dry-run and validated tuning keys. Output is grouped under `subject/soma/<id>/terminals`, with creation metadata, source hashes, and a per-plot receipt.
+- Add normalized JSON table overlay (`rows[].node_id`, `rows[].raw_xyz_um`) for VisPa, remap, or portal exports. The source is a label supplied by the operator; direct ReMAP/portal workbook parsing and scientific acceptance are not claimed. Table coordinates must be in the declared raw image frame.
+- Extend the established 5 µm context renderer to identify a terminal target and recorded table sites, and the full DS sagittal panel to target a terminal node while preserving root verification. DS placement remains provisional.
