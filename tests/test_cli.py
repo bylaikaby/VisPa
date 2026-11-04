@@ -1,6 +1,6 @@
 """CLI contract tests for bounded standalone use.
 
-Version: 1.20.0 (local/unreleased)
+Version: 1.20.1 (local/unreleased)
 Last updated: 2026-11-04
 Change history: ../CHANGELOG.md
 """

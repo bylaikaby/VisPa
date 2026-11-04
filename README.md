@@ -1,7 +1,7 @@
 # VisPa — Visual Projectome Analysis tool
 
 VisPa reviews macaque neuron and microscopy data configured by the DEB lab.
-This checkout identifies as **1.20.0**. VisPa is a
+This checkout identifies as **1.20.1**. VisPa is a
 Python package inside a Conda environment. Launch the GUI directly from this
 checkout with `python run_vispa.py`.
 
@@ -305,13 +305,17 @@ This optional command removes all packages in that environment, including ReMAP.
 
 ## Create or select a configuration
 
-The canonical shared profile is
+The existing shared 1.0.6 profile is
 `\\10.102.8.200\microscopy_data\fMOST\VisPa\configs\ded_vispa_config_v1.0.6.yaml`.
 It declares the shared sample, DS00,
 5 µm, raw SWC, processed SWC, mesh, catalog, and IONData resources as read-only
 inputs. Cubes, SWCs and FNT work use
-`\\10.102.8.200\microscopy_data\fMOST\VisPa\cached_data`; figures are written
-under `\\10.102.8.200\microscopy_data\fMOST\VisPa\outputs`.
+`\\10.102.8.200\microscopy_data\fMOST\VisPa\cached_data`. That profile writes
+figures under `\\10.102.8.200\microscopy_data\fMOST\VisPa\outputs`. The
+packaged DEB 1.0.7 profile routes GUI Render figures to
+`\\10.102.8.200\microscopy_data\fMOST\Vispa_outputs/<sample>/neurons/<neuron>/`.
+An existing profile can set `visual_toolkit.figure_output_root` to choose the
+same root without changing its general output directory.
 
 The YAML contains only `config_name`, `config_version`, and
 `config_updated_at` (an ISO-8601 timestamp with offset). Configuration history
@@ -860,7 +864,7 @@ heterogeneous or irregular-pitch grid mapping.
 }
 ```
 
-`dataset_config.load(path=None, base_dir=None)` returns resolved `defaults`, `samples`, `visual_toolkit`, and `sources`. Backend cache/output roots use `defaults.cache_root` and `defaults.output_root`; `visual_toolkit.output_root` is the GUI review-output root. `dataset_config.default_config_path()` and `default_output_root()` provide per-user locations without creating them. A project adapter may call `toolkit.configure_data_sources(path)` after selecting its config; the selected config then applies to subsequent toolkit instances.
+`dataset_config.load(path=None, base_dir=None)` returns resolved `defaults`, `samples`, `visual_toolkit`, and `sources`. Backend cache/output roots use `defaults.cache_root` and `defaults.output_root`; `visual_toolkit.output_root` remains the general GUI output root. GUI Render uses `visual_toolkit.figure_output_root` when set, grouping figures under `<sample>/neurons/<neuron>/`. The DEB profile sets this to `\\10.102.8.200\microscopy_data\fMOST\Vispa_outputs`. The Save outputs control writes the panel PNGs, Soma NIfTI and receipt there. The output folder field can override the computed folder for one GUI session. `dataset_config.default_config_path()` and `default_output_root()` provide per-user locations without creating them. A project adapter may call `toolkit.configure_data_sources(path)` after selecting its config; the selected config then applies to subsequent toolkit instances.
 
 The GUI's **Neuron list** uses `sources.neuron_catalog.mode: live-iondata` in the packaged profile and queries `http://10.10.48.110/neuronbrowser/api/user/selectNeurons?id=<sample-id>` with a bounded timeout and response size. It validates the JSON rows and keeps exact `sampleid` and `name` values, including leading zeroes and sample suffixes. The display has **Side**, **SWC ID**, and **Ion_NMT_region** columns. Opening the list or changing Sample ID while it is open automatically reloads the exact catalog and calls `acquire_neuron_sides()`; both its rows and the single-neuron status use `_acquire_side_from_soma()` and `side_from_region()`. Rows are color-coded Left/Right/Unknown, and the header reports the source and all three counts. The **Go to** entry searches side, SWC ID and region text, while the adjacent **Region** selector filters to one exact `Ion_NMT_region` value. Both filters are local, issue no additional network request, and reset when the Sample ID changes; clicking a column heading sorts it ascending or descending, and the visible/total count remains visible. **Save CSV table** opens a Save As prompt defaulting to `<configured VisPa output root>/table/ion_neuronlists/` and proposing `monkey_sample_neuron_table_timestamp.csv`. The record preserves exact IDs plus side status, atlas region/voxel, soma coordinates, catalog/IONData/atlas hashes and record time. The catalog side pass is descriptive evidence for review; it does not modify a source SWC or establish anatomical acceptance. To add a dated snapshot alongside live mode, set `sources.neuron_catalog.snapshot_path`; in a CSV-mode profile, `sources.neuron_catalog.path` selects the CSV. If both sources are available, choose explicitly in the GUI. On existing CSV-only profiles, Live IONData is an explicit option and uses the configured host or the intranet default; the current CSV remains the default. No source is silently substituted. For a bounded backend check, run `python run_vispa.py config-check --catalog --sample 250432 --catalog-source live-iondata --dry-run` to inspect the resolved endpoint without fetching, or omit `--dry-run` to fetch just that sample's catalog and report its count and provenance. `vispa.sources.list_neurons(sample_id, config=None, source=None)` supports `live-iondata` and `csv` with the same explicit-source behavior.
 

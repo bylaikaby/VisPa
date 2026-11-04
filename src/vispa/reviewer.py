@@ -1,7 +1,7 @@
 """
 vispa_gui.py - GUI for NeuroVis Visual Toolkit
 
-Version: 1.20.0 (local/unreleased)
+Version: 1.20.1 (local/unreleased)
 Last updated: 2026-11-04
 Change history: ../../CHANGELOG.md
 Status: candidate (GUI layout reviewed; scientific review pending)
@@ -417,6 +417,23 @@ def _resolve_output_root(config_path=None):
         local_data = Path(os.environ.get("LOCALAPPDATA") or (Path.home() / ".cache"))
         return str(local_data / "VisPa" / "output"), "per-user VisPa fallback"
 
+
+def _resolve_figure_output_root(config_path=None):
+    try:
+        from .config import load
+        configured = (load(config_path).get("visual_toolkit") or {}).get("figure_output_root")
+        if configured:
+            return str(configured), "dataset configuration"
+    except Exception:
+        pass
+    return _resolve_output_root(config_path)
+
+
+def _figure_folder(root, sample_id, neuron_id):
+    sample = re.sub(r'[^A-Za-z0-9_.-]', '_', str(sample_id).strip()).strip('.') or 'sample'
+    neuron = re.sub(r'[^A-Za-z0-9_.-]', '_', str(neuron_id).strip().removesuffix('.swc')).strip('.') or 'neuron'
+    return os.path.join(root, sample, 'neurons', neuron)
+
 # Import the core toolkit
 try:
     from .renderers.microscopy_panels import VisPa
@@ -525,6 +542,7 @@ class NeuroVisGUI:
         # === 2. Default Output Directory Logic ===
         self.config_path = str(configuration.get("path") or config_path) if (configuration.get("path") or config_path) else None
         self.output_root = self._configured_output_root()
+        self.figure_output_root = self._configured_figure_output_root()
         default_path = self._generate_default_path(self.sample_id.get())
         self.output_dir = tk.StringVar(value=default_path)
 
@@ -535,6 +553,7 @@ class NeuroVisGUI:
         self.sample_id.trace_add("write", self._on_sample_id_change)
         self.sample_id.trace_add("write", self._on_identity_change)
         self.neuron_id.trace_add("write", self._on_identity_change)
+        self.neuron_id.trace_add("write", self._on_sample_id_change)
         self.sample_id.trace_add("write", self._on_catalog_sample_change)
         self._selected_identity = (self.sample_id.get(), self.neuron_id.get())
 
@@ -611,14 +630,17 @@ class NeuroVisGUI:
         if self.watch_review_session:
             self.root.after(500, self._poll_review_session)
 
-    def _generate_default_path(self, sample_id):
-        """Per-sample GUI staging folder under work/, dated for the run day."""
-        sample = str(sample_id).strip() or 'sample'
-        return os.path.join(self.output_root, f"{sample}_{time.strftime('%Y%m%d')}")
+    def _generate_default_path(self, sample_id, neuron_id=None):
+        """Per-neuron figure folder under the configured GUI figure root."""
+        neuron = neuron_id if neuron_id is not None else self.neuron_id.get()
+        return _figure_folder(self.figure_output_root, sample_id, neuron)
 
     def _configured_output_root(self):
         """Output/reload root from the active VisPa config or per-user default."""
         return _resolve_output_root(self.config_path)[0]
+
+    def _configured_figure_output_root(self):
+        return _resolve_figure_output_root(self.config_path)[0]
 
     def _on_sample_id_change(self, *args):
         """Updates output directory automatically when Sample ID changes."""
@@ -2952,7 +2974,7 @@ class NeuroVisGUI:
                 else 'differs'), notes
 
     def _find_cached_figures(self, sample, neuron):
-        """Newest cached PNG per role for one neuron, plus its receipt entry."""
+        """Cached PNGs and receipt from one current or legacy neuron folder."""
         folders = []
         current = self.output_dir.get().strip()
         if current:
@@ -2965,11 +2987,12 @@ class NeuroVisGUI:
             candidates.sort(key=os.path.getmtime, reverse=True)
             folders.extend(candidates[:8])
         found, receipt_entry = {}, None
+        unverified = {}
         for folder in dict.fromkeys(folders):
             if not os.path.isdir(folder):
                 continue
-            if receipt_entry is None:
-                receipt_entry = self._read_receipt(folder, neuron)
+            entry = self._read_receipt(folder, neuron)
+            candidate = {}
             for name in os.listdir(folder):
                 if not (name.startswith(f"{sample}_{neuron}")
                         and name.lower().endswith('.png')):
@@ -2985,8 +3008,15 @@ class NeuroVisGUI:
                 else:
                     continue
                 path = os.path.join(folder, name)
-                if role not in found or os.path.getmtime(path) > os.path.getmtime(found[role]):
-                    found[role] = path
+                if role not in candidate or os.path.getmtime(path) > os.path.getmtime(candidate[role]):
+                    candidate[role] = path
+            if entry and candidate:
+                found, receipt_entry = candidate, entry
+                break
+            if candidate and not unverified:
+                unverified = candidate
+        if not found:
+            found = unverified
         return folders, found, receipt_entry
 
     def _reload_existing(self, quiet=False, rerender_if_stale=True):
@@ -3932,6 +3962,8 @@ class NeuroVisGUI:
             path = self._generate_default_path(self.sample_id.get())
             self.output_dir.set(path)
 
+        if not self.save_outputs.get():
+            return path
         if not os.path.exists(path):
             try:
                 os.makedirs(path)
@@ -4468,6 +4500,7 @@ def main(argv=None):
         from .config import config_version_report
         version_report = config_version_report(config)
         output_root, output_root_source = _resolve_output_root(args.config)
+        figure_output_root, figure_output_root_source = _resolve_figure_output_root(args.config)
         settings = {
             "vispa_version": version_report["vispa_version"],
             "config_name": version_report["config_name"],
@@ -4484,8 +4517,10 @@ def main(argv=None):
             "effective_auto_load": effective_auto_load,
             "output_root": output_root,
             "output_root_source": output_root_source,
-            "default_output_dir": os.path.join(
-                output_root, f"{identity[0] or 'sample'}_{time.strftime('%Y%m%d')}"),
+            "figure_output_root": figure_output_root,
+            "figure_output_root_source": figure_output_root_source,
+            "default_output_dir": _figure_folder(
+                figure_output_root, identity[0], identity[1]),
         }
         if isinstance(session_payload, dict) and isinstance(session_payload.get("source"), dict):
             settings["source"] = {

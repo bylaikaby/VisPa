@@ -1,6 +1,6 @@
 """Load explicit, portable VisPa dataset configuration.
 
-Version: 1.20.0 (local/unreleased)
+Version: 1.20.1 (local/unreleased)
 Last updated: 2026-11-04
 Change history: ../../CHANGELOG.md
 2026-11-03: Preserve and resolve an explicit top-level DS00 registry path.
@@ -164,6 +164,9 @@ def config_version_report(path: str | Path | None = None) -> dict:
         "resolved_output_root": (
             str(loaded.get("visual_toolkit", {}).get("output_root"))
             if loaded.get("visual_toolkit", {}).get("output_root") is not None else None),
+        "resolved_figure_output_root": (
+            str(loaded.get("visual_toolkit", {}).get("figure_output_root"))
+            if loaded.get("visual_toolkit", {}).get("figure_output_root") is not None else None),
         "resolved_cache_root": (
             str(loaded.get("defaults", {}).get("cache_root"))
             if loaded.get("defaults", {}).get("cache_root") is not None else None),
@@ -492,6 +495,7 @@ def load(path: str | Path | None = None, base_dir: str | Path | None = None) -> 
         if not isinstance(values, dict):
             raise ValueError(f"visual_toolkit.settings.{scope} must be a mapping")
     visual_toolkit = {"output_root": _resolve(ui.get("output_root"), configured_base),
+                      "figure_output_root": _resolve(ui.get("figure_output_root"), configured_base),
                       "auto_reload": bool(ui.get("auto_reload", True)),
                       "worker_python": _resolve(ui.get("worker_python"), configured_base),
                       "default_sample": ui.get("default_sample", ""),
@@ -552,6 +556,8 @@ def load(path: str | Path | None = None, base_dir: str | Path | None = None) -> 
             raise ValueError("visual_toolkit.default_neuron must be an SWC basename")
     if visual_toolkit["output_root"] is None:
         visual_toolkit["output_root"] = defaults["output_root"]
+    if visual_toolkit["figure_output_root"] is None:
+        visual_toolkit["figure_output_root"] = visual_toolkit["output_root"]
     raw_sources = raw.get("sources", {})
     if raw_sources is None:
         raw_sources = {}
@@ -718,6 +724,7 @@ def load(path: str | Path | None = None, base_dir: str | Path | None = None) -> 
         result["defaults"]["cache_root"] = test_cache
         result["defaults"]["swc_cache_root"] = test_cache / "swc"
         result["visual_toolkit"]["output_root"] = test_output
+        result["visual_toolkit"]["figure_output_root"] = test_output
         result["visual_toolkit"]["fnt_tracer"]["cache_root"] = test_cache / "fnt"
         result["test_output_root"] = test_output
         result["test_cache_root"] = test_cache
@@ -1422,6 +1429,7 @@ FIELDS = (
     ("Data folders", "defaults.swc_root", "Local SWC folder", "dir"),
     ("Data folders", "defaults.cache_root", "Download cache folder", "dir"),
     ("Data folders", "defaults.output_root", "Figure output folder", "dir"),
+    ("Data folders", "visual_toolkit.figure_output_root", "GUI figure output folder", "dir"),
     ("Sources", "sources.neuron_catalog.host", "Neuron catalog address", "text"),
     ("Sources", "sources.neuron_catalog.mode", "Neuron catalog source", "catalog_mode"),
     ("Sources", "sources.neuron_catalog.path", "Neuron catalog CSV file (CSV mode)", "file"),

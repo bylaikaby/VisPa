@@ -1,6 +1,6 @@
 """Focused regression checks for the standalone extraction seams.
 
-Version: 1.20.0 (local/unreleased)
+Version: 1.20.1 (local/unreleased)
 Last updated: 2026-11-04
 Change history: ../CHANGELOG.md
 2026-11-02: Compare source identity across Windows long and 8.3 path aliases.
@@ -718,6 +718,16 @@ class ConfigTests(unittest.TestCase):
         save_request = SimpleNamespace(save_outputs=True, output_dir="out")
         self.assertEqual(gui._target_for(preview_request, True), "preview")
         self.assertEqual(gui._target_for(save_request, True), "out")
+
+    def test_gui_figure_folder_groups_sample_and_neuron_safely(self):
+        from vispa.reviewer import _figure_folder
+        root = str(Path("figures"))
+        self.assertEqual(
+            _figure_folder(root, "251637", "004.swc"),
+            os.path.join(root, "251637", "neurons", "004"))
+        self.assertEqual(
+            _figure_folder(root, "../sample", "../004.swc"),
+            os.path.join(root, "_sample", "neurons", "_004"))
 
     def test_relative_config_paths_resolve_once_from_config_directory(self):
         with tempfile.TemporaryDirectory() as temp:

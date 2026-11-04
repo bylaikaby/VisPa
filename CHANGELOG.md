@@ -1,5 +1,15 @@
 # VisPa change log
 
+## 1.20.1 — 2026-11-04 (local/unreleased)
+- Route GUI Render figures to a configurable `visual_toolkit.figure_output_root`,
+  grouped as `<sample>/neurons/<neuron>/`. Save outputs remains the switch for
+  panel PNGs, the Soma NIfTI and the render receipt. Manual output folders still
+  apply. Existing dated folders remain available to the GUI cache lookup.
+- Report the resolved figure root in config identity and GUI dry runs. Keep
+  `visual_toolkit.output_root` for other VisPa outputs, including catalog tables.
+- Validation: focused GUI/config/CLI unittest suite passed 76/76 in the VisPa
+  environment, including the sample/neuron folder regression test.
+
 ## 1.20.0 — 2026-11-04 (local/unreleased)
 - Promote the package version to 1.20.0 while keeping the selected configuration
   identity separate as `ded_vispa_config 1.0.6`.
@@ -143,6 +153,11 @@
 
 ## Configuration history
 
+- **1.0.7** — `2026-11-04T18:42:48+08:00` — VisPa `1.20.1` — Add a GUI
+  figure root at `fMOST\Vispa_outputs` and increase the display-only processed
+  SWC soma sphere radius from 200 to 300 stored coordinate units. Existing
+  backend output and source paths are unchanged. Validation: config check and
+  GUI dry run before deployment.
 - **1.0.6** — `2026-11-04T15:48:44+08:00` — VisPa `1.13.0.dev10` — Move
   configs, cached source data and rendered outputs under
   `fMOST\VisPa\configs`, `cached_data` and `outputs`; test mode uses
