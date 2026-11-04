@@ -1,10 +1,23 @@
 # VisPa change log
 
+## 1.13.0.dev17 — 2026-11-04 (local/unreleased candidate)
+- Integrate release checking into the initial resource pass. The checklist shows
+  the installed and latest parsed versions and displays a non-destructive update
+  prompt when they differ; update status never changes scientific-resource
+  readiness.
+- The update prompt targets the current local Git clone and its editable package
+  installation. It does not refer to a demo clone or perform an update itself.
+- Validation: startup checklist/update-prompt tests and the complete source
+  suite.
+
 ## 1.13.0.dev16 — 2026-11-04 (local/unreleased candidate)
 - Add the credential-free `vispa updates` surface and public update parsers for
   local changelog/JSON files, plain HTTP(S) feeds, or local Git history. Git mode
   reads only existing objects with terminal prompts and credential-manager
   interaction disabled; it never fetches, pulls or calls GitHub.
+- Integrate update checking into the initial resource pass. The checklist shows
+  the installed and latest parsed versions and displays a non-destructive update
+  prompt when they differ, while resource readiness remains independent.
 - Align the package, GUI, CLI and test headers at `1.13.0.dev16`.
 - Validation: update-parser/CLI tests, packaged config precedence tests, and
   the complete source suite.

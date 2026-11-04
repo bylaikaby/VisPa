@@ -1,7 +1,7 @@
 """
 vispa_gui.py - GUI for NeuroVis Visual Toolkit
 
-Version: 1.13.0.dev16 (local/unreleased)
+Version: 1.13.0.dev17 (local/unreleased)
 Last updated: 2026-11-04
 Change history: ../../CHANGELOG.md
 Status: candidate (GUI layout reviewed; scientific review pending)
@@ -3448,7 +3448,10 @@ class NeuroVisGUI:
             return
         self.last_data_check = report
         display_lines = [
-            line.replace("[OK]", "✓", 1).replace("[MISSING]", "!", 1)
+            line.replace("[OK]", "✓", 1)
+                .replace("[UPDATE]", "↑", 1)
+                .replace("[MISSING]", "!", 1)
+                .replace("[INFO]", "i", 1)
             for line in report["checklist"]
         ]
         for line in display_lines:
@@ -3457,6 +3460,17 @@ class NeuroVisGUI:
             self.update_status(f"All configured resources ready ({report['checked']}/{report['checked']})")
         else:
             self.update_status(f"Resource check: {report['issues']} required item(s) need attention")
+        update_item = next(
+            (item for item in report.get("checks", ())
+             if item.get("role") == "update_status"),
+            None)
+        if update_item and update_item.get("status") == "update_available":
+            messagebox.showinfo(
+                "VisPa update available",
+                f"{update_item['detail']}\n\n"
+                "Review the update, then update the current local VisPa clone "
+                "and reinstall its editable package. Use `vispa updates` for "
+                "release details.")
         self._show_data_check(report)
         if (getattr(self, '_auto_fill_on_identity', True)
                 and not getattr(self, '_autofill_identity', None)

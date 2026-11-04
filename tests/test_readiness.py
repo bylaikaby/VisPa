@@ -1,6 +1,6 @@
 """Checks for the public data-check API, CLI and GUI progress plumbing.
 
-Version: 1.13.0.dev16 (local/unreleased)
+Version: 1.13.0.dev17 (local/unreleased)
 Last updated: 2026-11-04
 Change history: ../CHANGELOG.md
 Status: candidate
@@ -82,9 +82,9 @@ class DataCheckTests(unittest.TestCase):
                 config, progress=lambda done, total: progress.append((done, total)))
             self.assertIs(vispa.check, data_check)
             self.assertTrue(report["ready"], report["checklist"])
-            self.assertEqual(report["checked"], 15)
-            self.assertEqual(progress[-1], (15, 15))
-            self.assertEqual(progress, [(index, 15) for index in range(1, 16)])
+            self.assertEqual(report["checked"], 16)
+            self.assertEqual(progress[-1], (16, 16))
+            self.assertEqual(progress, [(index, 16) for index in range(1, 17)])
             self.assertTrue(any(
                 line.startswith("[OK] DS00 image:")
                 and str(root / "ds00.nii") in line
@@ -94,6 +94,10 @@ class DataCheckTests(unittest.TestCase):
             self.assertTrue(any(item["role"] == "fnt_native" and
                                 item["status"] == "configured" and
                                 "can be prepared" in item["detail"] for item in report["checks"]))
+            update = next(item for item in report["checks"]
+                          if item["role"] == "update_status")
+            self.assertFalse(update["required"])
+            self.assertEqual(update["status"], "ready")
             self.assertFalse((root / "cache").exists())
 
     def test_manual_project_alone_does_not_satisfy_native_readiness(self):
@@ -121,8 +125,8 @@ class DataCheckTests(unittest.TestCase):
             report = data_check(
                 config, progress=lambda done, total: progress.append((done, total)))
             self.assertTrue(report["ready"], report["checklist"])
-            self.assertEqual(report["checked"], 17)
-            self.assertEqual(progress[-1], (17, 17))
+            self.assertEqual(report["checked"], 18)
+            self.assertEqual(progress[-1], (18, 18))
             region = next(item for item in report["checks"]
                           if item["role"] == "region_mesh_root")
             self.assertEqual(region["status"], "ready")
@@ -499,6 +503,38 @@ class ProgressBarTests(unittest.TestCase):
         gui._show_data_check.assert_called_once_with(report)
         gui.update_status.assert_called_with("All configured resources ready (2/2)")
         self.assertEqual(gui.last_data_check, report)
+
+    def test_startup_check_prompts_when_a_new_version_is_parsed(self):
+        from vispa.gui import NeuroVisGUI
+        gui = object.__new__(NeuroVisGUI)
+        gui.sample_id = mock.Mock()
+        gui.sample_id.get.return_value = "0007"
+        gui.neuron_id = mock.Mock()
+        gui.neuron_id.get.return_value = "001.swc"
+        gui._hide_progress = mock.Mock()
+        gui._append_log = mock.Mock()
+        gui.update_status = mock.Mock()
+        gui._show_data_check = mock.Mock()
+        gui._auto_fill_on_identity = False
+        update = {
+            "role": "update_status",
+            "label": "Version/update check",
+            "required": False,
+            "status": "update_available",
+            "detail": "Installed 1.13.0.dev16; latest parsed 1.13.0.dev17",
+        }
+        report = {
+            "ready": True, "checked": 1, "issues": 0,
+            "checklist": ["[UPDATE] Version/update check: " + update["detail"]],
+            "summary": "All configured resources ready (1/1)",
+            "checks": [update],
+        }
+        with mock.patch("vispa.reviewer.messagebox.showinfo") as showinfo:
+            gui._finish_resource_check(("0007", "001.swc"), report, None)
+        showinfo.assert_called_once()
+        self.assertIn("1.13.0.dev16", showinfo.call_args.args[1])
+        self.assertIn("1.13.0.dev17", showinfo.call_args.args[1])
+        gui._show_data_check.assert_called_once_with(report)
 
     def test_swc3d_tab_requests_a_snapshot_when_not_cached(self):
         from vispa.gui import (NeuroVisGUI, SWC_BRAIN_VIEW_LABEL,

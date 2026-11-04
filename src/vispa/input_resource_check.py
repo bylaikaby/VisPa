@@ -1,7 +1,7 @@
 """Check whether one VisPa review identity has its configured resources.
 
-Version: 1.11.0.dev25 (local/unreleased)
-Last updated: 2026-10-27
+Version: 1.13.0.dev17 (local/unreleased)
+Last updated: 2026-11-04
 Change history: ../../CHANGELOG.md
 Status: candidate
 """
@@ -119,7 +119,7 @@ def data_check(config=None, sample_id=None, neuron_id=None,
     fnt = ui.get("fnt_tracer") or {}
 
     items = []
-    total = 15 + int(brain.get("region_mesh_root") is not None) \
+    total = 16 + int(brain.get("region_mesh_root") is not None) \
         + int(brain.get("region_manifest") is not None)
 
     def add(item):
@@ -140,6 +140,32 @@ def data_check(config=None, sample_id=None, neuron_id=None,
     add(_dependency_item("PIL", "Pillow"))
     add(_dependency_item("tifffile", "TIFF reader", fallback="Pillow fallback available"))
     add(_dependency_item("imagecodecs", "Extended TIFF codecs", fallback="Pillow fallback available"))
+    try:
+        from .updates import load_updates
+        update_report = load_updates()
+        if update_report["matches_installed"]:
+            update_status = "ready"
+            update_detail = (
+                f"Installed {update_report['installed_version']} matches "
+                f"latest parsed {update_report['latest_version']}")
+        else:
+            update_status = "update_available"
+            update_detail = (
+                f"Installed {update_report['installed_version']}; "
+                f"latest parsed {update_report['latest_version']} — review update status")
+        update_path = update_report.get("source")
+    except (OSError, RuntimeError, ValueError, KeyError, TypeError) as exc:
+        update_status = "unavailable"
+        update_detail = f"Update source unavailable: {exc}"
+        update_path = None
+    add({
+        "role": "update_status",
+        "label": "Version/update check",
+        "path": str(update_path) if update_path else None,
+        "required": False,
+        "status": update_status,
+        "detail": update_detail,
+    })
 
     manifest_path = sources.get("dataset_manifest")
     if manifest_path:
@@ -226,8 +252,15 @@ def data_check(config=None, sample_id=None, neuron_id=None,
 
     issues = [item for item in items if item["required"] and item["status"] not in _READY_STATES]
     ready = not issues
+    def prefix(item):
+        if item["status"] in _READY_STATES:
+            return "OK"
+        if item["status"] == "update_available":
+            return "UPDATE"
+        return "MISSING" if item["required"] else "INFO"
+
     lines = [
-        f"[{'OK' if item['status'] in _READY_STATES else 'MISSING'}] {item['label']}: "
+        f"[{prefix(item)}] {item['label']}: "
         f"{item['detail']}" + (f" | {item['path']}" if item.get("path") else "")
         for item in items
     ]
