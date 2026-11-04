@@ -1,7 +1,7 @@
 # VisPa — Visual Projectome Analysis tool
 
 VisPa reviews macaque neuron and microscopy data configured by the DEB lab.
-This checkout identifies as **1.13.0.dev14**, without a release tag. VisPa is a
+This checkout identifies as **1.13.0.dev16**, without a release tag. VisPa is a
 Python package inside a Conda environment. Launch the GUI directly from this
 checkout with `python run_vispa.py`.
 
@@ -352,6 +352,47 @@ Pass `--config PATH` to any command to select another profile. Relative paths
 resolve from that YAML/JSON file. Binary assets, microscopy data and credentials
 remain external.
 
+## Parse update notes without GitHub sign-in
+
+`vispa updates` reads the repository CHANGELOG by default. It can also parse a
+local Markdown/JSON file, a plain HTTP(S) static feed, or the existing clone's
+local Git history. These paths do not call GitHub APIs or attach credentials.
+
+```powershell
+python run_vispa.py updates --limit 3
+python run_vispa.py updates --source git --repo D:\vispa --limit 5
+python run_vispa.py updates --source \\10.102.8.200\microscopy_data\fMOST\VisPa\updates.json --json
+python run_vispa.py updates --source https://example.org/vispa/updates.json
+$env:VISPA_UPDATES_SOURCE='git'
+```
+
+Git mode is deliberately offline. It runs local `git log`/`rev-parse` against
+already available objects and sets `GIT_TERMINAL_PROMPT=0` and
+`GCM_INTERACTIVE=Never`; it never runs fetch, pull, `ls-remote`, or a GitHub API
+request. A missing Git executable or checkout is reported instead of prompting.
+
+The JSON feed shape is:
+
+```json
+{
+  "schema": "vispa.updates.v1",
+  "releases": [
+    {
+      "version": "1.13.0.dev16",
+      "date": "2026-11-04",
+      "status": "local/unreleased candidate",
+      "changes": ["Credential-free update parsing."]
+    }
+  ]
+}
+```
+
+`latest_version` is the first parsed record, not a claim that it is newer than
+the installed package. `matches_installed` reports exact string equality. Inputs
+are limited to 1 MiB; HTTP(S) and local Git reads default to a five-second
+timeout. If an intranet host requires authentication, publish an anonymously
+readable feed or synchronize the file separately and pass its local path.
+
 ### IDE setup
 
 Find the exact interpreter:
@@ -370,6 +411,7 @@ directory.
 | Open the GUI | `python run_vispa.py` | Opens the normal review interface. |
 | Check readiness | `python run_vispa.py check` | Prints a path-aware checklist for the configured sample and neuron. |
 | Show version | `python run_vispa.py --version` | Prints the installed VisPa version. |
+| Parse updates | `python run_vispa.py updates --limit 3` | Parses CHANGELOG, JSON, plain HTTP, or existing local Git history without GitHub sign-in. |
 | Validate a config | `python run_vispa.py config-check --validate-only --config PATH` | Checks YAML/JSON structure without reading lab data. |
 | Audit one resource set | `python run_vispa.py config-check --sample SAMPLE --neuron 004.swc` | Reports exact paths, hashes, geometry and cache references. |
 | Open SWC Brain View interactive | `python run_vispa.py brain-view --sample 251637 --neuron 004.swc` | Opens the configured mesh and processed SWC. |

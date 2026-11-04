@@ -1,6 +1,6 @@
 """Checks for the public data-check API, CLI and GUI progress plumbing.
 
-Version: 1.13.0.dev14 (local/unreleased)
+Version: 1.13.0.dev16 (local/unreleased)
 Last updated: 2026-11-04
 Change history: ../CHANGELOG.md
 Status: candidate
@@ -252,17 +252,18 @@ class ProgressBarTests(unittest.TestCase):
     def test_version_display_separates_app_and_config_versions(self):
         from vispa.reviewer import NeuroVisGUI
         report = {
-            "vispa_version": "1.13.0.dev14",
+            "vispa_version": "1.13.0.dev15",
             "config_name": "vispa_config",
             "config_version": "unversioned",
-            "config_updated_at": "unknown",
+            "config_updated_at": "2026-11-04T15:48:44+08:00",
         }
         self.assertEqual(
-            NeuroVisGUI._version_display_rows(report),
-            (
-                ("APP VERSION", "VisPa 1.13.0.dev14"),
-                ("CONFIG VERSION", "vispa_config · unversioned\nupdated unknown"),
-            ))
+            NeuroVisGUI._version_display_rows(report)[0],
+            ("APP VERSION", "VisPa 1.13.0.dev15"))
+        config_row = NeuroVisGUI._version_display_rows(report)[1]
+        self.assertEqual(config_row[0], "CONFIG VERSION")
+        self.assertIn("vispa_config · unversioned", config_row[1])
+        self.assertIn("Updated: 2026-11-04T15:48:44+08:00", config_row[1])
 
     def test_update_uses_cached_rendering_without_prompt(self):
         from vispa.gui import NeuroVisGUI

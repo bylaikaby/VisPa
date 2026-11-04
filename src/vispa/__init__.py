@@ -3,8 +3,8 @@
 Importing the package root does not import Matplotlib, acquisition providers, or
 optional image libraries. Public names are loaded on first access.
 
-Version: 1.11.0.dev25 (local/unreleased)
-Last updated: 2026-10-27
+Version: 1.13.0.dev16 (local/unreleased)
+Last updated: 2026-11-04
 Change history: ../../CHANGELOG.md
 """
 from importlib import import_module
@@ -13,6 +13,7 @@ from ._version import __version__
 _SETTINGS_NAMES = {"settings_schema", "resolve_settings", "apply_settings",
                    "tuning_status", "update_tuning"}
 _DATA_CHECK_NAMES = {"check", "data_check"}
+_UPDATE_NAMES = {"load_git_updates", "load_updates", "parse_updates"}
 
 _TOOLKIT_NAMES = {
     "VisPa", "REVIEW_SETTINGS", "TARGET_MARKER_COLOR", "apply_setting_overrides",
@@ -26,10 +27,13 @@ def __getattr__(name):
         return getattr(import_module(".config", __name__), name)
     if name in _DATA_CHECK_NAMES:
         return getattr(import_module(".input_resource_check", __name__), name)
+    if name in _UPDATE_NAMES:
+        return getattr(import_module(".updates", __name__), name)
     if name in _TOOLKIT_NAMES:
         return getattr(import_module(".renderers.microscopy_panels", __name__), name)
     raise AttributeError(name)
 
 
 def __dir__():
-    return sorted(set(globals()) | _TOOLKIT_NAMES | _SETTINGS_NAMES | _DATA_CHECK_NAMES)
+    return sorted(set(globals()) | _TOOLKIT_NAMES | _SETTINGS_NAMES
+                  | _DATA_CHECK_NAMES | _UPDATE_NAMES)

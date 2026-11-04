@@ -1,6 +1,6 @@
 """Load explicit, portable VisPa dataset configuration.
 
-Version: 1.13.0.dev14 (local/unreleased)
+Version: 1.13.0.dev16 (local/unreleased)
 Last updated: 2026-11-04
 Change history: ../../CHANGELOG.md
 2026-11-03: Preserve and resolve an explicit top-level DS00 registry path.
@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import hashlib
 import json
 import math
 import os
@@ -152,6 +153,13 @@ def config_version_report(path: str | Path | None = None) -> dict:
         "config_path": str(source),
         "config_origin": loaded.get("config_origin"),
         "config_sha256": hashlib.sha256(raw).hexdigest(),
+        "config_precedence": loaded.get("config_precedence"),
+        "packaged_config_path": str(loaded.get("packaged_config_path") or ""),
+        "packaged_config_sha256": loaded.get("packaged_config_sha256"),
+        "packaged_config_name": loaded.get("packaged_config_name"),
+        "packaged_config_version": loaded.get("packaged_config_version"),
+        "packaged_config_updated_at": loaded.get("packaged_config_updated_at"),
+        "selected_config_present": bool(loaded.get("selected_config_present")),
         "test_mode": bool(loaded.get("test_mode")),
         "resolved_output_root": (
             str(loaded.get("visual_toolkit", {}).get("output_root"))
@@ -375,9 +383,9 @@ def validate_public_example_source(value: dict) -> dict:
 def load(path: str | Path | None = None, base_dir: str | Path | None = None) -> dict:
     """Load schema-v1 JSON or YAML and resolve paths against its declared base.
 
-    An explicit argument or VISPA_CONFIG path wins and is never created. With no
-    override, the own per-user YAML wins, then the package-owned neutral YAML
-    is used in memory. Legacy files remain available by explicit path.
+    The packaged DEB profile is the default. An explicit argument or
+    VISPA_CONFIG profile remains the writable active selection. A missing
+    selected profile falls back to the packaged profile in memory.
     """
     explicit = path is not None
     env_path = os.environ.get(ENV_VAR)
@@ -387,22 +395,21 @@ def load(path: str | Path | None = None, base_dir: str | Path | None = None) -> 
     elif env_path:
         source = Path(env_path).expanduser()
     else:
-        target = default_config_path()
-        if target.is_file():
-            source = target
-            origin = "user_yaml"
-        else:
-            source = target
-            origin = "package_default"
+        source = packaged_config_path()
+        origin = "package_default"
     source = source.resolve()
-    if origin == "package_default":
-        content = _template_bytes()
-    elif source.is_file():
+    packaged_source = Path(str(packaged_config_path())).resolve()
+    packaged_content = _template_bytes()
+    packaged_raw = _parse_config_bytes(packaged_content, packaged_source)
+    if source.is_file():
         content = source.read_bytes()
+        content_source = source
+        raw = _parse_config_bytes(content, source)
     else:
-        base = Path(base_dir).expanduser() if base_dir else source.parent
-        return _empty_config(source, base, origin=origin)
-    raw = _parse_config_bytes(content, source)
+        content = packaged_content
+        content_source = packaged_source
+        raw = packaged_raw
+    selected_config_present = source != packaged_source and source.is_file()
     if not isinstance(raw, dict):
         raise ValueError(f"{source}: top level must be a mapping")
     unknown = set(raw) - {"version", "config_name", "config_version", "config_updated_at",
@@ -412,7 +419,7 @@ def load(path: str | Path | None = None, base_dir: str | Path | None = None) -> 
         raise ValueError(f"{source}: unknown top-level keys {sorted(unknown)}")
     if raw.get("version") != SCHEMA_VERSION:
         raise ValueError(f"{source}: unsupported version {raw.get('version')!r}; expected {SCHEMA_VERSION}")
-    configured_base = Path(base_dir).expanduser() if base_dir else Path(raw.get("base_dir") or source.parent).expanduser()
+    configured_base = Path(base_dir).expanduser() if base_dir else Path(raw.get("base_dir") or content_source.parent).expanduser()
     if not configured_base.is_absolute():
         configured_base = (source.parent / configured_base).resolve()
     defaults_raw = raw.get("defaults", {})
@@ -692,7 +699,14 @@ def load(path: str | Path | None = None, base_dir: str | Path | None = None) -> 
     metadata = _config_metadata(raw, source)
     result = {"path": source, "base_dir": configured_base, **metadata, "defaults": defaults,
               "samples": samples, "visual_toolkit": visual_toolkit, "sources": sources,
-              "config_origin": origin, "test_mode": test_mode_enabled()}
+              "config_origin": origin, "test_mode": test_mode_enabled(),
+              "config_precedence": "packaged_default_then_explicit_profile",
+              "packaged_config_path": packaged_source,
+              "packaged_config_sha256": hashlib.sha256(packaged_content).hexdigest(),
+              "packaged_config_name": packaged_raw.get("config_name"),
+              "packaged_config_version": packaged_raw.get("config_version"),
+              "packaged_config_updated_at": packaged_raw.get("config_updated_at"),
+              "selected_config_present": selected_config_present}
     if result["test_mode"]:
         shared_layout = configured_base.name.casefold() == "configs"
         test_cache = (

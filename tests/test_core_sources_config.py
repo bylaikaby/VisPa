@@ -1,7 +1,7 @@
 """Focused regression checks for the standalone extraction seams.
 
-Version: 1.13.0.dev1 (local/unreleased)
-Last updated: 2026-11-03
+Version: 1.13.0.dev16 (local/unreleased)
+Last updated: 2026-11-04
 Change history: ../CHANGELOG.md
 2026-11-02: Compare source identity across Windows long and 8.3 path aliases.
 2026-11-03: Mark the local cache precedence case as explicit cached-only mode.
@@ -785,12 +785,13 @@ class ConfigTests(unittest.TestCase):
                 self.assertTrue(target.is_file())
                 self.assertEqual(legacy.read_bytes(), legacy_bytes)
                 self.assertEqual(initialize_default_config()["action"], "already_exists")
-                loaded = load()
+                loaded = load(target)
                 self.assertEqual(loaded["samples"]["0007"]["swc_cache"],
                                  (legacy_dir / "0007").resolve())
 
     def test_new_vispa_profile_ignores_inherited_legacy_environment(self):
         from vispa.dataset_config import initialize_default_config, load
+        from vispa.config import packaged_config_path
         with tempfile.TemporaryDirectory() as temp:
             appdata = Path(temp) / "appdata"
             legacy = Path(temp) / "old_project.yaml"
@@ -804,15 +805,20 @@ class ConfigTests(unittest.TestCase):
                 plan = initialize_default_config()
                 config = load()
             self.assertEqual(plan["source_kind"], "package_defaults")
-            self.assertEqual(config["path"], (appdata / "VisPa" / "vispa_config.yaml").resolve())
+            self.assertEqual(config["path"], Path(packaged_config_path()).resolve())
+            self.assertEqual(config["config_origin"], "package_default")
             self.assertEqual(config["visual_toolkit"]["default_sample"], "251637")
             self.assertEqual(config["visual_toolkit"]["default_neuron"], "004.swc")
             self.assertEqual(config["sources"]["neuron_catalog"]["mode"], "live-iondata")
             self.assertEqual(config["sources"]["neuron_catalog"]["host"], "http://10.10.48.110")
-            self.assertEqual(config["sources"]["http_host"], "http://bap.cebsit.ac.cn")
+            self.assertEqual(config["sources"]["http_host"], "http://10.10.48.110")
             self.assertEqual(config["sources"]["raw_swc_base"], "http://10.10.31.31/swc/newswc")
-            self.assertEqual(config["defaults"]["cache_root"], user_data / "VisPa" / "cache")
-            self.assertEqual(config["defaults"]["output_root"], user_data / "VisPa" / "output")
+            self.assertEqual(
+                config["defaults"]["cache_root"],
+                Path(r"\\10.102.8.200\microscopy_data\fMOST\VisPa\cached_data"))
+            self.assertEqual(
+                config["defaults"]["output_root"],
+                Path(r"\\10.102.8.200\microscopy_data\fMOST\VisPa\outputs"))
             self.assertTrue(config["visual_toolkit"]["fnt_tracer"]["auto_download"])
             self.assertEqual(
                 config["visual_toolkit"]["fnt_tracer"]["project_root"],

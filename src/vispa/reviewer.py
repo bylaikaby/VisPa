@@ -1,7 +1,7 @@
 """
 vispa_gui.py - GUI for NeuroVis Visual Toolkit
 
-Version: 1.13.0.dev14 (local/unreleased)
+Version: 1.13.0.dev16 (local/unreleased)
 Last updated: 2026-11-04
 Change history: ../../CHANGELOG.md
 Status: candidate (GUI layout reviewed; scientific review pending)
@@ -13,6 +13,8 @@ profile settings in figure fingerprints and cache receipts.
 2026-11-02: Show the user-supplied VisPa artwork in the GUI title bar and taskbar from packaged image assets.
 2026-11-04: Add VisPa-derived catalog laterality, autoloaded side refresh, current-monkey CSV records, shaded button borders, and split physical/NMT coordinates.
 2026-11-04: Add Go to search plus an exact region selector, dark structural borders, reliable left-panel scrolling, compact plot cards, and distinct application/config version blocks.
+2026-11-04: Make the complete resource-check list respond to wheel scrolling, enlarge both version blocks, show the config update date explicitly, and label the compact neuron identity as a subtitle.
+2026-11-04: Make the packaged ded_vispa_config 1.0.6 profile the default while selected profiles remain writable.
 
 DESCRIPTION:
     Tkinter review interface for standalone VisPa panels. It uses the
@@ -1234,6 +1236,10 @@ class NeuroVisGUI:
             f"VisPa: {report['vispa_version']}\n"
             f"Config: {report['config_name']} {report['config_version']}\n"
             f"Config updated: {report['config_updated_at']}\n"
+            f"Packaged config: {report.get('packaged_config_name')} "
+            f"{report.get('packaged_config_version')}\n"
+            f"Precedence: {report.get('config_precedence')}\n"
+            f"Selected config present: {report.get('selected_config_present')}\n"
             f"Mode: {'test output' if self.test_mode else 'configured output'}\n"
             f"Path: {report['config_path']}\n"
             f"Origin: {report['config_origin']}\n"
@@ -1249,10 +1255,14 @@ class NeuroVisGUI:
         config_name = report.get("config_name") or "unknown"
         config_version = report.get("config_version") or "unversioned"
         updated = report.get("config_updated_at") or "unknown"
+        packaged_name = report.get("packaged_config_name") or "unknown"
+        packaged_version = report.get("packaged_config_version") or "unknown"
         return (
             ("APP VERSION", f"VisPa {app_version}"),
             ("CONFIG VERSION",
-             f"{config_name} · {config_version}\nupdated {updated}"),
+             f"{config_name} · {config_version}\n"
+             f"base {packaged_name} {packaged_version}\n"
+             f"Updated: {updated}"),
         )
 
     def _show_runtime_version(self):
@@ -3483,9 +3493,11 @@ class NeuroVisGUI:
             value for value in (report.get("sample_id"), report.get("neuron_id"))
             if value
         )
-        tk.Label(header, text=identity or "Current VisPa identity",
+        neuron_subtitle = (f"Neuron Loaded: {identity}"
+                           if identity else "Neuron Loaded: no active neuron")
+        tk.Label(header, text=neuron_subtitle,
                  bg=C['header'], fg=C['header_muted'],
-                 font=('Segoe UI', 9), anchor='w').grid(
+                 font=('Segoe UI', 8), anchor='w').grid(
                      row=1, column=0, sticky='ew', pady=(self._px(2), 0))
         version_report = getattr(self, "version_report", {})
         versions = tk.Frame(header, bg=C['header'])
@@ -3502,10 +3514,10 @@ class NeuroVisGUI:
                        (self._px(12), 0))
             tk.Label(
                 block, text=label, bg=C['header'], fg=color,
-                font=('Segoe UI', 7, 'bold'), anchor='w').pack(fill='x')
+                font=('Segoe UI', 9, 'bold'), anchor='w').pack(fill='x')
             tk.Label(
                 block, text=value, bg=C['header'], fg=C['header_text'],
-                font=('Consolas', 8, 'bold'), anchor='w', justify='left',
+                font=('Consolas', 10, 'bold'), anchor='w', justify='left',
                 wraplength=max(self._px(220), width // 2 - self._px(36))).pack(
                     fill='x')
         tk.Label(header, text=f"{report.get('checked', 0)} checks",
@@ -3625,6 +3637,11 @@ class NeuroVisGUI:
                 row.grid_rowconfigure(2, minsize=self._px(9))
             tk.Frame(row, bg=C['border'], height=1).grid(
                 row=3, column=0, columnspan=2, sticky='ew')
+
+        # Bind the whole rendered list, including item labels and paths, so the
+        # wheel scrolls while the pointer is directly over resource details.
+        self._bind_settings_wheel(
+            body, self._settings_wheel_handler(canvas))
 
         footer = tk.Frame(window, bg=C['page'], padx=self._px(18),
                           pady=self._px(10))

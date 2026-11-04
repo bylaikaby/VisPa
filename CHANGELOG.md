@@ -1,5 +1,32 @@
 # VisPa change log
 
+## 1.13.0.dev16 — 2026-11-04 (local/unreleased candidate)
+- Add the credential-free `vispa updates` surface and public update parsers for
+  local changelog/JSON files, plain HTTP(S) feeds, or local Git history. Git mode
+  reads only existing objects with terminal prompts and credential-manager
+  interaction disabled; it never fetches, pulls or calls GitHub.
+- Align the package, GUI, CLI and test headers at `1.13.0.dev16`.
+- Validation: update-parser/CLI tests, packaged config precedence tests, and
+  the complete source suite.
+
+## 1.13.0.dev15 — 2026-11-04 (local/unreleased candidate)
+- Make the complete resource-check list respond to the mouse wheel, including
+  when the cursor is over a resource label, detail or path.
+- Enlarge the application and configuration version blocks, label the
+  configuration timestamp explicitly as **Updated**, and identify the compact
+  header identity as **Neuron Loaded**. The declared `config_updated_at` value
+  remains the source of the displayed timestamp.
+- Replace the packaged `config_deb.yaml` with the exact versioned
+  `ded_vispa_config_v1.0.6.yaml` profile. The package therefore carries the
+  current DEB configuration by default, while an explicit or `VISPA_CONFIG`
+  profile remains writable and takes runtime precedence.
+- When no active profile is selected, use the packaged profile directly. If a
+  selected profile is unavailable, use the packaged profile in memory and
+  report that the selected profile was absent instead of creating an empty
+  fallback.
+- Validation: packaged/network byte identity, config precedence, CLI version
+  identity, focused GUI/style tests and a rendered resource-check review.
+
 ## 1.13.0.dev14 — 2026-11-04 (local/unreleased candidate)
 - Show the application and selected configuration as separate version blocks in
   the resource-check header. The package version and config version are distinct

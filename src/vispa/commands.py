@@ -1,6 +1,6 @@
 """Bounded command line for VisPa review renders and source acquisition.
 
-Version: 1.13.0.dev14 (local/unreleased)
+Version: 1.13.0.dev16 (local/unreleased)
 Last updated: 2026-11-04
 Change history: ../../CHANGELOG.md
 """
@@ -801,6 +801,26 @@ def _data_check(args):
     return 0 if report["ready"] else 1
 
 
+def _updates(args):
+    from .updates import load_updates
+
+    report = load_updates(
+        args.source, repository=args.repo, git_limit=args.limit)
+    report["releases"] = report["releases"][:args.limit]
+    if args.json:
+        print(json.dumps(report, indent=2, ensure_ascii=False, sort_keys=True))
+        return 0
+    print(f"VisPa updates | installed {report['installed_version']} | "
+          f"latest parsed {report['latest_version']}")
+    print(f"Source: {report['source']} ({report['format']})")
+    for release in report["releases"]:
+        status = f" ({release['status']})" if release.get("status") else ""
+        print(f"\n{release['version']} — {release['date']}{status}")
+        for change in release["changes"]:
+            print(f"  - {change}")
+    return 0
+
+
 def _parser():
     parser = argparse.ArgumentParser(
         prog="vispa", description=f"VisPa {VERSION} command line",
@@ -912,6 +932,22 @@ def _parser():
     data_check.add_argument("--sample", help="exact sample ID; defaults to the configured startup sample")
     data_check.add_argument("--neuron", help="exact neuron ID; defaults to the configured startup neuron")
     data_check.add_argument("--json", action="store_true", help="emit the complete machine-readable report")
+    updates = commands.add_parser(
+        "updates",
+        help="parse local or plain HTTP(S) release notes without Git authentication")
+    updates.add_argument(
+        "--source",
+        help="local Markdown/JSON path, plain http(s) URL, or 'git' for "
+             "local history; defaults to VISPA_UPDATES_SOURCE or CHANGELOG.md")
+    updates.add_argument(
+        "--repo",
+        help="existing local Git checkout used with --source git")
+    updates.add_argument(
+        "--limit", type=int, default=3,
+        help="number of newest releases to print (1-50; default: 3)")
+    updates.add_argument(
+        "--json", action="store_true",
+        help="emit the complete machine-readable update report")
     fnt_fetch = commands.add_parser("fnt-fetch", help="fetch one exact native FNT into the verified per-user cache")
     fnt_fetch.add_argument("--config", help="VisPa JSON/YAML settings config")
     fnt_fetch.add_argument("--sample", required=True, help="one exact SampleID")
@@ -1092,6 +1128,13 @@ def main(argv=None):
     if args.command in {"check", "data-check"}:
         try:
             return _data_check(args)
+        except (OSError, RuntimeError, ValueError, KeyError, TypeError) as exc:
+            parser.error(str(exc))
+    if args.command == "updates":
+        if not 1 <= args.limit <= 50:
+            parser.error("--limit must be between 1 and 50")
+        try:
+            return _updates(args)
         except (OSError, RuntimeError, ValueError, KeyError, TypeError) as exc:
             parser.error(str(exc))
     if args.command == "fnt-fetch":
