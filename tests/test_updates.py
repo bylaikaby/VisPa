@@ -42,6 +42,21 @@ class UpdateParserTests(unittest.TestCase):
         self.assertEqual(report["releases"][1]["changes"],
                          ["Previous release."])
 
+    def test_parse_changelog_merges_repeated_version_sections(self):
+        report = parse_updates(
+            "## 1.4.0 — 2026-12-01\n"
+            "- First section.\n"
+            "## 1.4.0 — 2026-12-01\n"
+            "- Second section.\n",
+            source="CHANGELOG.md",
+        )
+
+        self.assertEqual(len(report["releases"]), 1)
+        self.assertEqual(
+            report["releases"][0]["changes"],
+            ["First section.", "Second section."],
+        )
+
     def test_parse_json_feed_validates_schema_date_and_changes(self):
         report = parse_updates(json.dumps({
             "schema": "vispa.updates.v1",

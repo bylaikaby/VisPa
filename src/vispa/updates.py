@@ -77,6 +77,18 @@ def _normalize_releases(releases, *, source):
             "changes": _clean_changes(
                 release.get("changes", []), label),
         }
+        observed_dates = release.get("dates")
+        if observed_dates:
+            if not isinstance(observed_dates, list):
+                raise ValueError(f"{label}.dates must be a list")
+            normalized_dates = []
+            for date_index, value in enumerate(observed_dates):
+                date_text = _validate_date(
+                    value, f"{label}.dates[{date_index}]")
+                if date_text not in normalized_dates:
+                    normalized_dates.append(date_text)
+            if len(normalized_dates) > 1:
+                entry["dates"] = normalized_dates
         for optional in ("commit", "reference"):
             value = release.get(optional)
             if value:
@@ -133,6 +145,24 @@ def parse_update_changelog(text, *, source="<memory>"):
         elif not stripped:
             finish_change()
     finish_change()
+    merged = []
+    by_version = {}
+    for release in releases:
+        existing = by_version.get(release["version"])
+        if existing is None:
+            merged.append(release)
+            by_version[release["version"]] = release
+            continue
+        if existing["date"] != release["date"]:
+            dates = existing.setdefault("dates", [existing["date"]])
+            if release["date"] not in dates:
+                dates.append(release["date"])
+        for change in release["changes"]:
+            if change not in existing["changes"]:
+                existing["changes"].append(change)
+        if not existing.get("status") and release.get("status"):
+            existing["status"] = release["status"]
+    releases = merged
     releases = _normalize_releases(releases, source=source)
     return {
         "schema": SCHEMA,
