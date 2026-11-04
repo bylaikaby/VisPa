@@ -1,6 +1,6 @@
 """Checks for the public data-check API, CLI and GUI progress plumbing.
 
-Version: 1.13.0.dev17 (local/unreleased)
+Version: 1.20.0 (local/unreleased)
 Last updated: 2026-11-04
 Change history: ../CHANGELOG.md
 Status: candidate
@@ -621,6 +621,23 @@ class ProgressBarTests(unittest.TestCase):
         start.assert_called_once_with(expected)
         gui.update_status.assert_called_once_with(f'Opened output folder: {expected}')
 
+    def test_operation_log_records_activated_script_command_and_pid(self):
+        from vispa.reviewer import NeuroVisGUI
+        gui = object.__new__(NeuroVisGUI)
+        gui._append_log = mock.Mock()
+        gui._ui_call = lambda callback, *args: callback(*args)
+
+        gui._log_operation(
+            "FNT tools", "started",
+            command=["C:\\tools\\fnt-tracer.exe", "C:\\cache\\004.swc.fnt"],
+            pid=1234, project="C:\\cache\\004.swc.fnt")
+
+        line = gui._append_log.call_args.args[0]
+        self.assertTrue(line.startswith("[STARTED] FNT tools"))
+        self.assertIn("fnt-tracer.exe", line)
+        self.assertIn("004.swc.fnt", line)
+        self.assertIn("pid=1234", line)
+
     def test_swc3d_failure_replaces_loading_state(self):
         from vispa.reviewer import NeuroVisGUI
         gui = object.__new__(NeuroVisGUI)
@@ -777,7 +794,7 @@ class ProgressBarTests(unittest.TestCase):
         gui._show_progress = mock.Mock()
         gui._hide_progress = mock.Mock()
         gui._activate_cached_figures = mock.Mock()
-        gui._ui_call = lambda callback: callback()
+        gui._ui_call = lambda callback, *args: callback(*args)
         gui._launch_processing = lambda worker: worker()
         tree = SimpleNamespace(root=SimpleNamespace(x=1.5, y=2.5, z=3.5))
         with mock.patch("vispa.gui.IT.IONData") as provider:

@@ -1,7 +1,7 @@
 """Tests for the extracted volume-rendering API.
 
-Version: 1.12.0.dev1 (local/unreleased)
-Last updated: 2026-10-29
+Version: 1.20.0 (local/unreleased)
+Last updated: 2026-11-04
 Change history: vispa/CHANGELOG.md
 Status: candidate
 """

@@ -1,7 +1,7 @@
 """Bounded read-only adaptor checks.
 
-Version: 1.13.0.dev0 (local/unreleased)
-Last updated: 2026-11-02
+Version: 1.20.0 (local/unreleased)
+Last updated: 2026-11-04
 Change history: ../CHANGELOG.md
 2026-11-02: Match redirected SWC fixtures across Windows long and 8.3 paths.
 """

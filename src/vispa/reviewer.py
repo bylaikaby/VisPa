@@ -1,7 +1,7 @@
 """
 vispa_gui.py - GUI for NeuroVis Visual Toolkit
 
-Version: 1.13.0.dev17 (local/unreleased)
+Version: 1.20.0 (local/unreleased)
 Last updated: 2026-11-04
 Change history: ../../CHANGELOG.md
 Status: candidate (GUI layout reviewed; scientific review pending)
@@ -1691,6 +1691,9 @@ class NeuroVisGUI:
         self._catalog_side_request_id += 1
         request_id = self._catalog_request_id
         requested_source = self._catalog_source
+        self._log_operation(
+            "Neuron catalog load", "start", sample=sample_id,
+            source=requested_source, config=self.config_path)
         self._catalog_sample_id = None
         self._catalog_snapshot = None
         self._catalog_side_snapshot_id = None
@@ -1730,6 +1733,9 @@ class NeuroVisGUI:
             return
         self.neuron_catalog_load_button.configure(state='normal')
         if error:
+            self._log_operation(
+                "Neuron catalog load", "failed", sample=sample_id,
+                source=self._catalog_source, error=error)
             self._catalog_sample_id = None
             self._catalog_snapshot = None
             self._catalog_side_snapshot_id = None
@@ -1748,6 +1754,10 @@ class NeuroVisGUI:
             return
         self._catalog_sample_id = sample_id
         self._catalog_snapshot = result
+        self._log_operation(
+            "Neuron catalog load", "finished", sample=sample_id,
+            source=self._catalog_source, rows=result.get("count"),
+            sha256=result.get("sha256"))
         self._populate_neuron_catalog(result, side_state="checking")
         self._start_catalog_side_load(result)
         source_label = "live IONData" if result.get('source_kind') == 'live-iondata' else "dated snapshot"
@@ -2127,6 +2137,9 @@ class NeuroVisGUI:
         if not sample_id or not neuron_id:
             self.update_status("Enter a sample and neuron ID before opening fnt-tracer")
             return
+        self._log_operation(
+            "FNT tools", "requested", sample=sample_id, neuron=neuron_id,
+            config=self.config_path)
         self.update_status(f"Running FNT tools for {sample_id}/{neuron_id}…")
 
         def worker():
@@ -2137,10 +2150,18 @@ class NeuroVisGUI:
                 result = swc_fnt_tracer(configuration, sample_id, neuron_id)
             except Exception as exc:
                 self._ui_call(messagebox.showerror, 'fnt-tracer', f'Could not start fnt-tracer:\n{exc}')
-                self._ui_call(self._append_log, f'FNT tools unavailable for {sample_id}/{neuron_id}: {exc}')
+                self._log_operation(
+                    "FNT tools", "failed", sample=sample_id, neuron=neuron_id,
+                    error=exc)
             else:
                 self._ui_call(self.update_status, f"fnt-tracer process started: {sample_id}/{neuron_id}; pixels unverified")
-                self._ui_call(self._append_log, f"FNT tools started: {result['project_path']} (PID {result['pid']}; log: {result['log_path']}; pixels unverified)")
+                self._log_operation(
+                    "FNT tools", "started", command=result.get("command"),
+                    pid=result.get("pid"), project=result.get("project_path"),
+                    converter=result.get("converter"),
+                    tracer_log=result.get("log_path"),
+                    receipt=result.get("receipt_path"),
+                    pixels="unverified")
 
         threading.Thread(target=worker, name='vispa-fnt-tools', daemon=True).start()
 
@@ -2151,6 +2172,10 @@ class NeuroVisGUI:
     def launch_template_brain_view(self, sample_id: str, neuron_id: str,
                                    portal_region: str = ""):
         """Start the independently configured original OpenGL viewer process."""
+        self._log_operation(
+            "SWC Brain View interactive", "requested",
+            sample=sample_id, neuron=neuron_id, region=portal_region,
+            config=self.config_path)
         try:
             from .renderers.swc_brain_view import launch_configured_view
             process = launch_configured_view(
@@ -2158,11 +2183,19 @@ class NeuroVisGUI:
                 config_path=self.config_path)
         except Exception as exc:
             self.update_status(f"Could not launch template brain view: {exc}")
-            self._append_log(f"Template brain view launch failed: {exc}")
+            self._log_operation(
+                "SWC Brain View interactive", "failed", error=exc)
             return None
         self.update_status(f"Template brain view started for {sample_id}/{neuron_id}")
-        self._append_log(f"Template brain view started: {sample_id}/{neuron_id}")
-        resolution = getattr(process, "vispa_plan", {}).get("region_resolution", {})
+        plan = getattr(process, "vispa_plan", {}) or {}
+        self._log_operation(
+            "SWC Brain View interactive", "started",
+            command=plan.get("worker_entry"), pid=getattr(process, "pid", None),
+            config=plan.get("config_path"),
+            mesh=(plan.get("mesh") or {}).get("path"),
+            processed_swc=(plan.get("processed_swc") or {}).get("path"),
+            sample=sample_id, neuron=neuron_id)
+        resolution = plan.get("region_resolution", {})
         if resolution.get("status") == "selected":
             self._append_log(
                 f"Region overlay selected: {getattr(process, 'vispa_plan')['region_mesh']['filename']}")
@@ -2637,7 +2670,10 @@ class NeuroVisGUI:
         self.preview_label.configure(image='', text='Rendering SWC Brain View…')
         self.preview_caption.set(f'SWC Brain View · {sample}/{neuron} · rendering')
         self.update_status("SWC Brain View · rendering template mesh and trace…")
-        self._append_log(f"SWC Brain View render started for {sample}/{neuron}")
+        self._log_operation(
+            "SWC Brain View snapshot worker", "start",
+            sample=sample, neuron=neuron, config=self.config_path,
+            snapshot=snapshot, save=save)
 
         def worker():
             try:
@@ -3049,6 +3085,8 @@ class NeuroVisGUI:
 
     def _open_output_folder(self):
         folder = self.output_dir.get().strip()
+        self._log_operation(
+            "Open output folder", "requested", path=folder)
         try:
             if not folder:
                 folder = self._generate_default_path(self.sample_id.get())
@@ -3057,9 +3095,11 @@ class NeuroVisGUI:
             os.makedirs(folder, exist_ok=True)
             os.startfile(folder)
             self.update_status(f"Opened output folder: {folder}")
-            self._append_log(f"Opened output folder: {folder}")
+            self._log_operation("Open output folder", "finished", path=folder)
         except Exception as exc:
             self.update_status(f"Could not open output folder: {folder}")
+            self._log_operation(
+                "Open output folder", "failed", path=folder, error=exc)
             messagebox.showerror("Open folder", f"Could not open {folder}:\n{exc}")
 
     def _open_config_yaml(self, section=None):
@@ -3067,6 +3107,9 @@ class NeuroVisGUI:
         from .config import config_path, packaged_config_path
         from .config import FIELDS, parse_text, dump_text, field_value, apply_fields
         path = str(Path(self.config_path or config_path()).resolve())
+        self._log_operation(
+            "Settings editor", "requested", path=path,
+            section=section or "current")
         raw_label = 'Raw JSON' if Path(path).suffix.lower() == '.json' else 'Raw YAML'
         window = getattr(self, '_config_window', None)
         if window is not None and window.winfo_exists():
@@ -3075,6 +3118,9 @@ class NeuroVisGUI:
                 window._settings_tabs.select(0)
             window.lift()
             window.focus_force()
+            self._log_operation(
+                "Settings editor", "focused", path=path,
+                section=section or "current")
             return
         packaged_default = packaged_config_path().read_bytes()
         default_path = Path(path).with_name('vispa_config.default.yaml')
@@ -3378,12 +3424,20 @@ class NeuroVisGUI:
 
     def _save_config_text(self, path, content, expected_sha256=None):
         """Delegate validated atomic saves to the configuration module."""
+        self._log_operation(
+            "Save settings", "start", path=path,
+            expected_sha256=expected_sha256)
         try:
             from .config import save_config
-            save_config(path, content, expected_sha256=expected_sha256)
+            result = save_config(path, content, expected_sha256=expected_sha256)
         except Exception as exc:
+            self._log_operation(
+                "Save settings", "failed", path=path, error=exc)
             messagebox.showerror("Config", f"Could not save configuration:\n{exc}")
             return False
+        self._log_operation(
+            "Save settings", "finished", path=path,
+            changed=result.get("changed"), backup=result.get("backup"))
         return True
 
     def _show_progress(self, maximum=None):
@@ -3414,6 +3468,11 @@ class NeuroVisGUI:
             self.root.after(500, self._start_resource_check)
             return
         identity = (self.sample_id.get().strip(), self.neuron_id.get().strip())
+        self._log_operation(
+            "Resource check", "start", sample=identity[0], neuron=identity[1],
+            config=self.config_path,
+            update_source=os.environ.get("VISPA_UPDATES_SOURCE")
+                          or "checkout CHANGELOG.md")
         self.update_status("Checking VisPa resources…")
         self._show_progress(maximum=100)
 
@@ -3443,10 +3502,13 @@ class NeuroVisGUI:
             return
         if error is not None:
             message = f"Resource check failed: {error}"
-            self._append_log(message)
+            self._log_operation("Resource check", "failed", error=error)
             messagebox.showwarning("VisPa data check", message)
             return
         self.last_data_check = report
+        self._log_operation(
+            "Resource check", "finished", ready=report["ready"],
+            checked=report["checked"], issues=report["issues"])
         display_lines = [
             line.replace("[OK]", "✓", 1)
                 .replace("[UPDATE]", "↑", 1)
@@ -3690,6 +3752,27 @@ class NeuroVisGUI:
         if text and not text.startswith('Plot saved:'):
             self.update_status(text)
 
+    def _log_operation(self, operation, state, **details):
+        """Write a structured GUI operation/script record to the process log."""
+        append = getattr(self, "_append_log", None)
+        if append is None:
+            return
+        fields = []
+        for key, value in details.items():
+            if value is None or value == "":
+                continue
+            if isinstance(value, (list, tuple)):
+                value = subprocess.list2cmdline([str(item) for item in value])
+            fields.append(f"{key}={value}")
+        line = f"[{str(state).upper()}] {operation}"
+        if fields:
+            line += " | " + " | ".join(fields)
+        ui_call = getattr(self, "_ui_call", None)
+        if ui_call is None:
+            append(line)
+        else:
+            ui_call(append, line)
+
     def _drain_log(self):
         try:
             while True:
@@ -3885,6 +3968,10 @@ class NeuroVisGUI:
         self._neuron_lookup_state = "checking"
         self._neuron_lookup_error = None
         self._update_neuron_status()
+        self._log_operation(
+            "Raw SWC load", "start", sample=sample_id, neuron=neuron_id,
+            source="live refresh" if refresh else "local cache",
+            config=getattr(self, "config_path", None))
 
         def worker():
             self._ui_call(self._show_progress)
@@ -3898,6 +3985,9 @@ class NeuroVisGUI:
                               f"from {source_label}.")
                     def report_missing():
                         self._neuron_lookup_state = "not_found"
+                        self._log_operation(
+                            "Raw SWC load", "not_found", sample=sample_id,
+                            neuron=neuron_id, source=source_label)
                         self._update_neuron_status()
                         if silent_failure:
                             self.update_status(detail)
@@ -3917,6 +4007,10 @@ class NeuroVisGUI:
                     self._autofill_identity = (sample_id, neuron_id)
                     self._neuron_lookup_state = "found"
                     self._neuron_lookup_error = None
+                    self._log_operation(
+                        "Raw SWC load", "finished", sample=sample_id,
+                        neuron=neuron_id, source=source_label,
+                        soma_xyz=soma_xyz)
                     self._update_neuron_status()
                     self.update_status(
                         f"✅ Loaded from {source_label}: "
@@ -3937,6 +4031,9 @@ class NeuroVisGUI:
                     self._autofill_identity = None
                     self._neuron_lookup_state = "error"
                     self._neuron_lookup_error = error_text
+                    self._log_operation(
+                        "Raw SWC load", "failed", sample=sample_id,
+                        neuron=neuron_id, error=error_text)
                     self._update_neuron_status()
                     if silent_failure:
                         self.update_status(status)
@@ -4082,8 +4179,11 @@ class NeuroVisGUI:
             toolkit = None
             try:
                 self._ui_call(self._show_progress)
-                self._ui_call(self._append_log,
-                              f"--- {request.sample_id}/{request.neuron_id} ---")
+                self._log_operation(
+                    "Render worker", "start",
+                    sample=request.sample_id, neuron=request.neuron_id,
+                    output=request.output_dir, save=request.save_outputs,
+                    force_reprocess=force_reprocess)
                 toolkit = VisPa(
                     request.sample_id, force_reprocess=force_reprocess)
                 stream = getattr(self, '_log_stream', None)
@@ -4094,10 +4194,18 @@ class NeuroVisGUI:
                 else:
                     paths, errors = work(toolkit)
                 self._ui_call(self._finish, request, paths, message(request), errors)
+                self._log_operation(
+                    "Render worker", "finished",
+                    sample=request.sample_id, neuron=request.neuron_id,
+                    outputs=len([path for path in paths if path]),
+                    errors=len(errors))
             except Exception as e:
                 self._ui_call(self._show_render_failure, request, str(e))
                 self._ui_call(self.update_status, f"Render failed: {e}")
-                self._ui_call(self._append_log, f"Render failed: {e}")
+                self._log_operation(
+                    "Render worker", "failed",
+                    sample=request.sample_id, neuron=request.neuron_id,
+                    error=e)
                 self._ui_call(messagebox.showerror, "Processing Error", f"Error: {str(e)}")
             finally:
                 self._fetch_fnt(request.sample_id, request.neuron_id.removesuffix('.swc'))

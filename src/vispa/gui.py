@@ -1,7 +1,7 @@
 """Compatibility entry point for the VisPa review GUI.
 
-Version: 1.11.0.dev25 (local/unreleased)
-Last updated: 2026-10-27
+Version: 1.20.0 (local/unreleased)
+Last updated: 2026-11-04
 Change history: ../../CHANGELOG.md
 """
 import sys

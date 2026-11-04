@@ -1,6 +1,6 @@
 """Focused regression checks for the standalone extraction seams.
 
-Version: 1.13.0.dev16 (local/unreleased)
+Version: 1.20.0 (local/unreleased)
 Last updated: 2026-11-04
 Change history: ../CHANGELOG.md
 2026-11-02: Compare source identity across Windows long and 8.3 path aliases.

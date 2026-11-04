@@ -1,7 +1,7 @@
 """Verify the user-provided VisPa icon survives packaging and reaches Tk.
 
-Version: 1.13.0.dev0 (local/unreleased)
-Last updated: 2026-11-02
+Version: 1.20.0 (local/unreleased)
+Last updated: 2026-11-04
 Change history: ../CHANGELOG.md
 """
 

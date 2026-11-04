@@ -1,6 +1,6 @@
 """Load explicit, portable VisPa dataset configuration.
 
-Version: 1.13.0.dev16 (local/unreleased)
+Version: 1.20.0 (local/unreleased)
 Last updated: 2026-11-04
 Change history: ../../CHANGELOG.md
 2026-11-03: Preserve and resolve an explicit top-level DS00 registry path.

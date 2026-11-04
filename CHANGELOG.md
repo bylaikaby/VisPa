@@ -1,5 +1,18 @@
 # VisPa change log
 
+## 1.20.0 — 2026-11-04 (local/unreleased)
+- Promote the package version to 1.20.0 while keeping the selected configuration
+  identity separate as `ded_vispa_config 1.0.6`.
+- Bundle the exact current DEB configuration in the package, with an explicit
+  profile as the writable runtime selection.
+- Integrate version/update checks and non-destructive update prompts into the
+  startup resource pass.
+- Add structured start/request/finish/failure records for GUI operations and
+  activated external workers, including resolved commands, inputs and PIDs.
+- Include the current neuron-list controls, compact plotting layout, scroll
+  behavior, laterality acquisition, update parser and configuration defaults.
+- Validation: complete source suite.
+
 ## 1.13.0.dev17 — 2026-11-04 (local/unreleased candidate)
 - Integrate release checking into the initial resource pass. The checklist shows
   the installed and latest parsed versions and displays a non-destructive update
@@ -7,6 +20,10 @@
   readiness.
 - The update prompt targets the current local Git clone and its editable package
   installation. It does not refer to a demo clone or perform an update itself.
+- Record GUI operations in the process log with explicit start/request/finish/
+  failure states. Worker render activity, raw-SWC loads, resource checks,
+  settings saves, FNT converter/tracer launches, SWC Brain View commands/PIDs,
+  catalog loads, and output-folder actions now include their resolved inputs.
 - Validation: startup checklist/update-prompt tests and the complete source
   suite.
 

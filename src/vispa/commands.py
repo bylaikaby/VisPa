@@ -1,6 +1,6 @@
 """Bounded command line for VisPa review renders and source acquisition.
 
-Version: 1.13.0.dev16 (local/unreleased)
+Version: 1.20.0 (local/unreleased)
 Last updated: 2026-11-04
 Change history: ../../CHANGELOG.md
 """

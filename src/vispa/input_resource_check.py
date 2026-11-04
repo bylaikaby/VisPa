@@ -1,6 +1,6 @@
 """Check whether one VisPa review identity has its configured resources.
 
-Version: 1.13.0.dev17 (local/unreleased)
+Version: 1.20.0 (local/unreleased)
 Last updated: 2026-11-04
 Change history: ../../CHANGELOG.md
 Status: candidate

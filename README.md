@@ -1,7 +1,7 @@
 # VisPa — Visual Projectome Analysis tool
 
 VisPa reviews macaque neuron and microscopy data configured by the DEB lab.
-This checkout identifies as **1.13.0.dev17**, without a release tag. VisPa is a
+This checkout identifies as **1.20.0**. VisPa is a
 Python package inside a Conda environment. Launch the GUI directly from this
 checkout with `python run_vispa.py`.
 
@@ -378,9 +378,9 @@ The JSON feed shape is:
   "schema": "vispa.updates.v1",
   "releases": [
     {
-      "version": "1.13.0.dev16",
+      "version": "1.20.0",
       "date": "2026-11-04",
-      "status": "local/unreleased candidate",
+      "status": "local/unreleased",
       "changes": ["Credential-free update parsing."]
     }
   ]

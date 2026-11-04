@@ -1,6 +1,6 @@
 """Credential-free parsing of VisPa release and update records.
 
-Version: 1.13.0.dev16 (local/unreleased)
+Version: 1.20.0 (local/unreleased)
 Last updated: 2026-11-04
 Change history: ../../CHANGELOG.md
 Status: candidate
@@ -103,7 +103,7 @@ def parse_update_changelog(text, *, source="<memory>"):
     """Parse Markdown release headings and their bullet items into a feed.
 
     Input is text containing headings such as
-    ``## 1.13.0.dev16 — 2026-11-04 (local/unreleased candidate)``.
+    ``## 1.20.0 — 2026-11-04 (local/unreleased)``.
     The output is deterministic and contains normalized release records. Reuse
     this parser when the canonical CHANGELOG remains the update source and no
     separate publishing service is needed.

@@ -1,7 +1,7 @@
 """Exact processed IONData source checks.
 
-Version: 1.13.0.dev1 (local/unreleased)
-Last updated: 2026-11-03
+Version: 1.20.0 (local/unreleased)
+Last updated: 2026-11-04
 Change history: ../CHANGELOG.md
 """
 import tempfile

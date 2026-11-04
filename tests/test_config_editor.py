@@ -1,6 +1,6 @@
 """Focused lossless common-settings checks.
 
-Version: 1.13.0.dev14 (local/unreleased)
+Version: 1.20.0 (local/unreleased)
 Last updated: 2026-11-04
 Change history: ../CHANGELOG.md
 """
