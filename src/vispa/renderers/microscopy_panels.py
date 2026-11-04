@@ -1,9 +1,13 @@
 """
 vispa.py - Macaque Brain Hybrid-Resolution Visualization Toolkit
 
-Version: 1.13.0.dev0 (local/unreleased)
-Last updated: 2026-11-02
+Version: 1.13.0.dev14 (local/unreleased)
+Last updated: 2026-11-04
 Change history: ../../../CHANGELOG.md
+2026-11-04: Collapse portal and atlas provenance into one Region title
+section shared by Soma, Context, Sagittal and TrioPlot.
+2026-11-04: Sanitize all Windows-reserved punctuation in Context filenames so
+portal/atlas labels remain valid and bounded.
 2026-11-02: Enlarge review figure title, axis, and legend text for fitted GUI previews.
 2026-11-02: Escape only unencodable characters in saved-path console messages
 on Windows so a Unicode output directory cannot abort a completed render.
@@ -85,6 +89,7 @@ Soma/Context renderers, with no separate sagittal module.
 import copy
 import math
 import os
+import re
 import hashlib
 import gzip
 import struct
@@ -322,7 +327,7 @@ class VisPa:
     """
     def __init__(self, sample_id='default', cache_dir=None, low_res_dir=None,
                  low_res_ssh_base=None, low_res_slice_cache_limit=8,
-                 cache_root=None, output_root=None):
+                 cache_root=None, output_root=None, force_reprocess=False):
         """
         Initialize toolkit.
 
@@ -331,8 +336,13 @@ class VisPa:
             cache_dir: Legacy combined cache/output directory override.
             cache_root: Optional root for downloaded source caches.
             output_root: Optional root for rendered files.
+            force_reprocess: Bypass downloaded cube/slice caches and acquire
+                source data again for a full render.
         """
         self.sample_id = sample_id = str(sample_id)
+        if not isinstance(force_reprocess, bool):
+            raise ValueError("force_reprocess must be a boolean")
+        self.force_reprocess = force_reprocess
         if not sample_id or any(c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-' for c in sample_id):
             raise ValueError("sample_id must be a simple sample identifier")
 
@@ -448,7 +458,7 @@ class VisPa:
         filename = f"{idx_x}_{idx_y}_{idx_z}.tif"
         local_path = os.path.join(self.cache_http_dir, str(idx_z), filename)
 
-        if os.path.exists(local_path):
+        if os.path.exists(local_path) and not getattr(self, "force_reprocess", False):
             try:
                 if os.path.getsize(local_path) > MAX_HTTP_BLOCK_BYTES:
                     raise ValueError("Cached cube exceeds the response-size bound")
@@ -461,6 +471,8 @@ class VisPa:
                 self._block_errors[(idx_x, idx_y, idx_z)] = str(exc)
                 # Keep corrupt cache evidence; a failed replacement stays explicit.
 
+        if getattr(self, "force_reprocess", False) and not HTTP_HOST:
+            raise RuntimeError("Re-process requires an HTTP cube source; local cube cache reuse is disabled")
         if not HTTP_HOST:
             cached_error = self._block_errors.get((idx_x, idx_y, idx_z))
             if cached_error:
@@ -501,7 +513,8 @@ class VisPa:
     def _read_cached_section(self, path):
         """Decode one low-resolution section, reusing a small path-keyed cache."""
         key = os.path.abspath(path)
-        cached = self._section_cache.get(key)
+        cached = (None if getattr(self, "force_reprocess", False)
+                  else self._section_cache.get(key))
         if cached is not None:
             self._section_cache.move_to_end(key)
             return cached
@@ -758,7 +771,7 @@ class VisPa:
                 return share_path
 
         local_path = os.path.join(self.cache_ssh_dir, filename)
-        if os.path.isfile(local_path):
+        if os.path.isfile(local_path) and not getattr(self, "force_reprocess", False):
             self._slice_sources[z_index] = local_path
             return local_path
 
@@ -871,8 +884,10 @@ class VisPa:
         """Sanitize string for use in filename (remove/replace path separators)."""
         if not name:
             return name
-        # Replace path separators and other problematic characters
-        return name.replace('/', '-').replace('\\', '-').replace(':', '-')
+        # Region labels can contain separators, pipes and Windows-reserved
+        # punctuation. Sanitize the complete label, not only each component.
+        import re
+        return re.sub(r'[<>:"/\\|?*\x00-\x1f]', '-', str(name)).rstrip(' .')
 
     def _matching_export_acquisition(self, shape, origin, spacing, acquisition=None):
         """Bind provenance to matching sample/grid geometry, never to a suffix."""
@@ -1056,8 +1071,32 @@ class VisPa:
         'Sagittal': ('Sagittal Context Plot', 'DS00 N4'),
     }
 
+    @staticmethod
+    def _region_title_value(soma_region, nmt_corrected=None):
+        """Format portal-derived and optional corrected NMT region values."""
+        text = str(soma_region or "").strip()
+        portal_match = re.search(
+            r"(?:^|\|)\s*Portal:\s*(.*?)(?=\s*\|\s*Atlas:|$)",
+            text, flags=re.IGNORECASE)
+        atlas_match = re.search(
+            r"(?:^|\|)\s*Atlas:\s*(.*)$", text, flags=re.IGNORECASE)
+        if portal_match and atlas_match:
+            portal = re.sub(r"\s+", " ", portal_match.group(1)).strip() or "Unassigned"
+            atlas = re.sub(r"\s+", " ", atlas_match.group(1)).strip() or "unavailable"
+            nmt_portal = portal if atlas.lower() == "unavailable" else atlas
+        else:
+            nmt_portal = re.sub(r"\s+", " ", text).strip() or "unavailable"
+        pieces = [f"nmt_portal={nmt_portal}"]
+        corrected = re.sub(
+            r"^(?:nmt_corrected\s*[=:]\s*)", "",
+            str(nmt_corrected or "").strip(), flags=re.IGNORECASE)
+        corrected = re.sub(r"\s+", " ", corrected).strip()
+        if corrected:
+            pieces.append(f"nmt_corrected={corrected}")
+        return " · ".join(pieces)
+
     def _title_text(self, neuron_id, suffix, soma_region, soma_coords, fov_um, depth_um,
-                    hemisphere=None):
+                    hemisphere=None, nmt_corrected=None):
         """Legacy three-line panel title; shared by single plots and the trio."""
         name = _output_name(suffix)
         display, dataset = self.TITLE_SUFFIXES.get(name, (name, None))
@@ -1067,7 +1106,8 @@ class VisPa:
         lines = [head]
         context = []
         if soma_region:
-            context.append(f"Region: {soma_region}")
+            context.append(
+                f"Region: {self._region_title_value(soma_region, nmt_corrected)}")
         if soma_coords is not None:
             context.append(f"XYZ: ({int(soma_coords[0])}, {int(soma_coords[1])}, "
                            f"{int(soma_coords[2])})")
@@ -1185,14 +1225,15 @@ class VisPa:
             ax.axis('off')
 
     def _save_panel_plot(self, panel, neuron_id, suffix, soma_region=None,
-                         soma_coords=None, output_dir=None):
+                         soma_coords=None, output_dir=None, nmt_corrected=None):
         """Write one legacy-styled panel PNG and return the panel."""
         target_dir = output_dir if output_dir else self.output_dir
         if not os.path.exists(target_dir):
             os.makedirs(target_dir, exist_ok=True)
         title = self._title_text(neuron_id, suffix, soma_region, soma_coords,
                                  panel['fov_um'], panel['depth_um'],
-                                 hemisphere=panel.get('hemisphere'))
+                                 hemisphere=panel.get('hemisphere'),
+                                 nmt_corrected=nmt_corrected)
         fig, ax = plt.subplots(figsize=self.PANEL_FIGSIZE, facecolor='black', dpi=self.PANEL_DPI)
         ax.set_facecolor('black')
         self._draw_panel(ax, panel)
@@ -1206,10 +1247,12 @@ class VisPa:
                     dpi=self.PANEL_DPI)
         plt.close(fig)
         _print_saved_path("Plot saved", save_path)
-        return dict(panel, title=title, output_png=save_path)
+        return dict(panel, title=title, output_png=save_path,
+                    nmt_corrected=nmt_corrected or "")
 
     def plot_soma_block(self, volume_3d, origin, resolution, soma_coords, neuron_id,
-                        suffix="SomaBlock", soma_region=None, output_dir=None):
+                        suffix="SomaBlock", soma_region=None, output_dir=None,
+                        nmt_corrected=None):
         """
         Plots Grayscale Anatomy (High Res) using MIP.
         Includes soma region in filename and title.
@@ -1234,7 +1277,8 @@ class VisPa:
             volume_3d.shape[0], cmap='gray', marker_color=TARGET_MARKER_COLOR,
             soma_region=soma_region, soma_coords=soma_coords,
             output_dir=output_dir, scale_bar_um=scale_bar_um,
-            show_axes=False, show_legend=False)
+            show_axes=False, show_legend=False,
+            nmt_corrected=nmt_corrected)
         return {
             'display': img_final, 'cmap': 'gray',
             'resolution_um': (float(resolution[0]), float(resolution[1])),
@@ -1255,12 +1299,15 @@ class VisPa:
                 neuron_id, suffix, soma_region, soma_coords,
                 (img_final.shape[1] * float(resolution[0]),
                  img_final.shape[0] * float(resolution[1])),
-                float(volume_3d.shape[0]) * float(resolution[2])),
+                float(volume_3d.shape[0]) * float(resolution[2]),
+                nmt_corrected=nmt_corrected),
+            'nmt_corrected': nmt_corrected or "",
         }
 
     def plot_widefield_context(self, volume_3d, origin, resolution, soma_coords, neuron_id,
                              suffix="WideField", manual_threshold=None, bg_intensity=None,
-                             swc_tree=None, soma_region=None, output_dir=None):
+                             swc_tree=None, soma_region=None, output_dir=None,
+                             nmt_corrected=None):
         """
         Plots Green Intensity on Dark Background + SWC Overlay using MIP.
         Includes soma region in filename and title.
@@ -1329,7 +1376,7 @@ class VisPa:
             marker_color=TARGET_MARKER_COLOR, soma_region=soma_region,
             soma_coords=soma_coords, output_dir=output_dir,
             scale_bar_um=scale_bar_um, extra_title=overlay_note, legend_entries=role_legend,
-            show_legend=False)
+            show_legend=False, nmt_corrected=nmt_corrected)
         return {
             'display': rgb, 'cmap': None,
             'resolution_um': (float(resolution[0]), float(resolution[1])),
@@ -1349,7 +1396,9 @@ class VisPa:
             'title': self._title_text(
                 neuron_id, suffix, soma_region, soma_coords,
                 (w * float(resolution[0]), h * float(resolution[1])),
-                float(volume_3d.shape[0]) * float(resolution[2])) + f" | {overlay_note}",
+                float(volume_3d.shape[0]) * float(resolution[2]),
+                nmt_corrected=nmt_corrected) + f" | {overlay_note}",
+            'nmt_corrected': nmt_corrected or "",
         }
 
     def _overlay_swc(self, ax, swc_tree, origin, resolution, h, w, z_bounds=None):
@@ -1380,19 +1429,21 @@ class VisPa:
     def _save_plot(self, img_data, sx, sy, resolution, neuron_id, suffix, z_slices,
                    cmap, marker_color, soma_region=None, soma_coords=None,
                    output_dir=None, scale_bar_um=30, show_axes=True,
-                   show_legend=True):
+                   show_legend=True, nmt_corrected=None):
         fig, ax = plt.subplots(figsize=self.PANEL_FIGSIZE, facecolor='black', dpi=self.PANEL_DPI)
         ax.imshow(img_data, cmap=cmap, origin='upper')
         return self._finalize_plot(fig, ax, sx, sy, resolution, neuron_id, suffix,
                                    z_slices, marker_color, soma_region=soma_region,
                                    soma_coords=soma_coords, output_dir=output_dir,
                                    scale_bar_um=scale_bar_um, show_axes=show_axes,
-                                   show_legend=show_legend)
+                                   show_legend=show_legend,
+                                   nmt_corrected=nmt_corrected)
 
     def _finalize_plot(self, fig, ax, sx, sy, resolution, neuron_id, suffix, z_slices,
                        marker_color, soma_region=None, soma_coords=None,
                        output_dir=None, scale_bar_um=30, extra_title=None,
-                       legend_entries=None, show_axes=True, show_legend=True):
+                       legend_entries=None, show_axes=True, show_legend=True,
+                       nmt_corrected=None):
         h, w = ax.images[0].get_size()
 
         target_dir = output_dir if output_dir else self.output_dir
@@ -1414,7 +1465,8 @@ class VisPa:
         # Build title with soma region and coordinates (shared with the panel style)
         title = self._title_text(neuron_id, suffix, soma_region, soma_coords,
                                  (w * resolution[0], h * resolution[1]),
-                                 z_slices * resolution[2])
+                                 z_slices * resolution[2],
+                                 nmt_corrected=nmt_corrected)
         if extra_title:
             title = f"{title} | {extra_title}"
 
@@ -1455,7 +1507,7 @@ class VisPa:
         return save_path
 
     def plot_sagittal_context(self, panel, neuron_id, suffix="Sagittal", soma_region=None,
-                              soma_coords=None, output_dir=None):
+                              soma_coords=None, output_dir=None, nmt_corrected=None):
         """
         Plot one prepared processed-DS sagittal context panel in the legacy style.
 
@@ -1466,7 +1518,8 @@ class VisPa:
         """
         print(f"  > Generating Sagittal Context Plot ({suffix})...")
         return self._save_panel_plot(panel, neuron_id, suffix, soma_region=soma_region,
-                                     soma_coords=soma_coords, output_dir=output_dir)
+                                     soma_coords=soma_coords, output_dir=output_dir,
+                                     nmt_corrected=nmt_corrected)
 
     def _draw_role_legend(self, fig, ax, entries):
         """Place compact role samples below indexed axes without covering data."""
@@ -1497,7 +1550,7 @@ class VisPa:
 
     def plot_tri_plot(self, panels, neuron_id, output_dir=None, suffix="TriPlot",
                       soma_region=None, soma_coords=None, dpi=None, header=None,
-                      caveats=None, legend=False):
+                      caveats=None, legend=False, nmt_corrected=None):
         """
         Draw the per-neuron review figure: the panels side by side, one title each.
 
@@ -1523,9 +1576,13 @@ class VisPa:
             ax = fig.add_subplot(grid[0, index])
             ax.set_facecolor('black')
             self._draw_panel(ax, panel)
-            title = panel.get('title') or self._title_text(
-                neuron_id, panel.get('suffix', suffix), soma_region, soma_coords,
-                panel['fov_um'], panel['depth_um'])
+            panel_corrected = panel.get('nmt_corrected', nmt_corrected)
+            title = panel.get('title')
+            if not title or panel_corrected:
+                title = self._title_text(
+                    neuron_id, panel.get('suffix', suffix), soma_region, soma_coords,
+                    panel['fov_um'], panel['depth_um'],
+                    nmt_corrected=panel_corrected)
             ax.set_title(title, color='white', fontsize=14)
             ax.set_anchor('N')
         if legend:
@@ -1658,7 +1715,8 @@ class VisPa:
 
     def render_sagittal_context_from_ds(self, neuron_id, soma_xyz, sample_id=None,
                                         output_dir=None, soma_region=None,
-                                        soma_coords=None, **panel_kwargs):
+                                        soma_coords=None, nmt_corrected=None,
+                                        **panel_kwargs):
         """
         End-to-end helper: resolve the registered processed-DS sagittal panel for
         one neuron, plot it in the legacy style and return panel plus provenance.
@@ -1669,7 +1727,8 @@ class VisPa:
                                           soma_xyz, **panel_kwargs)
         panel = self.plot_sagittal_context(
             prepared['panel'], neuron_id, soma_region=soma_region,
-            soma_coords=soma_coords or list(soma_xyz), output_dir=output_dir)
+            soma_coords=soma_coords or list(soma_xyz), output_dir=output_dir,
+            nmt_corrected=nmt_corrected)
         return {'panel': panel, 'provenance': prepared['provenance']}
 
 # ===== Integrated processed-DS sagittal renderer =====

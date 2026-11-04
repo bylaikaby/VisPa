@@ -1,8 +1,9 @@
 """Load explicit, portable VisPa dataset configuration.
 
-Version: 1.13.0.dev0 (local/unreleased)
-Last updated: 2026-11-02
+Version: 1.13.0.dev14 (local/unreleased)
+Last updated: 2026-11-04
 Change history: ../../CHANGELOG.md
+2026-11-03: Preserve and resolve an explicit top-level DS00 registry path.
 2026-11-02: Resolve an optional local NMT level-6 region OBJ map path for
 strict portal-region index/mesh preflight.
 2026-10-30: Set the review-marker crosshair default to 320 display pixels;
@@ -19,10 +20,12 @@ import re
 import sys
 import time
 from collections.abc import Mapping, MutableMapping
+from datetime import datetime
 from pathlib import Path, PureWindowsPath
 from typing import Any
 
 ENV_VAR = "VISPA_CONFIG"
+TEST_MODE_ENV = "VISPA_TEST_MODE"
 COMPAT_ENV_VAR = "VISUAL_TOOLKIT_CONFIG"
 LEGACY_ENV_VAR = "PROJECTOME_DATASETS"
 SCHEMA_VERSION = 1
@@ -35,6 +38,16 @@ def config_path() -> Path:
     """Return an explicit config path or the per-user YAML target, without creating it."""
     configured = os.environ.get(ENV_VAR)
     return Path(configured).expanduser() if configured else default_config_path()
+
+
+def test_mode_enabled() -> bool:
+    """Return whether this process is using temporary local-output overrides."""
+    value = os.environ.get(TEST_MODE_ENV, "").strip().lower()
+    if value in {"", "0", "false", "no"}:
+        return False
+    if value in {"1", "true", "yes"}:
+        return True
+    raise ValueError(f"{TEST_MODE_ENV} must be a truthy or falsey flag")
 
 
 def default_config_path() -> Path:
@@ -65,6 +78,113 @@ def packaged_config_path():
     package = files("vispa")
     primary = package.joinpath("configs", "config_deb.yaml")
     return primary if primary.is_file() else package.joinpath("config_deb.yaml")
+
+
+def compare_config_defaults(path: str | Path | None = None) -> dict:
+    """Read-only field-path comparison with the installed and frozen YAML templates."""
+    import hashlib
+    from ._version import __version__
+    selected = Path(path).expanduser().resolve() if path is not None else config_path().resolve()
+    if not selected.is_file():
+        raise FileNotFoundError(f"active config does not exist: {selected}")
+    load(selected)
+    active_bytes = selected.read_bytes()
+    active = _parse_config_bytes(active_bytes, selected)
+    installed_bytes = _template_bytes()
+    installed = _parse_config_bytes(installed_bytes, Path("config_deb.yaml"))
+    frozen_path = selected.with_name("vispa_config.default.yaml")
+    frozen = None
+    frozen_sha = None
+    if frozen_path.is_file():
+        frozen_bytes = frozen_path.read_bytes()
+        frozen = _parse_config_bytes(frozen_bytes, frozen_path)
+        frozen_sha = hashlib.sha256(frozen_bytes).hexdigest()
+
+    def leaves(value, prefix=""):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                yield from leaves(item, f"{prefix}.{key}" if prefix else str(key))
+        else:
+            yield prefix, value
+
+    active_fields = dict(leaves(active))
+    installed_fields = dict(leaves(installed))
+    frozen_fields = dict(leaves(frozen)) if frozen is not None else None
+    absent = sorted(installed_fields.keys() - active_fields.keys())
+    changed = sorted(key for key in active_fields.keys() & installed_fields.keys()
+                     if active_fields[key] != installed_fields[key])
+    introduced = (sorted(installed_fields.keys() - frozen_fields.keys())
+                  if frozen_fields is not None else None)
+    return {
+        "schema": "vispa.config-defaults-comparison.v1",
+        "active_config": str(selected),
+        "active_sha256": hashlib.sha256(active_bytes).hexdigest(),
+        "active_config_name": active.get("config_name") or selected.stem,
+        "active_config_version": active.get("config_version") or "unversioned",
+        "installed_template": str(packaged_config_path()),
+        "installed_sha256": hashlib.sha256(installed_bytes).hexdigest(),
+        "package_version": __version__,
+        "frozen_template": str(frozen_path) if frozen is not None else None,
+        "frozen_sha256": frozen_sha,
+        "missing_from_active": absent,
+        "different_from_installed": changed,
+        "only_in_active": sorted(active_fields.keys() - installed_fields.keys()),
+        "introduced_since_frozen": introduced,
+        "note": "Field paths only; no configuration was changed. Missing fields are not necessarily required."
+    }
+
+
+def config_version_report(path: str | Path | None = None) -> dict:
+    """Return the package and active-config identities without changing either."""
+    import hashlib
+    from ._version import __version__
+
+    loaded = (copy.deepcopy(path) if isinstance(path, Mapping)
+              else load(path))
+    source = Path(loaded["path"]).resolve()
+    raw = source.read_bytes() if source.is_file() else _template_bytes()
+    return {
+        "schema": "vispa.runtime-config-identity.v1",
+        "vispa_version": __version__,
+        "config_name": loaded.get("config_name"),
+        "config_version": loaded.get("config_version"),
+        "config_updated_at": loaded.get("config_updated_at"),
+        "config_path": str(source),
+        "config_origin": loaded.get("config_origin"),
+        "config_sha256": hashlib.sha256(raw).hexdigest(),
+        "test_mode": bool(loaded.get("test_mode")),
+        "resolved_output_root": (
+            str(loaded.get("visual_toolkit", {}).get("output_root"))
+            if loaded.get("visual_toolkit", {}).get("output_root") is not None else None),
+        "resolved_cache_root": (
+            str(loaded.get("defaults", {}).get("cache_root"))
+            if loaded.get("defaults", {}).get("cache_root") is not None else None),
+    }
+
+
+def _config_metadata(raw: dict, source: Path) -> dict:
+    """Validate compact config identity metadata; history lives in CHANGELOG."""
+    name = raw.get("config_name", source.stem)
+    version = raw.get("config_version", "unversioned")
+    updated_at = raw.get("config_updated_at", "unknown")
+    if not isinstance(name, str) or not name.strip() or name != name.strip():
+        raise ValueError("config_name must be a nonempty string without surrounding whitespace")
+    if not isinstance(version, str) or not version.strip() or version != version.strip():
+        raise ValueError("config_version must be a nonempty string without surrounding whitespace")
+    if not isinstance(updated_at, str) or not updated_at.strip():
+        raise ValueError("config_updated_at must be a nonempty ISO-8601 timestamp")
+    if updated_at != "unknown":
+        try:
+            parsed = datetime.fromisoformat(updated_at)
+        except ValueError as exc:
+            raise ValueError("config_updated_at must be a valid ISO-8601 timestamp") from exc
+        if parsed.tzinfo is None:
+            raise ValueError("config_updated_at must include a timezone offset")
+    return {
+        "config_name": name,
+        "config_version": version,
+        "config_updated_at": updated_at,
+    }
 
 
 def _template_bytes() -> bytes:
@@ -285,8 +405,9 @@ def load(path: str | Path | None = None, base_dir: str | Path | None = None) -> 
     raw = _parse_config_bytes(content, source)
     if not isinstance(raw, dict):
         raise ValueError(f"{source}: top level must be a mapping")
-    unknown = set(raw) - {"version", "base_dir", "defaults", "samples", "visual_toolkit", "sources",
-                          "dataset_manifest", "legacy_raw_swc_root"}
+    unknown = set(raw) - {"version", "config_name", "config_version", "config_updated_at",
+                          "base_dir", "defaults", "samples", "visual_toolkit", "sources",
+                          "dataset_manifest", "legacy_raw_swc_root", "ds00_registry"}
     if unknown:
         raise ValueError(f"{source}: unknown top-level keys {sorted(unknown)}")
     if raw.get("version") != SCHEMA_VERSION:
@@ -464,7 +585,7 @@ def load(path: str | Path | None = None, base_dir: str | Path | None = None) -> 
         if tables.get("root"):
             tables["root"] = _resolve(tables["root"], configured_base)
         sources["neuron_tables"] = tables
-    for key, fields in (("atlas", ("root",)),
+    for key, fields in (("atlas", ("root", "key", "hemisphere_mask")),
                         ("flatmap", ("julia_executable", "monkeyrec", "cache", "output"))):
         block = sources.get(key)
         if block is None:
@@ -568,9 +689,28 @@ def load(path: str | Path | None = None, base_dir: str | Path | None = None) -> 
             raise ValueError("sources.brain_view.settings must be a mapping")
         brain_view["settings"] = dict(settings)
         sources["brain_view"] = brain_view
-    result = {"path": source, "base_dir": configured_base, "defaults": defaults,
+    metadata = _config_metadata(raw, source)
+    result = {"path": source, "base_dir": configured_base, **metadata, "defaults": defaults,
               "samples": samples, "visual_toolkit": visual_toolkit, "sources": sources,
-              "config_origin": origin}
+              "config_origin": origin, "test_mode": test_mode_enabled()}
+    if result["test_mode"]:
+        shared_layout = configured_base.name.casefold() == "configs"
+        test_cache = (
+            configured_base.parent / "cached_data" / "test"
+            if shared_layout else configured_base.parent / "cache" / "vispa_test")
+        test_output = (
+            configured_base.parent / "outputs" / "test"
+            if shared_layout else configured_base.parent / "output" / "vispa_test")
+        result["defaults"]["cache_root"] = test_cache
+        result["defaults"]["swc_cache_root"] = test_cache / "swc"
+        result["visual_toolkit"]["output_root"] = test_output
+        result["visual_toolkit"]["fnt_tracer"]["cache_root"] = test_cache / "fnt"
+        result["test_output_root"] = test_output
+        result["test_cache_root"] = test_cache
+    if raw.get("ds00_registry") is not None:
+        if not isinstance(raw["ds00_registry"], (str, Path)) or not str(raw["ds00_registry"]).strip():
+            raise ValueError("ds00_registry must be a nonempty path")
+        result["ds00_registry"] = _resolve(raw["ds00_registry"], configured_base)
     declared_scopes = [scope for scope, values in scoped_settings.items() if values]
     if declared_scopes:
         _validate_effective_settings(result, declared_scopes)

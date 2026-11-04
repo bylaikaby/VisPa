@@ -1,7 +1,7 @@
 """Import boundaries and shared-state compatibility after the module refactor.
 
-Version: 1.11.0.dev25 (local/unreleased)
-Last updated: 2026-10-27
+Version: 1.13.0.dev9 (local/unreleased)
+Last updated: 2026-11-04
 Change history: ../CHANGELOG.md
 """
 import importlib
@@ -31,6 +31,7 @@ assert not any(name.startswith("vispa.renderers.") for name in sys.modules)
             'settings': 'config',
             'config_editor': 'config',
             'sources': 'data_input_adaptor',
+            'neuron_side': 'data_input_adaptor',
             'toolkit': 'renderers.microscopy_panels',
             'opengl': 'renderers.swc_brain_view',
             'volume_montage': 'renderers.brain_volume_montage',

@@ -1,7 +1,7 @@
 """Synthetic render-style regression checks.
 
-Version: 1.12.0.dev2 (local/unreleased)
-Last updated: 2026-10-31
+Version: 1.13.0.dev12 (local/unreleased)
+Last updated: 2026-11-04
 Change history: ../CHANGELOG.md
 2026-10-30: Cover the fixed 320-pixel crosshair, reduced legacy square,
 exact centre, and GUI receipt
@@ -28,6 +28,30 @@ from vispa.renderers.swc_brain_view import TRACE_LABEL, _legend_texture
 
 
 class OutputStyleTests(unittest.TestCase):
+    def test_all_panel_titles_use_one_region_section(self):
+        tool = object.__new__(VisPa)
+        tool.sample_id = "252384"
+        combined = "Portal: Unassigned | Atlas: Left background"
+        for suffix in ("Soma", "Context", "Sagittal"):
+            title = tool._title_text(
+                "003.swc", suffix, combined, (46139, 18014, 37393),
+                (8000, 8000), 30)
+            self.assertEqual(title.count("Region:"), 1)
+            self.assertNotIn("| Atlas:", title)
+            self.assertIn("Region: nmt_portal=Left background", title)
+            self.assertNotIn("nmt_corrected", title)
+            corrected = tool._title_text(
+                "003.swc", suffix, combined, (46139, 18014, 37393),
+                (8000, 8000), 30, nmt_corrected="  Right   PrCO  ")
+            self.assertIn(
+                "Region: nmt_portal=Left background · nmt_corrected=Right PrCO",
+                corrected)
+            self.assertNotIn("  ", corrected.splitlines()[1])
+        simple = tool._title_text(
+            "003.swc", "Context", "PrCO_49", (46139, 18014, 37393),
+            (8000, 8000), 30)
+        self.assertIn("Region: nmt_portal=PrCO_49", simple)
+
     def test_gui_fingerprint_records_requested_and_effective_crosshair(self):
         self.assertIn('fixed at 320 display pixels', FIXED_CROSSHAIR_NOTICE)
         self.assertIn('does not change the drawn length', FIXED_CROSSHAIR_NOTICE)

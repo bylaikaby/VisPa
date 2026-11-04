@@ -1,7 +1,7 @@
-"""Bounded command line for one local VisPa review render or montage.
+"""Bounded command line for VisPa review renders and source acquisition.
 
-Version: 1.12.0.dev1 (local/unreleased)
-Last updated: 2026-10-29
+Version: 1.13.0.dev14 (local/unreleased)
+Last updated: 2026-11-04
 Change history: ../../CHANGELOG.md
 """
 from __future__ import annotations
@@ -620,6 +620,169 @@ def _catalog_check(args):
     return 0
 
 
+def _normal_label(value):
+    """Compare region names without side prefixes or numeric suffixes."""
+    text = str(value or "").strip().casefold()
+    for prefix in ("cl_", "cr_", "sl_", "sr_", "l-", "r-", "l_", "r_"):
+        if text.startswith(prefix):
+            text = text[len(prefix):]
+            break
+    return text.rsplit("_", 1)[0] if "_" in text else text
+
+
+def _context(args):
+    """Acquire and render one exact neuron's native VisPa Context panel."""
+    from .config import default_output_root, load
+    from .data_input_adaptor import (
+        IONData,
+        acquire_neuron_side,
+        list_neurons,
+    )
+    from .renderers import microscopy_panels as panels
+
+    sample, neuron = str(args.sample), str(args.neuron)
+    if not sample or any(c not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
+                         for c in sample):
+        raise ValueError("--sample must be a simple identifier")
+    if not neuron or Path(neuron).name != neuron or neuron in {".", ".."}:
+        raise ValueError("--neuron must be a name, not a path")
+    if not neuron.lower().endswith(".swc"):
+        neuron += ".swc"
+    config = load(args.config)
+    panels.configure_data_sources(config=config)
+    settings = panels.REVIEW_SETTINGS
+    width = int(args.width_um or settings["context"]["width_um"])
+    height = int(args.height_um or settings["context"]["height_um"])
+    depth = int(args.depth_um or settings["context"]["depth_um"])
+    if min(width, height, depth) <= 0:
+        raise ValueError("--width-um, --height-um and --depth-um must be positive")
+    output_dir = (Path(args.output_dir).expanduser().resolve()
+                  if args.output_dir else default_output_root(config) / sample)
+    cache_root = Path(config["defaults"]["cache_root"])
+    raw_cache_path = cache_root / "swc_raw" / sample / neuron
+    plan = {
+        "schema": "vispa.context-review.v1",
+        "package_version": VERSION,
+        "command": "context",
+        "sample_id": sample,
+        "neuron_id": neuron,
+        "config_path": str(config["path"]),
+        "config_name": config["config_name"],
+        "config_version": config["config_version"],
+        "context_output_dir": str(output_dir),
+        "context_dimensions_um": {
+            "width": width,
+            "height": height,
+            "depth": depth,
+            "swc_overlay_depth": settings["context"].get("swc_overlay_depth_um"),
+        },
+        "context_coordinate_source": (
+            "raw SWC parent=-1 root; native microscopy XYZ micrometres"),
+        "region_coordinate_source": (
+            "IONData getSoma converted coordinate; configured ARM atlas "
+            "indexed by coordinate_scale_um"),
+        "raw_swc_cache_path": str(raw_cache_path),
+        "raw_swc_refresh": not args.cached_only,
+        "region_acquisition": "live IONData getSoma and selectNeurons",
+        "dry_run": bool(args.dry_run),
+    }
+    if args.dry_run:
+        print(json.dumps(plan, indent=2, sort_keys=True))
+        return 0
+
+    ion = IONData(config=config)
+    tree = ion.getRawNeuronTreeByID(sample, neuron, refresh=not args.cached_only)
+    if tree is None:
+        raise FileNotFoundError(f"raw SWC is unavailable for {sample}/{neuron}")
+    soma = [float(value) for value in tree.root.xyz]
+    region = acquire_neuron_side(sample, neuron, config)
+    catalog = list_neurons(sample, config=config, source="live-iondata")
+    portal_matches = [row for row in catalog["rows"]
+                      if row.get("sample_id") == sample and row.get("neuron_id") == neuron]
+    if len(portal_matches) != 1:
+        raise ValueError(
+            f"IONData catalog has {len(portal_matches)} exact rows for {sample}/{neuron}")
+    portal_region = portal_matches[0].get("portal_region") or ""
+    region_source = region.get("source") or {}
+    atlas_region = region_source.get("atlas_region") or ""
+    side = region.get("side")
+    if atlas_region and side:
+        label = f"Portal: {portal_region or 'Unassigned'} | Atlas: {side} {atlas_region}"
+    elif atlas_region:
+        label = f"Portal: {portal_region or 'Unassigned'} | Atlas: {atlas_region}"
+    else:
+        label = f"Portal: {portal_region or 'Unassigned'} | Atlas: unavailable"
+    if not portal_region:
+        comparison = "not_possible_portal_region_blank"
+    elif not atlas_region:
+        comparison = "not_possible_atlas_region_unavailable"
+    elif _normal_label(portal_region) == _normal_label(atlas_region):
+        comparison = "match"
+    else:
+        comparison = "mismatch"
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    tool = panels.VisPa(
+        sample,
+        cache_root=config["defaults"]["cache_root"],
+        output_root=output_dir,
+    )
+    try:
+        volume, origin, resolution = tool.get_low_res_widefield(
+            soma, width_um=width, height_um=height, depth_um=depth)
+        panel = tool.plot_widefield_context(
+            volume, origin, resolution, soma, neuron,
+            swc_tree=tree, soma_region=label, output_dir=str(output_dir))
+    finally:
+        tool.close()
+    png = Path(panel["output_png"])
+    receipt_path = png.with_suffix(".json")
+    if receipt_path.exists():
+        raise FileExistsError(f"receipt already exists: {receipt_path}")
+    raw_source = None
+    if raw_cache_path.is_file():
+        raw_source = {
+            "path": str(raw_cache_path),
+            "sha256": _sha256(raw_cache_path),
+            "size_bytes": raw_cache_path.stat().st_size,
+        }
+    receipt = {
+        **plan,
+        "status": ("complete_portal_match" if comparison == "match"
+                   else "complete_with_unresolved_portal_comparison"),
+        "raw_swc_root_native_xyz_um": soma,
+        "raw_swc": raw_source,
+        "portal_region": portal_region,
+        "portal_catalog": {
+            "request_url": catalog.get("request_url"),
+            "fetched_at": catalog.get("fetched_at"),
+            "sha256": catalog.get("sha256"),
+            "snapshot_id": catalog.get("snapshot_id"),
+        },
+        "atlas_region_acquisition": region,
+        "portal_atlas_comparison": comparison,
+        "context_png": str(png),
+        "context_png_sha256": _sha256(png),
+        "context_panel": {
+            key: panel.get(key)
+            for key in ("title", "role", "axis_labels", "legend", "notes")
+        },
+        "low_res_acquisition": tool.last_low_res_metadata,
+        "scientific_acceptance": "not_assessed",
+    }
+    _atomic_json(receipt_path, receipt)
+    print(json.dumps({
+        "status": receipt["status"],
+        "context_png": str(png),
+        "receipt": str(receipt_path),
+        "raw_swc_root_native_xyz_um": soma,
+        "portal_region": portal_region,
+        "atlas_region": atlas_region,
+        "portal_atlas_comparison": comparison,
+    }, indent=2, sort_keys=True))
+    return 0
+
+
 def _data_check(args):
     from .readiness import data_check
 
@@ -642,7 +805,10 @@ def _parser():
     parser = argparse.ArgumentParser(
         prog="vispa", description=f"VisPa {VERSION} command line",
         epilog="Use vispa gui to open the GUI; python run_vispa.py remains the checkout shortcut.")
-    parser.add_argument("--version", action="version", version=f"vispa {VERSION}")
+    parser.add_argument("--version", action="store_true",
+                        help="show VisPa and active configuration versions")
+    parser.add_argument("--test", action="store_true",
+                        help="launch the GUI with local test output/cache overrides")
     commands = parser.add_subparsers(dest="command")
     commands.add_parser("gui", help="open the VisPa review GUI")
     example = commands.add_parser(
@@ -669,6 +835,20 @@ def _parser():
     render.add_argument("--config")
     render.add_argument("--set", action="append", default=[], metavar="PATH=VALUE")
     render.add_argument("--dry-run", action="store_true")
+    context = commands.add_parser(
+        "context",
+        help="acquire one neuron and render VisPa's native 5 µm Context plot")
+    context.add_argument("--config")
+    context.add_argument("--sample", required=True, help="one exact SampleID")
+    context.add_argument("--neuron", required=True, help="one exact SWC filename")
+    context.add_argument("--output-dir", help="PNG and adjacent JSON receipt directory")
+    context.add_argument("--width-um", type=int, help="Context width override")
+    context.add_argument("--height-um", type=int, help="Context height override")
+    context.add_argument("--depth-um", type=int, help="Context slab-depth override")
+    context.add_argument("--cached-only", action="store_true",
+                         help="use the managed raw-SWC cache without a live SWC refresh")
+    context.add_argument("--dry-run", action="store_true",
+                         help="resolve the one-neuron plan without network access or writes")
     montage = commands.add_parser("montage", help="render one local LPS NIfTI volume as a five-view montage")
     montage.add_argument("--input", required=True, help="one local 3D NIfTI image (.nii or .nii.gz), validated as LPS voxel axis codes")
     montage.add_argument("--output", required=True, help="new PNG path; adjacent JSON receipt uses the same stem")
@@ -713,6 +893,10 @@ def _parser():
     config_check.add_argument("--config")
     config_check.add_argument("--validate-only", action="store_true",
                               help="validate config syntax and declarations without probing source paths")
+    config_check.add_argument("--compare-defaults", action="store_true",
+                              help="read-only field-path comparison with installed and frozen defaults")
+    config_check.add_argument("--test", action="store_true",
+                              help="validate/check using the config's local test-output overrides")
     config_check.add_argument("--sample", help="exact sample for read-only hashed resource inventory")
     config_check.add_argument("--neuron", help="exact neuron for read-only hashed resource inventory")
     config_check.add_argument("--catalog", action="store_true",
@@ -753,14 +937,41 @@ def _parser():
     return parser
 
 
+def _selected_config_arg(argv):
+    """Extract a global config selection used with the version preflight."""
+    for index, value in enumerate(argv):
+        if value == "--config" and index + 1 < len(argv):
+            return argv[index + 1]
+        if value.startswith("--config="):
+            return value.partition("=")[2]
+    return None
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] == "gui":
         from .reviewer import main as gui_main
         return gui_main(argv[1:])
+    if argv and argv[0] == "--test":
+        from .reviewer import main as gui_main
+        return gui_main(argv)
     if argv and argv[0] == "brain-view":
         from .renderers.swc_brain_view import main as brain_view_main
         return brain_view_main(argv[1:])
+    if "--version" in argv:
+        try:
+            if "--test" in argv:
+                os.environ["VISPA_TEST_MODE"] = "1"
+            from .config import config_version_report
+            report = config_version_report(_selected_config_arg(argv))
+            mode = " [TEST]" if report["test_mode"] else ""
+            print(
+                f"VisPa {report['vispa_version']} | "
+                f"config {report['config_name']} {report['config_version']}{mode} | "
+                f"updated {report['config_updated_at']} | {report['config_path']}")
+            return 0
+        except (OSError, RuntimeError, ValueError, KeyError, TypeError) as exc:
+            raise SystemExit(f"vispa: error: {exc}") from exc
     parser = _parser()
     args = parser.parse_args(argv)
     if args.command is None:
@@ -780,6 +991,11 @@ def main(argv=None):
         try:
             return _render(args)
         except (OSError, RuntimeError, ValueError, KeyError) as exc:
+            parser.error(str(exc))
+    if args.command == "context":
+        try:
+            return _context(args)
+        except (OSError, RuntimeError, LookupError, ValueError, KeyError) as exc:
             parser.error(str(exc))
     if args.command == "example":
         try:
@@ -824,6 +1040,17 @@ def main(argv=None):
         except (OSError, RuntimeError, ValueError, KeyError, TypeError) as exc:
             parser.error(str(exc))
     if args.command == "config-check":
+        if args.test:
+            os.environ["VISPA_TEST_MODE"] = "1"
+        if args.compare_defaults:
+            if args.validate_only or args.catalog or args.catalog_source or args.sample or args.neuron or args.fnt:
+                parser.error("--compare-defaults cannot be combined with other config checks")
+            try:
+                from .config import compare_config_defaults
+                print(json.dumps(compare_config_defaults(args.config), indent=2, sort_keys=True))
+                return 0
+            except (OSError, RuntimeError, ValueError, KeyError, TypeError) as exc:
+                parser.error(str(exc))
         if args.validate_only:
             if args.catalog or args.catalog_source or args.sample or args.neuron or args.fnt:
                 parser.error("--validate-only cannot be combined with catalog or resource checks")
@@ -832,8 +1059,18 @@ def main(argv=None):
                 if args.config and not Path(args.config).expanduser().is_file():
                     raise ValueError(f"config file does not exist: {args.config}")
                 config = load(args.config)
-                print(json.dumps({"config": str(config["path"]), "valid": True,
-                                  "samples": len(config["samples"])}, indent=2))
+                print(json.dumps({
+                    "config": str(config["path"]),
+                    "valid": True,
+                    "samples": len(config["samples"]),
+                    "vispa_version": VERSION,
+                    "config_name": config["config_name"],
+                    "config_version": config["config_version"],
+                    "config_updated_at": config["config_updated_at"],
+                    "test_mode": config["test_mode"],
+                    "output_root": str(config["visual_toolkit"]["output_root"]),
+                    "cache_root": str(config["defaults"]["cache_root"]),
+                }, indent=2))
                 return 0
             except (OSError, RuntimeError, ValueError, KeyError) as exc:
                 parser.error(str(exc))

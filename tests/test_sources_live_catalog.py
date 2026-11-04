@@ -1,7 +1,7 @@
 """Bounded live IONData catalog and dated-snapshot selection contracts.
 
-Version: 1.11.0.dev11 (local/unreleased)
-Last updated: 2026-10-23
+Version: 1.13.0.dev9 (local/unreleased)
+Last updated: 2026-11-04
 Change history: ../CHANGELOG.md
 """
 import contextlib
@@ -23,6 +23,7 @@ from vispa.dataset_config import load
 from vispa.sources import (
     catalog_selection_id,
     catalog_snapshot_unchanged,
+    get_soma_coordinates,
     list_neurons,
 )
 
@@ -97,6 +98,26 @@ class LiveNeuronCatalogTests(unittest.TestCase):
         self.assertEqual(result["rows"][0]["comment"], "preserve")
         self.assertEqual(catalog_selection_id("250432L", "250432L", result, result["rows"][0]), "001.swc")
         self.assertIsNone(catalog_selection_id("250432L", "250432", result, result["rows"][0]))
+
+    def test_live_soma_lookup_returns_exact_finite_coordinates(self):
+        config = self.live_config()
+        body = json.dumps([
+            {"name": "001.swc", "sampleid": "250432L",
+             "somax": 100.5, "somay": 200.25, "somaz": 300.0},
+            {"name": "002.swc", "sampleid": "250432L",
+             "somax": 1, "somay": 2, "somaz": 3},
+        ]).encode("utf-8")
+        response = _Response(body)
+        with mock.patch("vispa.sources.urllib.request.urlopen",
+                        return_value=response) as urlopen:
+            result = get_soma_coordinates("250432L", "001.swc", config)
+        request = urlopen.call_args.args[0]
+        self.assertEqual(
+            request.full_url,
+            "http://catalog.example:8080/neuronbrowser/api/user/getSoma?fMOST_id=250432L")
+        self.assertEqual(result["soma_xyz"], [100.5, 200.25, 300.0])
+        self.assertEqual(result["row"], 1)
+        self.assertRegex(result["sha256"], r"^[0-9a-f]{64}$")
 
     def test_live_api_rows_reject_mismatched_sample_duplicates_and_paths(self):
         config = self.live_config()

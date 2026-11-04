@@ -1,9 +1,10 @@
 """Focused regression checks for the standalone extraction seams.
 
-Version: 1.13.0.dev0 (local/unreleased)
-Last updated: 2026-11-02
+Version: 1.13.0.dev1 (local/unreleased)
+Last updated: 2026-11-03
 Change history: ../CHANGELOG.md
 2026-11-02: Compare source identity across Windows long and 8.3 path aliases.
+2026-11-03: Mark the local cache precedence case as explicit cached-only mode.
 """
 import copy
 import io
@@ -1193,7 +1194,7 @@ class SWCProviderTests(unittest.TestCase):
                 raise AssertionError("fallback provider should not load for a local SWC hit")
             sources.set_iondata_provider_factory(fail_if_constructed)
             try:
-                tree = sources.IONData().getRawNeuronTreeByID("0007", "001.swc")
+                tree = sources.IONData().getRawNeuronTreeByID("0007", "001.swc", refresh=False)
                 self.assertEqual(tree.root.xyz, (10.0, 20.0, 30.0))
             finally:
                 sources.set_iondata_provider_factory(None)

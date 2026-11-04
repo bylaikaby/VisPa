@@ -1,7 +1,7 @@
 """Focused lossless common-settings checks.
 
-Version: 1.11.0.dev25 (local/unreleased)
-Last updated: 2026-10-27
+Version: 1.13.0.dev14 (local/unreleased)
+Last updated: 2026-11-04
 Change history: ../CHANGELOG.md
 """
 import unittest
@@ -221,7 +221,9 @@ class ConfigEditorTests(unittest.TestCase):
         gui._fingerprint = lambda: {'sample': '251637'}
         gui._find_cached_figures = lambda sample, neuron: ([], {'Soma': 'cached.png'}, {'key': 'matching'})
         gui._evaluate_cached = lambda entry, roles: ('same', [])
-        gui.preview_label = object()
+        gui.preview_label = mock.Mock()
+        gui.preview_caption = mock.Mock()
+        gui._update_neuron_status = mock.Mock()
         gui.preview_files = {}
         gui._refresh_preview_tabs = lambda: events.append('preview')
         gui._show_role = lambda role: events.append(role)
@@ -260,8 +262,12 @@ class ConfigEditorTests(unittest.TestCase):
         gui.update_status = statuses.append
         gui._ui_call = lambda callback, *args: callback(*args)
         gui.make_review_figure = SimpleNamespace(get=lambda: True)
+        gui._update_neuron_status = mock.Mock()
+        gui.preview_label = mock.Mock()
+        gui.preview_caption = mock.Mock()
+        gui._refresh_preview_tabs = mock.Mock()
         toolkit = SimpleNamespace(plot_tri_plot=mock.Mock())
-        def finish_work(req, work, message):
+        def finish_work(req, work, message, **_kwargs):
             paths, errors = work(toolkit)
             gui._finish(req, paths, message(req), errors)
         gui._run_worker = finish_work
@@ -338,7 +344,7 @@ class SettingsWindowTests(unittest.TestCase):
                 buttons = {item.cget('text'): item for item in widgets
                            if isinstance(item, ttk.Button)}
                 self.assertEqual([tabs.tab(tab, 'text') for tab in tabs.tabs()],
-                                 ['Organized editor', 'Raw YAML', 'Default YAML'])
+                                 ['Organized editor', 'Raw YAML', 'Frozen default YAML'])
                 self.assertEqual(tabs.tab(tabs.select(), 'text'), 'Organized editor')
                 self.assertEqual(section_list.get(0, 'end'),
                                  ('Data folders', 'Sources', 'Brain view', 'FNT', 'Startup'))

@@ -1,8 +1,8 @@
 """
 vispa_gui.py - GUI for NeuroVis Visual Toolkit
 
-Version: 1.13.0.dev0 (local/unreleased)
-Last updated: 2026-11-02
+Version: 1.13.0.dev14 (local/unreleased)
+Last updated: 2026-11-04
 Change history: ../../CHANGELOG.md
 Status: candidate (GUI layout reviewed; scientific review pending)
 2026-10-30: Record effective fixed crosshair and smaller legacy square separately from legacy
@@ -11,6 +11,8 @@ profile settings in figure fingerprints and cache receipts.
 2026-11-02: Separate neuron and purple region status, move the workflow guide to a top-bar window, and stack full-width plotting cards in their original left-panel section with source hints visible and aligned typography.
 2026-11-02: Read exact-neuron FULL workbook laterality off the UI thread, guard stale identity results, and fit the preview above the full bottom action bar.
 2026-11-02: Show the user-supplied VisPa artwork in the GUI title bar and taskbar from packaged image assets.
+2026-11-04: Add VisPa-derived catalog laterality, autoloaded side refresh, current-monkey CSV records, shaded button borders, and split physical/NMT coordinates.
+2026-11-04: Add Go to search plus an exact region selector, dark structural borders, reliable left-panel scrolling, compact plot cards, and distinct application/config version blocks.
 
 DESCRIPTION:
     Tkinter review interface for standalone VisPa panels. It uses the
@@ -154,6 +156,7 @@ from ._version import __version__
 from .config import _stamp
 
 SWC_BRAIN_VIEW_LABEL = "SWC Brain View"
+CATALOG_ALL_REGIONS = "All regions"
 FIXED_CROSSHAIR_NOTICE = (
     "Review crosshair arms are fixed at 320 display pixels. "
     "marker.crosshair_px is retained for older profiles and does not change the drawn length.")
@@ -435,19 +438,27 @@ class NeuroVisGUI:
         'text': '#173747', 'muted': '#526b79', 'accent': '#168a91',
         'accent_dark': '#126b78', 'accent_soft': '#edf6f7', 'strip': '#eef3f6',
         'preview_bg': '#0f1a24', 'field': '#fbfdfe', 'disabled': '#9aa9b3',
+        'border_dark': '#5f686b', 'field_border': '#7f898d',
+        'button_border': '#606d72',
     }
 
     def __init__(self, root, sample_id=None, neuron_id=None,
                  auto_load=None, review_session=None, watch_session=False,
-                 config_path=None, auto_fill_on_identity=True):
+                 config_path=None, auto_fill_on_identity=True, test_mode=False):
         """Initialize GUI window and widgets."""
-        from .config import load
+        from .config import config_version_report, load
         configuration = load(config_path)
+        self.version_report = config_version_report(configuration)
         (sample_id, neuron_id), identity_source, auto_load = resolve_gui_launch_defaults(
             configuration, sample_id, neuron_id, auto_load)
         self.identity_source = identity_source
         self.root = root
-        self.root.title(f"VisPa {__version__} · local review")
+        self.test_mode = bool(test_mode)
+        mode_label = " · TEST OUTPUT" if self.test_mode else ""
+        self.root.title(
+            f"VisPa {__version__} · "
+            f"{self.version_report['config_name']} {self.version_report['config_version']}"
+            f"{mode_label} · local review")
         _apply_window_icon(self.root)
         # Design sizes below are quoted in 96-dpi pixels. Tk fonts follow the
         # display DPI, so the container geometry must follow the same factor or
@@ -465,6 +476,9 @@ class NeuroVisGUI:
         self.x_coord = tk.StringVar(value="")
         self.y_coord = tk.StringVar(value="")
         self.z_coord = tk.StringVar(value="")
+        self.nmt_x = tk.StringVar(value="—")
+        self.nmt_y = tk.StringVar(value="—")
+        self.nmt_z = tk.StringVar(value="—")
         self.grid_radius = tk.IntVar(value=1)
         # Context/widefield defaults come from the shared review settings so the GUI
         # and the bulk runners cannot disagree.
@@ -528,6 +542,7 @@ class NeuroVisGUI:
         self._operation_running = False
         self._autofill_identity = None
         self._neuron_lookup_state = "idle"
+        self._cache_status = "not checked"
         self._neuron_lookup_error = None
         self._auto_fill_on_identity = bool(auto_fill_on_identity)
         self._soma_autofill_after = None
@@ -546,18 +561,39 @@ class NeuroVisGUI:
         self._catalog_source_var = None
         self._catalog_source_choices = {}
         self._catalog_rows_by_iid = {}
+        self._catalog_side_request_id = 0
+        self._catalog_side_snapshot_id = None
+        self._catalog_side_result = None
+        self._catalog_side_state = "idle"
+        self._catalog_reload_after = None
+        self._catalog_filter_after = None
+        self._catalog_filter_var = tk.StringVar(value="")
+        self._catalog_region_filter_var = tk.StringVar(
+            value=CATALOG_ALL_REGIONS)
+        self._catalog_region_selector = None
+        self._catalog_sort_column = None
+        self._catalog_sort_reverse = False
+        self._catalog_view_side_result = None
+        self._catalog_view_side_state = "idle"
+        self.neuron_catalog_visible_count = tk.StringVar(value="")
         self._portal_region_cache = {}
         self._portal_region_snapshots = {}
-        self._neuron_tables_root = (configuration.get('sources', {})
-                                    .get('neuron_tables', {}).get('root'))
+        self._side_config = configuration
         self._neuron_side_cache = {}
         self._neuron_side_pending = set()
         self._neuron_catalog_window = None
         self.neuron_catalog_table = None
         self.neuron_catalog_load_button = None
+        self.neuron_catalog_export_button = None
+        self.neuron_catalog_title = tk.StringVar(value="Neuron catalog")
+        self.neuron_catalog_side_summary = tk.StringVar(value="")
         self.neuron_catalog_info = tk.StringVar(value="Portal inventory has not been loaded.")
 
         self.build_full_gui()
+        self._catalog_filter_var.trace_add(
+            'write', self._schedule_neuron_catalog_filter)
+        self._catalog_region_filter_var.trace_add(
+            'write', self._schedule_neuron_catalog_filter)
         self.sample_id.trace_add('write', lambda *_: self._refresh_portal_region())
         self.neuron_id.trace_add('write', lambda *_: self._refresh_portal_region())
         self.sample_id.trace_add('write', lambda *_: self._refresh_neuron_side())
@@ -602,19 +638,23 @@ class NeuroVisGUI:
             self._selected_identity = identity
             self._autofill_identity = None
             self._neuron_lookup_state = "waiting" if all(identity) else "idle"
+            self._cache_status = "checking" if all(identity) else "not checked"
             self._neuron_lookup_error = None
             self.x_coord.set("")
             self.y_coord.set("")
             self.z_coord.set("")
+            self._update_nmt_coordinate_display()
             self._clear_identity_preview()
             self._update_neuron_status()
+            try:
+                normalize_review_identity(*identity)
+            except ValueError:
+                return
             if getattr(self, '_auto_fill_on_identity', True):
-                try:
-                    normalize_review_identity(*identity)
-                except ValueError:
-                    return
                 self._soma_autofill_after = self.root.after(
                     650, self._auto_fill_current_identity)
+            else:
+                self.root.after(650, self._check_identity_cache)
 
     def _auto_fill_current_identity(self):
         """Fetch soma coordinates after a valid identity stops changing."""
@@ -631,6 +671,15 @@ class NeuroVisGUI:
         if self._autofill_identity == identity:
             return
         self.load_and_autofill(silent_success=True, silent_failure=True)
+
+    def _check_identity_cache(self):
+        """Report/load cached rendering data after an identity change."""
+        sample = self.sample_id.get().strip()
+        neuron = self.neuron_id.get().strip()
+        if sample and neuron:
+            self._activate_cached_figures(
+                sample, neuron.removesuffix(".swc"),
+                quiet=False, start_fnt=False)
 
     def _clear_identity_preview(self):
         """Drop any prior identity's displayed and cached panel references."""
@@ -687,6 +736,27 @@ class NeuroVisGUI:
         y = max(top + margin, min(y, top + screen_height - margin - height))
         return width, height, x, y
 
+    @staticmethod
+    def _settings_wheel_handler(canvas):
+        """Scroll the main settings canvas from any child widget under the cursor."""
+        def on_wheel(event):
+            try:
+                if not canvas.winfo_exists():
+                    return "break"
+                delta = int(getattr(event, "delta", 0) or 0)
+                if delta:
+                    canvas.yview_scroll(-1 if delta > 0 else 1, "units")
+            except tk.TclError:
+                pass
+            return "break"
+        return on_wheel
+
+    def _bind_settings_wheel(self, widget, handler):
+        """Apply one settings-wheel handler to the complete card subtree."""
+        widget.bind('<MouseWheel>', handler)
+        for child in widget.winfo_children():
+            self._bind_settings_wheel(child, handler)
+
     def build_full_gui(self):
         """Construct the Binavi-style layout: settings left, figure preview right."""
         C = self.COLORS
@@ -704,22 +774,35 @@ class NeuroVisGUI:
         tk.Label(header, text=f"VisPa {__version__}", bg=C['header'],
                  fg=C['header_text'], font=('Segoe UI', 14, 'bold')).pack(
                      side='left', padx=(P(18), P(8)))
-        tk.Label(header, text="DEB lab · fMOST neuron reviewer", bg=C['header'],
+        tk.Label(
+            header,
+            text=(f"{self.version_report['config_name']} "
+                  f"{self.version_report['config_version']}"
+                  f"{' TEST OUTPUT' if self.test_mode else ''} · "
+                  "DEB lab · fMOST neuron reviewer"),
+            bg=C['header'],
                  fg=C['header_muted'], font=('Segoe UI', 9)).pack(side='left')
+        self._flat_button(header, "Version", self._show_runtime_version,
+                          small=True).pack(side='right', padx=(0, P(4)))
         self._flat_button(header, "Settings", self._open_config_yaml,
                           small=True).pack(side='right', padx=P(16))
         self._flat_button(header, "Guide", self._open_guide,
                           small=True).pack(side='right', padx=(0, P(4)))
 
         # Left column: scrollable setting cards, fixed to the mockup's 392 px.
-        left = tk.Frame(self.root, bg=C['page'])
+        left = tk.Frame(
+            self.root, bg=C['page'], highlightthickness=1,
+            highlightbackground=C['border_dark'])
         left.grid(row=1, column=0, sticky='nsew', padx=(P(14), P(8)), pady=P(12))
         left.grid_rowconfigure(0, weight=1)
         left.grid_columnconfigure(0, weight=1)
-        canvas = tk.Canvas(left, bg=C['page'], highlightthickness=0, width=P(392))
+        canvas = tk.Canvas(
+            left, bg=C['page'], highlightthickness=0, width=P(392),
+            yscrollincrement=P(16))
         scrollbar = ttk.Scrollbar(left, orient='vertical', command=canvas.yview)
         inner = tk.Frame(canvas, bg=C['page'])
         self._settings_inner = inner
+        self._settings_canvas = canvas
         window_id = canvas.create_window((0, 0), window=inner, anchor='nw')
         canvas.configure(yscrollcommand=scrollbar.set)
         canvas.grid(row=0, column=0, sticky='nsew')
@@ -739,11 +822,11 @@ class NeuroVisGUI:
             '<Configure>',
             lambda event: (canvas.itemconfigure(window_id, width=event.width),
                            sync_scroll_region()))
+        settings_wheel = self._settings_wheel_handler(canvas)
         for widget in (canvas, inner):
-            widget.bind('<MouseWheel>',
-                        lambda event: canvas.yview_scroll(int(-event.delta / 120), 'units'))
+            widget.bind('<MouseWheel>', settings_wheel)
 
-        body = self._card(inner, "Sample")
+        body = self._card(inner, "Neuron input")
         self._field(body, "Sample ID", self.sample_id, 0, width=16)
         self._field(body, "Neuron ID", self.neuron_id, 1, width=16)
         self.neuron_status_var = tk.StringVar(value="Neuron status: not loaded")
@@ -751,14 +834,18 @@ class NeuroVisGUI:
         status_row = tk.Frame(body, bg=C['card'])
         status_row.grid(row=2, column=0, columnspan=3, sticky='ew',
                         pady=(P(4), P(2)))
-        for column, (variable, fill) in enumerate((
-                (self.neuron_status_var, C['accent_soft']),
-                (self.region_status_var, '#eee8f8'))):
+        for column in range(2):
             status_row.grid_columnconfigure(column, weight=1)
+        status_boxes = (
+            (self.neuron_status_var, C['accent_soft'], 0, 0, 2),
+            (self.region_status_var, '#eee8f8', 1, 0, 2),
+        )
+        for variable, fill, row, column, columnspan in status_boxes:
             box = tk.Frame(status_row, bg=fill, highlightthickness=1,
                            highlightbackground=C['border'])
-            box.grid(row=0, column=column, sticky='nsew',
-                     padx=(0, P(3)) if column == 0 else (P(3), 0))
+            box.grid(row=row, column=column, columnspan=columnspan, sticky='nsew',
+                     padx=(0 if column == 0 else P(3), 0),
+                     pady=(0, P(3)) if row == 0 else (P(3), 0))
             tk.Label(box, textvariable=variable, bg=fill, fg=C['text'],
                      anchor='w', font=('Segoe UI', 9, 'bold'), justify='left',
                      wraplength=P(155)).pack(fill='x', padx=P(7), pady=P(5))
@@ -766,48 +853,112 @@ class NeuroVisGUI:
             body, "Neuron list", self._open_neuron_catalog, primary=True)
         self.neuron_catalog_open_button.grid(
             row=3, column=0, columnspan=3, sticky='ew', pady=(P(4), P(2)))
-
-        body = self._card(inner, "Target soma coordinates (µm)")
+        neuron_actions = tk.Frame(body, bg=C['card'])
+        neuron_actions.grid(row=4, column=0, columnspan=3, sticky='ew',
+                            pady=(P(4), P(2)))
+        neuron_actions.grid_columnconfigure(0, weight=1)
+        neuron_actions.grid_columnconfigure(1, weight=1)
+        self._flat_button(
+            neuron_actions, "Update figures", self._update_current_identity,
+            small=True, outlined=True).grid(
+                row=0, column=0, sticky='ew', padx=(0, P(3)))
+        self._flat_button(
+            neuron_actions, "Re-process", self._reprocess_current_identity,
+            primary=True, small=True, color='#9a5a24',
+            active='#7d4318', outlined=True).grid(
+                row=0, column=1, sticky='ew', padx=(P(3), 0))
+        body = self._card(inner, "Target soma coordinates")
+        physical = tk.Frame(
+            body, bg='#f7fafb', highlightthickness=1,
+            highlightbackground=C['border'])
+        physical.grid(row=0, column=0, sticky='ew', pady=(P(2), P(5)))
+        tk.Label(
+            physical, text='Physical coordinate (µm)', bg='#f7fafb',
+            fg=C['header'], font=('Segoe UI', 9, 'bold')).grid(
+                row=0, column=0, columnspan=6, sticky='w',
+                padx=P(7), pady=(P(5), P(2)))
         for column, (label, variable) in enumerate((
                 ("X", self.x_coord), ("Y", self.y_coord), ("Z", self.z_coord))):
-            tk.Label(body, text=label, bg=C['card'], fg=C['muted'],
+            tk.Label(physical, text=label, bg='#f7fafb', fg=C['muted'],
                      font=('Segoe UI', 9)).grid(
-                         row=0, column=column * 2, sticky='w',
-                         padx=(0 if column == 0 else P(6), 0))
-            entry = tk.Entry(body, textvariable=variable, width=7, relief='flat',
-                             bg=C['field'], fg=C['text'], highlightthickness=1,
-                             highlightbackground='#8fa3b2', highlightcolor=C['accent'],
-                             font=('Segoe UI', 9), insertbackground=C['text'])
-            entry.grid(row=0, column=column * 2 + 1, sticky='ew',
-                       padx=(P(6), P(8)), pady=P(3), ipady=P(3))
-            body.grid_columnconfigure(column * 2 + 1, weight=1)
+                         row=1, column=column * 2, sticky='w',
+                         padx=(P(7) if column == 0 else P(6), 0),
+                         pady=(0, P(5)))
+            entry = tk.Entry(
+                physical, textvariable=variable, width=7, relief='flat',
+                bg=C['field'], fg=C['text'], highlightthickness=1,
+                highlightbackground=C['field_border'],
+                highlightcolor=C['accent'],
+                font=('Segoe UI', 9), insertbackground=C['text'])
+            entry.grid(row=1, column=column * 2 + 1, sticky='ew',
+                       padx=(P(6), P(8) if column < 2 else P(7)),
+                       pady=(0, P(5)), ipady=P(3))
+            physical.grid_columnconfigure(column * 2 + 1, weight=1)
 
-        # Keep plotting settings in the original left-panel position. Each
-        # plot gets a full-width horizontal card with its source visible.
+        template = tk.Frame(
+            body, bg='#f4f0fa', highlightthickness=1,
+            highlightbackground='#cfc4e2')
+        template.grid(row=1, column=0, sticky='ew', pady=(0, P(3)))
+        tk.Label(
+            template, text='NMT template coordinate (voxel)', bg='#f4f0fa',
+            fg='#5d467e', font=('Segoe UI', 9, 'bold')).grid(
+                row=0, column=0, columnspan=6, sticky='w',
+                padx=P(7), pady=(P(5), P(2)))
+        for column, (label, variable) in enumerate((
+                ("X", self.nmt_x), ("Y", self.nmt_y), ("Z", self.nmt_z))):
+            tk.Label(template, text=label, bg='#f4f0fa', fg='#6d5a85',
+                     font=('Segoe UI', 9)).grid(
+                         row=1, column=column * 2, sticky='w',
+                         padx=(P(7) if column == 0 else P(6), 0),
+                         pady=(0, P(5)))
+            entry = tk.Entry(
+                template, textvariable=variable, width=7, relief='flat',
+                bg='#ece6f5', fg='#3f3155', readonlybackground='#ece6f5',
+                highlightthickness=1, highlightbackground='#c7bbdb',
+                font=('Segoe UI', 9, 'bold'), state='readonly')
+            entry.grid(row=1, column=column * 2 + 1, sticky='ew',
+                       padx=(P(6), P(8) if column < 2 else P(7)),
+                       pady=(0, P(5)), ipady=P(3))
+            template.grid_columnconfigure(column * 2 + 1, weight=1)
+        tk.Label(
+            body, text=('Derived by VisPa from IONData soma + configured NMT '
+                        'atlas; not inferred from edited physical X/Y/Z.'),
+            bg=C['card'], fg=C['muted'], font=('Segoe UI', 8),
+            justify='left', anchor='w', wraplength=P(340)).grid(
+                row=2, column=0, sticky='ew', pady=(0, P(3)))
+
+        # Put Soma and Context in the compact top row, with Sagittal spanning
+        # both columns underneath. Source text remains visible through wrapping.
         body = self._card(inner, 'Plotting settings')
-        body.grid_columnconfigure(0, weight=1)
+        for column in range(2):
+            body.grid_columnconfigure(column, weight=1, uniform='plots')
+        body.grid_rowconfigure(0, weight=1)
 
-        def plot_box(row, title):
+        def plot_box(row, column, title, *, columnspan=1):
             box = tk.Frame(body, bg=C['card'], highlightthickness=1,
                            highlightbackground=C['border'])
-            box.grid(row=row, column=0, sticky='ew',
-                     pady=(0 if row == 0 else P(4), P(4)))
+            box.grid(
+                row=row, column=column, columnspan=columnspan, sticky='nsew',
+                padx=(0 if column == 0 else P(3),
+                      0 if column + columnspan >= 2 else P(3)),
+                pady=(0, P(4)) if row else (0, P(6)))
             tk.Label(box, text=title, bg=C['card'], fg=C['header'],
                      font=('Segoe UI', 9, 'bold'), justify='left').pack(
                          anchor='w', padx=P(6), pady=(P(5), P(3)))
             return box
 
-        def plot_source(box, text=None, variable=None):
+        def plot_source(box, text=None, variable=None, *, wrap_width=156):
             tk.Label(box, text=text, textvariable=variable, bg=C['card'],
                      fg=C['muted'], font=('Segoe UI', 9), justify='left',
-                     anchor='w', wraplength=P(340)).pack(fill='x', padx=P(6),
+                     anchor='w', wraplength=P(wrap_width)).pack(fill='x', padx=P(6),
                                                        pady=(0, P(3)))
 
-        soma_box = plot_box(0, 'Soma plot')
+        soma_box = plot_box(0, 0, 'Soma plot')
         plot_source(soma_box, text='Window (blocks)')
         tk.Entry(soma_box, textvariable=self.soma_cubes, width=5, relief='flat',
                  bg=C['field'], fg=C['text'], highlightthickness=1,
-                 highlightbackground='#8fa3b2', highlightcolor=C['accent'],
+                 highlightbackground=C['field_border'],
+                 highlightcolor=C['accent'],
                  font=('Segoe UI', 9), insertbackground=C['text']).pack(
                      anchor='w', padx=P(6), pady=(0, P(4)), ipady=P(1))
         plot_source(soma_box, text=(
@@ -815,7 +966,7 @@ class NeuroVisGUI:
             f"default {REVIEW_SETTINGS['soma_window']['cubes_xy']:g}"))
         plot_source(soma_box, variable=self.soma_source)
 
-        ctx_box = plot_box(1, 'Context plot')
+        ctx_box = plot_box(0, 1, 'Context plot')
         ctx_fields = tk.Frame(ctx_box, bg=C['card'])
         ctx_fields.pack(fill='x', padx=P(6), pady=(0, P(4)))
         for column, (label, variable) in enumerate((
@@ -823,18 +974,20 @@ class NeuroVisGUI:
                 ('D', self.depth_um))):
             field = tk.Frame(ctx_fields, bg=C['card'])
             field.grid(row=0, column=column, sticky='ew', padx=P(1))
-            ctx_fields.grid_columnconfigure(column, weight=1)
+            ctx_fields.grid_columnconfigure(column, weight=1, uniform='context')
             tk.Label(field, text=label, bg=C['card'], fg=C['muted'],
                      font=('Segoe UI', 9)).pack(anchor='w')
             tk.Entry(field, textvariable=variable, width=4, relief='flat',
                      bg=C['field'], fg=C['text'], highlightthickness=1,
-                     highlightbackground='#8fa3b2', highlightcolor=C['accent'],
+                     highlightbackground=C['field_border'],
+                     highlightcolor=C['accent'],
                      font=('Segoe UI', 9), insertbackground=C['text']).pack(
                          fill='x', ipady=P(1))
         plot_source(ctx_box, text='Dimensions in µm · 3 µm per section')
         plot_source(ctx_box, variable=self.context_source)
 
-        sagittal_box = plot_box(2, 'Sagittal')
+        sagittal_box = plot_box(
+            1, 0, 'Sagittal plot', columnspan=2)
         self.sagittal_hint = tk.Label(sagittal_box, text='', bg=C['card'],
                                       fg=C['muted'], font=('Segoe UI', 9),
                                       anchor='w', wraplength=P(340), justify='left')
@@ -850,7 +1003,8 @@ class NeuroVisGUI:
                      row=0, column=0, columnspan=3, sticky='w', pady=(P(2), P(3)))
         out_entry = tk.Entry(body, textvariable=self.output_dir, relief='flat',
                              bg=C['field'], fg=C['text'], highlightthickness=1,
-                             highlightbackground='#8fa3b2', highlightcolor=C['accent'],
+                             highlightbackground=C['field_border'],
+                             highlightcolor=C['accent'],
                              font=('Segoe UI', 9), insertbackground=C['text'])
         out_entry.grid(row=1, column=0, columnspan=3, sticky='ew',
                        pady=(0, P(6)), ipady=P(3))
@@ -912,27 +1066,22 @@ class NeuroVisGUI:
                             highlightbackground=C['border'])
         tab_grid.pack(side='left')
         for index, (role, label) in enumerate((('Soma', 'Soma'), ('Context', 'Context'),
-                                               ('Sagittal', 'Sagittal'), ('TrioPlot', 'TrioPlot'),
+                                               ('Sagittal', 'Sagittal'),
+                                               ('TrioPlot', 'TrioPlot'),
                                                ('SWC3D', SWC_BRAIN_VIEW_LABEL))):
             button = tk.Button(tab_grid, text=label,
                                command=lambda r=role: self._show_role(r),
-                               relief='flat', bd=0, bg=C['card'], fg=C['text'],
+                               relief='raised', bd=1, bg=C['card'], fg=C['text'],
                                activebackground='#e7eef3', activeforeground=C['text'],
                                disabledforeground=C['disabled'],
                                font=('Segoe UI', 9, 'bold'), padx=P(16), pady=P(4),
-                               cursor='hand2', highlightthickness=0)
+                               cursor='hand2', highlightthickness=1,
+                               highlightbackground=C['button_border'],
+                               highlightcolor=C['accent'])
             button.grid(row=0, column=index, sticky='nsew',
                         padx=(0 if index == 0 else 1, 0))
             tab_grid.grid_columnconfigure(index, weight=1, uniform='tabs')
             self.preview_buttons[role] = button
-        reload_outline = tk.Frame(tabs, bg='#8da1b2')
-        reload_outline.pack(side='right')
-        tk.Button(reload_outline, text="Update figures", command=self._reload_existing,
-                  relief='flat', bd=0, bg='#f7fafc', fg=C['text'],
-                  activebackground='#e7eef3', activeforeground=C['text'],
-                  font=('Segoe UI', 9, 'bold'), padx=P(12), pady=P(4),
-                  cursor='hand2', highlightthickness=0).pack(padx=1, pady=1)
-
         # Process log (the toolkit's fetch/download/render lines, like the legacy status)
         log_frame = tk.Frame(preview_card, bg=C['card'])
         log_frame.pack(fill='x', padx=P(14), pady=(0, P(10)))
@@ -964,7 +1113,7 @@ class NeuroVisGUI:
         brain_button = self._flat_button(
             action_row, SWC_BRAIN_VIEW_INTERACTIVE_LABEL,
             self._on_template_brain_view, primary=True,
-            color='#e07a1f', active='#b95f10')
+            color='#e07a1f', active='#b95f10', outlined=True)
         brain_button.configure(font=('Segoe UI', 12, 'bold'),
                                padx=P(38), pady=P(12))
         brain_button.pack(side='left')
@@ -989,6 +1138,9 @@ class NeuroVisGUI:
 
         self._refresh_preview_tabs()
         self._refresh_plot_state()
+        self._bind_settings_wheel(
+            inner, self._settings_wheel_handler(canvas))
+        self.root.after_idle(sync_scroll_region)
         # Keyboard access to the selected-panel action (also handy for scripted checks).
         self.root.bind('<F5>', lambda event: self.run_selected())
         self.root.update_idletasks()
@@ -997,8 +1149,7 @@ class NeuroVisGUI:
         self.root.after(
             1500,
             lambda: self._reload_existing(
-                quiet=True, prompt=False, prompt_on_difference=False),
-        )
+                quiet=True, rerender_if_stale=False))
         self.root.after(700, self._start_resource_check)
 
     def _review_step(self, parent, row, number, name, headline, detail,
@@ -1077,16 +1228,46 @@ class NeuroVisGUI:
                 bind_wheel(child)
         bind_wheel(inner)
 
+    def _runtime_version_message(self):
+        report = self.version_report
+        detail = (
+            f"VisPa: {report['vispa_version']}\n"
+            f"Config: {report['config_name']} {report['config_version']}\n"
+            f"Config updated: {report['config_updated_at']}\n"
+            f"Mode: {'test output' if self.test_mode else 'configured output'}\n"
+            f"Path: {report['config_path']}\n"
+            f"Origin: {report['config_origin']}\n"
+            f"Output: {report['resolved_output_root']}\n"
+            f"Cache: {report['resolved_cache_root']}\n"
+            f"SHA-256: {report['config_sha256']}")
+        return detail
+
+    @staticmethod
+    def _version_display_rows(report):
+        """Return distinct application and configuration version values."""
+        app_version = report.get("vispa_version") or "unknown"
+        config_name = report.get("config_name") or "unknown"
+        config_version = report.get("config_version") or "unversioned"
+        updated = report.get("config_updated_at") or "unknown"
+        return (
+            ("APP VERSION", f"VisPa {app_version}"),
+            ("CONFIG VERSION",
+             f"{config_name} · {config_version}\nupdated {updated}"),
+        )
+
+    def _show_runtime_version(self):
+        messagebox.showinfo("VisPa runtime version", self._runtime_version_message())
+
     @staticmethod
     def _guide_sections():
         """Keep workflow guidance available without occupying the review pane."""
         return (
             ('1 · Select a neuron', (
-                'Enter Sample ID and Neuron ID, or choose an exact SWC ID from Neuron list. The two status boxes report neuron lookup and portal region separately.',
-                'Changing identity clears the previous coordinates and previews. Check the new identity before rendering.')),
+                'Enter Sample ID and Neuron ID, or choose an exact SWC ID from Neuron list. The status areas report neuron/cache, atlas-derived side, and portal region separately.',
+                'Changing identity clears the previous coordinates and previews. After the SWC loads, VisPa updates the Neuron status with the cached rendering state.')),
             ('2 · Check sources and target', (
                 'A valid identity loads the raw SWC root into X/Y/Z in µm. Edit the coordinates when the marker needs correction; use the displayed source hints to inspect the configured context.',
-                'A zero coordinate is accepted when explicitly supplied; inspect the marker rather than treating zero as a missing value.')),
+                'Update figures refreshes IONData and rerenders from cached acquisitions. Re-process refreshes the SWC and reacquires source cubes and slices.')),
             ('3 · Render and inspect', (
                 'Render (F5) builds Soma, Context, Sagittal and TrioPlot. Switch tabs to inspect each completed figure, marker position and axes.',
                 'Soma uses cached 0.65 µm CH1 cubes when available; missing cubes may be fetched. A failed input or panel is reported in the status/log.')),
@@ -1126,7 +1307,8 @@ class NeuroVisGUI:
                                             pady=P(1))
         entry = tk.Entry(parent, textvariable=variable, width=width, relief='flat',
                          bg=C['field'], fg=C['text'], highlightthickness=1,
-                         highlightbackground='#8fa3b2', highlightcolor=C['accent'],
+                         highlightbackground=C['field_border'],
+                         highlightcolor=C['accent'],
                          font=('Segoe UI', 10), insertbackground=C['text'])
         entry.grid(row=row, column=column + 1, sticky='ew',
                    padx=(P(8), P(6)), pady=P(1), ipady=P(2))
@@ -1139,12 +1321,10 @@ class NeuroVisGUI:
         return entry
 
     def _flat_button(self, parent, text, command, primary=False, small=False,
-                     color=None, active=None):
+                     color=None, active=None, outlined=True):
         C = self.COLORS
         fill = color or (C['accent'] if primary else C['card'])
         hover = active or (C['accent_dark'] if primary else '#e7eef3')
-        outlined = text in {'Guide', 'Settings', 'Browse…',
-                            'Open output folder', 'FNT setup…', 'Check data'}
         return tk.Button(
             parent, text=text, command=command,
             relief='raised' if outlined else 'flat', bd=1 if outlined else 0,
@@ -1153,7 +1333,8 @@ class NeuroVisGUI:
             activebackground=hover,
             activeforeground='#ffffff' if primary else C['text'],
             highlightthickness=1,
-            highlightbackground=fill if primary else '#8da1b2',
+            highlightbackground=C['button_border'],
+            highlightcolor=C['accent'],
             font=('Segoe UI', 10 if small else 11, 'bold'),
             padx=10 if small else 24, pady=3 if small else 9, cursor='hand2')
 
@@ -1169,56 +1350,194 @@ class NeuroVisGUI:
             return
         self._catalog_observed_sample_id = current
         self._catalog_request_id += 1
+        self._catalog_side_request_id = getattr(
+            self, "_catalog_side_request_id", 0) + 1
         self._catalog_sample_id = None
         self._catalog_snapshot = None
+        self._catalog_side_snapshot_id = None
+        self._catalog_side_result = None
+        self._catalog_side_state = "idle"
         self._catalog_rows_by_iid.clear()
+        if getattr(self, "_catalog_reload_after", None) is not None:
+            try:
+                self.root.after_cancel(self._catalog_reload_after)
+            except Exception:
+                pass
+            self._catalog_reload_after = None
+        if getattr(self, "_catalog_filter_after", None) is not None:
+            try:
+                self.root.after_cancel(self._catalog_filter_after)
+            except Exception:
+                pass
+            self._catalog_filter_after = None
         if self.neuron_catalog_table is not None:
             for item in self.neuron_catalog_table.get_children():
                 self.neuron_catalog_table.delete(item)
         if self._neuron_catalog_window is not None:
             if self.neuron_catalog_load_button is not None:
                 self.neuron_catalog_load_button.configure(state='normal')
-            self.neuron_catalog_info.set("Sample changed. Refresh the neuron list for this sample.")
+            if self.neuron_catalog_export_button is not None:
+                self.neuron_catalog_export_button.configure(state='disabled')
+            self.neuron_catalog_title.set(f"Refreshing sample {current or '—'}")
+            self.neuron_catalog_side_summary.set("")
+            self.neuron_catalog_info.set("Sample changed. Refreshing the neuron list…")
+            filter_variable = getattr(self, "_catalog_filter_var", None)
+            if filter_variable is not None:
+                filter_variable.set("")
+            region_variable = getattr(
+                self, "_catalog_region_filter_var", None)
+            if region_variable is not None:
+                region_variable.set(CATALOG_ALL_REGIONS)
+            if current:
+                def reload_current_sample():
+                    self._catalog_reload_after = None
+                    if (self._neuron_catalog_window is not None
+                            and self.sample_id.get().strip() == current):
+                        self.load_neuron_catalog()
+
+                self._catalog_reload_after = self.root.after(
+                    700, reload_current_sample)
 
     def _open_neuron_catalog(self):
         """Open the compact live-or-snapshot browser; keep the Sample card uncluttered."""
+        C = self.COLORS
         window = self._neuron_catalog_window
         if window is not None and window.winfo_exists():
-            window.lift()
-            if (self._catalog_sample_id == self.sample_id.get().strip()
-                    and self._catalog_snapshot is not None
-                    and IT.catalog_snapshot_unchanged(self._catalog_snapshot)):
+            if self.neuron_catalog_table is None:
+                self._close_neuron_catalog()
+                window = None
+            else:
+                window.lift()
+                if (self._catalog_sample_id == self.sample_id.get().strip()
+                        and self._catalog_snapshot is not None
+                        and IT.catalog_snapshot_unchanged(self._catalog_snapshot)):
+                    return
+                self.load_neuron_catalog()
                 return
-            self.load_neuron_catalog()
-            return
 
         window = tk.Toplevel(self.root)
         window.withdraw()
         window.title("Neuron list")
         window.transient(self.root)
-        window.grid_rowconfigure(2, weight=1)
+        window.grid_rowconfigure(3, weight=1)
         window.grid_columnconfigure(0, weight=1)
         self._neuron_catalog_window = window
-        tk.Label(window, textvariable=self.neuron_catalog_info, justify='left',
-                 anchor='w', wraplength=520, padx=12, pady=10).grid(
-                     row=0, column=0, columnspan=2, sticky='ew')
+        summary = tk.Frame(
+            window, bg=C['accent_soft'], highlightthickness=2,
+            highlightbackground=C['border_dark'])
+        summary.grid(row=0, column=0, columnspan=2, sticky='ew',
+                     padx=12, pady=(10, 4))
+        summary.grid_columnconfigure(0, weight=1)
+        tk.Label(
+            summary, textvariable=self.neuron_catalog_title,
+            bg=C['accent_soft'], fg=C['header'],
+            font=('Segoe UI', 10, 'bold'), anchor='w').grid(
+                row=0, column=0, sticky='ew', padx=(9, 6), pady=(8, 2))
+        tk.Label(
+            summary, textvariable=self.neuron_catalog_side_summary,
+            bg=C['accent_soft'], fg=C['accent_dark'],
+            font=('Segoe UI', 9, 'bold'), anchor='e').grid(
+                row=0, column=1, sticky='e', padx=(6, 9), pady=(8, 2))
+        tk.Label(
+            summary, textvariable=self.neuron_catalog_info,
+            bg=C['accent_soft'], fg=C['muted'],
+            font=('Segoe UI', 8), justify='left', anchor='w',
+            wraplength=510).grid(
+                row=1, column=0, columnspan=2, sticky='ew',
+                padx=9, pady=(0, 8))
         tk.Label(
             window,
             text=("INS cohort AnimalIDs (megatable): 331, 605, 631, 797, 900, 936, 945, 948\n"
                   "Separate sample: 747 (SampleID 250432)"),
             justify='left', anchor='w', wraplength=520, padx=12, pady=0,
-            foreground='#4d5f6f').grid(row=1, column=0, columnspan=2, sticky='ew')
+            foreground='#4d5f6f').grid(
+                row=1, column=0, columnspan=2, sticky='ew')
+        filter_row = tk.Frame(
+            window, bg=C['page'], highlightthickness=1,
+            highlightbackground=C['border_dark'])
+        filter_row.grid(row=2, column=0, columnspan=2, sticky='ew',
+                        padx=12, pady=(2, 6))
+        filter_row.grid_columnconfigure(1, weight=1)
+        tk.Label(
+            filter_row, text="Go to", font=('Segoe UI', 9, 'bold'),
+            bg=C['page'], foreground='#4d5f6f').grid(
+                row=0, column=0, sticky='w', padx=(8, 6), pady=6)
+        filter_entry = tk.Entry(
+            filter_row, textvariable=self._catalog_filter_var, relief='flat',
+            bg=C['field'], fg=C['text'], highlightthickness=1,
+            highlightbackground=C['field_border'],
+            highlightcolor=C['border_dark'],
+            font=('Segoe UI', 9), insertbackground=C['text'])
+        filter_entry.grid(row=0, column=1, sticky='ew', pady=6, ipady=3)
+
+        def clear_catalog_filters(_event=None):
+            self._catalog_filter_var.set("")
+            self._catalog_region_filter_var.set(CATALOG_ALL_REGIONS)
+
+        filter_entry.bind('<Escape>', clear_catalog_filters)
+        tk.Label(
+            filter_row, text="Region", font=('Segoe UI', 9, 'bold'),
+            bg=C['page'], foreground='#4d5f6f').grid(
+                row=0, column=2, sticky='w', padx=(10, 6), pady=6)
+        region_values = self._catalog_region_values(
+            (self._catalog_snapshot or {}).get("rows") or ())
+        self._catalog_region_selector = ttk.Combobox(
+            filter_row, textvariable=self._catalog_region_filter_var,
+            values=region_values, state='readonly', width=20,
+            style='VisPa.Neuron.TCombobox')
+        self._catalog_region_selector.grid(
+            row=0, column=3, sticky='ew', pady=6)
+        self._catalog_region_selector.bind(
+            '<<ComboboxSelected>>', self._schedule_neuron_catalog_filter)
+        tk.Label(
+            filter_row, textvariable=self.neuron_catalog_visible_count,
+            font=('Segoe UI', 8), bg=C['page'],
+            foreground=C['muted']).grid(
+                row=0, column=4, sticky='e', padx=(9, 8), pady=6)
         table_frame = tk.Frame(window)
-        table_frame.grid(row=2, column=0, columnspan=2, sticky='nsew', padx=12)
+        table_frame.grid(row=3, column=0, columnspan=2, sticky='nsew', padx=12)
         table_frame.grid_rowconfigure(0, weight=1)
         table_frame.grid_columnconfigure(0, weight=1)
+        catalog_style = ttk.Style(window)
+        catalog_style.configure(
+            "VisPa.Neuron.TCombobox",
+            fieldbackground=C['field'], foreground=C['text'],
+            arrowcolor=C['border_dark'],
+            bordercolor=C['border_dark'], lightcolor=C['border_dark'],
+            darkcolor=C['border_dark'], padding=3)
+        catalog_style.configure(
+            "VisPa.Neuron.Treeview",
+            background="#ffffff", fieldbackground="#ffffff",
+            foreground=self.COLORS['text'], rowheight=self._px(26),
+            borderwidth=1, relief="solid", bordercolor=C['border_dark'],
+            lightcolor=C['border_dark'], darkcolor=C['border_dark'])
+        catalog_style.map(
+            "VisPa.Neuron.Treeview",
+            background=[("selected", "#c9dce9")],
+            foreground=[("selected", "#102f42")])
         self.neuron_catalog_table = ttk.Treeview(
-            table_frame, columns=('neuron_id', 'portal_region'), show='headings',
-            height=18, selectmode='browse')
-        self.neuron_catalog_table.heading('neuron_id', text='SWC ID')
-        self.neuron_catalog_table.heading('portal_region', text='Portal region')
-        self.neuron_catalog_table.column('neuron_id', width=130, stretch=False)
-        self.neuron_catalog_table.column('portal_region', width=300, stretch=True)
+            table_frame, columns=('side', 'neuron_id', 'portal_region'),
+            show='headings', height=18, selectmode='browse',
+            style="VisPa.Neuron.Treeview")
+        self.neuron_catalog_table.heading(
+            'side', text='Side', command=lambda: self._sort_neuron_catalog('side'))
+        self.neuron_catalog_table.heading(
+            'neuron_id', text='SWC ID',
+            command=lambda: self._sort_neuron_catalog('neuron_id'))
+        self.neuron_catalog_table.heading(
+            'portal_region', text='Ion_NMT_region',
+            command=lambda: self._sort_neuron_catalog('portal_region'))
+        self.neuron_catalog_table.column('side', width=92, stretch=False, anchor='center')
+        self.neuron_catalog_table.column('neuron_id', width=108, stretch=False)
+        self.neuron_catalog_table.column('portal_region', width=282, stretch=True)
+        self.neuron_catalog_table.tag_configure(
+            'side-left', background='#eaf4fb', foreground='#164f78')
+        self.neuron_catalog_table.tag_configure(
+            'side-right', background='#fff0e4', foreground='#814313')
+        self.neuron_catalog_table.tag_configure(
+            'side-checking', background='#fffbea', foreground='#665515')
+        self.neuron_catalog_table.tag_configure(
+            'side-unknown', background='#f4f7f8', foreground='#4d626f')
         catalog_scroll = ttk.Scrollbar(
             table_frame, orient='vertical', command=self.neuron_catalog_table.yview)
         self.neuron_catalog_table.configure(yscrollcommand=catalog_scroll.set)
@@ -1228,18 +1547,26 @@ class NeuroVisGUI:
                                        self._on_neuron_catalog_selected)
         self.neuron_catalog_table.bind('<Double-1>', self._load_catalog_row_event)
         actions = tk.Frame(window)
-        actions.grid(row=3, column=0, columnspan=2, sticky='ew', padx=12, pady=8)
+        actions.grid(row=4, column=0, columnspan=2, sticky='ew', padx=12, pady=8)
         source_row = tk.Frame(actions)
         source_row.pack(fill='x')
         button_row = tk.Frame(actions)
         button_row.pack(fill='x', pady=(6, 0))
-        self.neuron_catalog_load_button = ttk.Button(
-            source_row, text="Refresh list", command=self.load_neuron_catalog)
+        self.neuron_catalog_load_button = self._flat_button(
+            source_row, "Refresh list", self.load_neuron_catalog, small=True)
         self.neuron_catalog_load_button.pack(side='left')
         self._configure_catalog_source_control(source_row)
-        ttk.Button(button_row, text="Load selected",
-                   command=self.load_selected_catalog_row).pack(side='left')
-        ttk.Button(button_row, text="Close", command=self._close_neuron_catalog).pack(side='right')
+        self._flat_button(
+            button_row, "Load selected", self.load_selected_catalog_row,
+            small=True).pack(side='left')
+        self.neuron_catalog_export_button = self._flat_button(
+            button_row, "Save CSV table", self.save_neuron_catalog_table,
+            small=True, color='#eef6f6', active='#dcecee')
+        self.neuron_catalog_export_button.configure(state='disabled')
+        self.neuron_catalog_export_button.pack(side='left', padx=(8, 0))
+        self._flat_button(
+            button_row, "Close", self._close_neuron_catalog,
+            small=True).pack(side='right')
         window.protocol("WM_DELETE_WINDOW", self._close_neuron_catalog)
         window.update_idletasks()
         width, height, x, y = self._catalog_geometry(
@@ -1251,7 +1578,20 @@ class NeuroVisGUI:
         if (self._catalog_sample_id == self.sample_id.get().strip()
                 and self._catalog_snapshot is not None
                 and IT.catalog_snapshot_unchanged(self._catalog_snapshot)):
-            self._populate_neuron_catalog(self._catalog_snapshot)
+            side_result = (
+                self._catalog_side_result
+                if self._catalog_side_snapshot_id == self._catalog_snapshot.get("snapshot_id")
+                else None)
+            self._populate_neuron_catalog(
+                self._catalog_snapshot, side_result=side_result,
+                side_state="complete" if side_result is not None else "checking")
+            if side_result is not None:
+                self._catalog_side_result = side_result
+                self._catalog_side_state = "complete"
+                if self.neuron_catalog_export_button is not None:
+                    self.neuron_catalog_export_button.configure(state='normal')
+            else:
+                self._start_catalog_side_load(self._catalog_snapshot)
         else:
             self.load_neuron_catalog()
 
@@ -1303,10 +1643,25 @@ class NeuroVisGUI:
         window = self._neuron_catalog_window
         if window is None:
             return
+        if getattr(self, "_catalog_reload_after", None) is not None:
+            try:
+                self.root.after_cancel(self._catalog_reload_after)
+            except Exception:
+                pass
+            self._catalog_reload_after = None
+        if getattr(self, "_catalog_filter_after", None) is not None:
+            try:
+                self.root.after_cancel(self._catalog_filter_after)
+            except Exception:
+                pass
+            self._catalog_filter_after = None
         self._catalog_request_id += 1
+        self._catalog_side_request_id = getattr(
+            self, "_catalog_side_request_id", 0) + 1
         self._neuron_catalog_window = None
         self.neuron_catalog_table = None
         self.neuron_catalog_load_button = None
+        self.neuron_catalog_export_button = None
         try:
             window.destroy()
         except tk.TclError:
@@ -1320,16 +1675,26 @@ class NeuroVisGUI:
             return
         if self._neuron_catalog_window is None or not self._neuron_catalog_window.winfo_exists():
             return
+        if self.neuron_catalog_table is None:
+            return
         self._catalog_request_id += 1
+        self._catalog_side_request_id += 1
         request_id = self._catalog_request_id
         requested_source = self._catalog_source
         self._catalog_sample_id = None
         self._catalog_snapshot = None
+        self._catalog_side_snapshot_id = None
+        self._catalog_side_result = None
+        self._catalog_side_state = "loading_catalog"
         self._catalog_rows_by_iid.clear()
         for item in self.neuron_catalog_table.get_children():
             self.neuron_catalog_table.delete(item)
-        self.neuron_catalog_info.set(f"Loading the configured neuron list for {sample_id}…")
+        self.neuron_catalog_title.set(f"Loading neuron catalog · sample {sample_id}")
+        self.neuron_catalog_side_summary.set("Side: waiting for catalog")
+        self.neuron_catalog_info.set("Reading the selected neuron source…")
         self.neuron_catalog_load_button.configure(state='disabled')
+        if self.neuron_catalog_export_button is not None:
+            self.neuron_catalog_export_button.configure(state='disabled')
 
         def worker():
             try:
@@ -1357,28 +1722,36 @@ class NeuroVisGUI:
         if error:
             self._catalog_sample_id = None
             self._catalog_snapshot = None
+            self._catalog_side_snapshot_id = None
+            self._catalog_side_result = None
+            self._catalog_side_state = "idle"
             self._catalog_rows_by_iid.clear()
+            if self.neuron_catalog_export_button is not None:
+                self.neuron_catalog_export_button.configure(state='disabled')
             for item in self.neuron_catalog_table.get_children():
                 self.neuron_catalog_table.delete(item)
+            self.neuron_catalog_title.set("Neuron catalog unavailable")
+            self.neuron_catalog_side_summary.set("")
             self.neuron_catalog_info.set(f"Could not load neuron list: {error}")
+            self._update_neuron_catalog_region_values(())
             self.update_status("Neuron list unavailable; check the selected source and network")
             return
         self._catalog_sample_id = sample_id
         self._catalog_snapshot = result
-        self._populate_neuron_catalog(result)
+        self._populate_neuron_catalog(result, side_state="checking")
+        self._start_catalog_side_load(result)
         source_label = "live IONData" if result.get('source_kind') == 'live-iondata' else "dated snapshot"
         self.update_status(f"Loaded {result['count']} neuron IDs from {source_label} for {sample_id}")
 
-    def _populate_neuron_catalog(self, result):
+    def _populate_neuron_catalog(self, result, *, side_result=None,
+                                 side_state="checking"):
+        self._catalog_view_side_result = side_result
+        self._catalog_view_side_state = side_state
+        self._update_neuron_catalog_region_values(result.get("rows") or ())
         self._catalog_rows_by_iid.clear()
         for item in self.neuron_catalog_table.get_children():
             self.neuron_catalog_table.delete(item)
-        for index, row in enumerate(result["rows"]):
-            iid = f"neuron-{index}"
-            self._catalog_rows_by_iid[iid] = row
-            region = row["portal_region"] if row["portal_region"] else "Unassigned"
-            self.neuron_catalog_table.insert(
-                '', 'end', iid=iid, values=(row["neuron_id"], region))
+        self._render_neuron_catalog_rows(result)
         monkey = result.get("monkey_id")
         if not monkey:
             try:
@@ -1388,16 +1761,328 @@ class NeuroVisGUI:
             except Exception:
                 monkey = None
         monkey = monkey or "unmapped"
-        if result.get('source_kind') == 'live-iondata':
-            self.neuron_catalog_info.set(
-                f"Live IONData · sample {result['sample_id']} · monkey {monkey} · "
-                f"{result['count']} neurons · fetched {result.get('fetched_at', 'time unknown')}\n"
-                f"{result.get('request_url', 'source URL unavailable')} · SHA-256 {result['sha256']}")
+        if side_result is not None:
+            counts = side_result.get("counts") or {}
+            side_summary = (
+                f"Side: Left {counts.get('Left', 0)} · "
+                f"Right {counts.get('Right', 0)} · "
+                f"Unknown {counts.get('Unknown', 0)}")
+            side_method = (side_result.get("source") or {}).get("method") or "unavailable"
+            side_line = side_method
+        elif side_state in {"checking", "loading"}:
+            side_summary = "Side: checking…"
+            side_line = "Loading sides via IONData soma + NMT atlas"
         else:
+            side_summary = "Side: not loaded"
+            side_line = "No side result"
+        self.neuron_catalog_side_summary.set(side_summary)
+        if result.get('source_kind') == 'live-iondata':
+            self.neuron_catalog_title.set(
+                f"Live IONData · sample {result['sample_id']} · monkey {monkey} · "
+                f"{result['count']} neurons")
             self.neuron_catalog_info.set(
+                f"{side_line} · fetched {result.get('fetched_at', 'time unknown')}\n"
+                f"SHA-256 {result['sha256']}")
+        else:
+            self.neuron_catalog_title.set(
                 f"Dated snapshot {result.get('source_date') or 'unknown'} · "
-                f"sample {result['sample_id']} · monkey {monkey} · {result['count']} neurons\n"
-                f"{result.get('source_path', 'source path unavailable')} · SHA-256 {result['sha256']}")
+                f"sample {result['sample_id']} · monkey {monkey} · {result['count']} neurons")
+            self.neuron_catalog_info.set(
+                f"{side_line} · SHA-256 {result['sha256']}")
+
+    @staticmethod
+    def _catalog_side_value(row, side_result, side_state):
+        side_results = (side_result or {}).get("results") or {}
+        side_record = side_results.get(row["neuron_id"]) or {}
+        if side_record.get("status") == "verified":
+            side = side_record.get("side") or "Unknown"
+            return side, f"side-{side.lower()}"
+        if side_state in {"checking", "loading"}:
+            return "Checking", "side-checking"
+        return "Unknown", "side-unknown"
+
+    @staticmethod
+    def _catalog_neuron_sort_key(neuron_id):
+        return tuple(
+            int(part) if part.isdigit() else part.lower()
+            for part in re.split(r"(\d+)", str(neuron_id)))
+
+    @staticmethod
+    def _catalog_region_values(rows):
+        regions = {
+            str(row.get("portal_region") or "Unassigned")
+            for row in rows
+        }
+        return (
+            CATALOG_ALL_REGIONS,
+            *sorted(regions, key=str.casefold),
+        )
+
+    def _update_neuron_catalog_region_values(self, rows):
+        selector = getattr(self, "_catalog_region_selector", None)
+        values = self._catalog_region_values(rows)
+        if selector is not None:
+            selector.configure(values=values)
+        variable = getattr(self, "_catalog_region_filter_var", None)
+        if variable is not None and variable.get() not in values:
+            variable.set(CATALOG_ALL_REGIONS)
+
+    def _catalog_filtered_rows(self, rows):
+        filter_variable = getattr(self, "_catalog_filter_var", None)
+        filter_text = filter_variable.get() if filter_variable is not None else ""
+        region_variable = getattr(self, "_catalog_region_filter_var", None)
+        region_filter = (
+            region_variable.get().strip()
+            if region_variable is not None else CATALOG_ALL_REGIONS)
+        terms = [term for term in filter_text.lower().split()
+                 if term]
+        visible = []
+        for index, row in enumerate(rows):
+            side, _tag = self._catalog_side_value(
+                row, self._catalog_view_side_result,
+                self._catalog_view_side_state)
+            region = row.get("portal_region") or "Unassigned"
+            if (region_filter
+                    and region_filter != CATALOG_ALL_REGIONS
+                    and region != region_filter):
+                continue
+            searchable = " ".join((
+                side, row.get("neuron_id", ""), region)).lower()
+            if all(term in searchable for term in terms):
+                visible.append((index, row, side, region))
+        column = getattr(self, "_catalog_sort_column", None)
+        if column is not None:
+            positions = {'side': 2, 'neuron_id': 1, 'portal_region': 3}
+            position = positions[column]
+            if column == 'neuron_id':
+                key = lambda entry: (
+                    self._catalog_neuron_sort_key(entry[1].get('neuron_id', '')),
+                    entry[0])
+            elif column == 'side':
+                ranks = {'Left': 0, 'Right': 1, 'Unknown': 2, 'Checking': 3}
+                key = lambda entry: (ranks.get(entry[2], 9), entry[0])
+            else:
+                key = lambda entry: (str(entry[position]).lower(), entry[0])
+            visible.sort(
+                key=key, reverse=getattr(self, "_catalog_sort_reverse", False))
+        return visible
+
+    def _render_neuron_catalog_rows(self, result=None):
+        table = getattr(self, "neuron_catalog_table", None)
+        if table is None:
+            return
+        source = result if result is not None else getattr(
+            self, "_catalog_snapshot", None)
+        rows = (source or {}).get("rows") or []
+        visible = self._catalog_filtered_rows(rows)
+        children = list(table.get_children())
+        filter_variable = getattr(self, "_catalog_filter_var", None)
+        region_variable = getattr(self, "_catalog_region_filter_var", None)
+        region_filter = (
+            region_variable.get().strip()
+            if region_variable is not None else CATALOG_ALL_REGIONS)
+        filters_active = (
+            bool(filter_variable.get().strip()
+                 if filter_variable is not None else "")
+            or (
+                bool(region_filter)
+                and region_filter != CATALOG_ALL_REGIONS
+            ))
+        in_place = (
+            not filters_active and getattr(
+                self, "_catalog_sort_column", None) is None
+            and len(children) == len(visible))
+        if not in_place:
+            for item in children:
+                table.delete(item)
+            children = []
+        else:
+            self._catalog_rows_by_iid.clear()
+        for position, (index, row, side, region) in enumerate(visible):
+            iid = f"neuron-{index}"
+            self._catalog_rows_by_iid[iid] = row
+            _side, tag = self._catalog_side_value(
+                row, self._catalog_view_side_result,
+                self._catalog_view_side_state)
+            if in_place and children[position] == iid:
+                table.item(
+                    iid, values=(side, row["neuron_id"], region), tags=(tag,))
+            else:
+                if in_place:
+                    table.delete(children[position])
+                table.insert(
+                    '', 'end', iid=iid, values=(side, row["neuron_id"], region),
+                    tags=(tag,))
+        variable = getattr(self, "neuron_catalog_visible_count", None)
+        if variable is not None:
+            variable.set(f"Showing {len(visible)} / {len(rows)}")
+        self._update_neuron_catalog_headings()
+
+    def _update_neuron_catalog_headings(self):
+        table = getattr(self, "neuron_catalog_table", None)
+        if table is None or not callable(getattr(table, "heading", None)):
+            return
+        labels = {'side': 'Side', 'neuron_id': 'SWC ID',
+                  'portal_region': 'Ion_NMT_region'}
+        for column, label in labels.items():
+            suffix = ""
+            if getattr(self, "_catalog_sort_column", None) == column:
+                suffix = " ↓" if getattr(
+                    self, "_catalog_sort_reverse", False) else " ↑"
+            table.heading(column, text=f"{label}{suffix}")
+
+    def _schedule_neuron_catalog_filter(self, *_args):
+        if getattr(self, "_catalog_filter_after", None) is not None:
+            try:
+                self.root.after_cancel(self._catalog_filter_after)
+            except Exception:
+                pass
+        self._catalog_filter_after = self.root.after(
+            120, self._apply_neuron_catalog_filter)
+
+    def _apply_neuron_catalog_filter(self):
+        self._catalog_filter_after = None
+        if (getattr(self, "_neuron_catalog_window", None) is not None
+                and getattr(self, "_catalog_snapshot", None) is not None):
+            self._render_neuron_catalog_rows(self._catalog_snapshot)
+
+    def _sort_neuron_catalog(self, column):
+        if column not in {'side', 'neuron_id', 'portal_region'}:
+            return
+        if self._catalog_sort_column == column:
+            self._catalog_sort_reverse = not self._catalog_sort_reverse
+        else:
+            self._catalog_sort_column = column
+            self._catalog_sort_reverse = False
+        self._apply_neuron_catalog_filter()
+
+    def _start_catalog_side_load(self, snapshot):
+        """Load all visible sides through VisPa's shared side mechanism."""
+        if not snapshot or not snapshot.get("rows"):
+            self._catalog_side_result = {
+                "status": "complete", "results": {},
+                "counts": {"Left": 0, "Right": 0, "Unknown": 0},
+                "source": {"method": "empty_catalog"},
+            }
+            self._catalog_side_snapshot_id = snapshot.get("snapshot_id") if snapshot else None
+            self._catalog_side_state = "complete"
+            return
+        self._catalog_side_request_id += 1
+        request_id = self._catalog_side_request_id
+        sample_id = snapshot["sample_id"]
+        snapshot_id = snapshot.get("snapshot_id")
+        self._catalog_side_snapshot_id = snapshot_id
+        self._catalog_side_result = None
+        self._catalog_side_state = "checking"
+        if self.neuron_catalog_export_button is not None:
+            self.neuron_catalog_export_button.configure(state='disabled')
+        neuron_ids = [row["neuron_id"] for row in snapshot.get("rows", ())]
+
+        def worker():
+            try:
+                result = IT.acquire_neuron_sides(
+                    sample_id, neuron_ids, self._side_config)
+                error = None
+            except Exception as exc:
+                result, error = None, str(exc)
+            self._ui_call(
+                self._apply_catalog_side_load,
+                request_id, sample_id, snapshot_id, result, error)
+
+        threading.Thread(target=worker, name="vispa-catalog-sides", daemon=True).start()
+
+    def _apply_catalog_side_load(self, request_id, sample_id, snapshot_id,
+                                 result, error):
+        window = self._neuron_catalog_window
+        snapshot = self._catalog_snapshot
+        if request_id != self._catalog_side_request_id:
+            return
+        if (window is None or not window.winfo_exists()
+                or snapshot is None
+                or not IT.catalog_matches_sample(sample_id, self.sample_id.get())
+                or self._catalog_sample_id != sample_id
+                or self._catalog_snapshot is None
+                or self._catalog_snapshot.get("snapshot_id") != snapshot_id
+                or not IT.catalog_snapshot_unchanged(snapshot)):
+            return
+        if error:
+            result = {
+                "status": "unavailable",
+                "results": {},
+                "counts": {"Left": 0, "Right": 0, "Unknown": snapshot["count"]},
+                "source": {"method": "unavailable", "reason": error},
+            }
+        self._catalog_side_result = result
+        self._catalog_side_snapshot_id = snapshot_id
+        self._catalog_side_state = "complete"
+        for neuron_id, side_record in (result.get("results") or {}).items():
+            self._neuron_side_cache[(sample_id, neuron_id)] = side_record
+        self._populate_neuron_catalog(
+            snapshot, side_result=result, side_state="complete")
+        if self.neuron_catalog_export_button is not None:
+            self.neuron_catalog_export_button.configure(state='normal')
+        self._update_neuron_status()
+        counts = result.get("counts") or {}
+        if result.get("status") == "unavailable":
+            self.update_status("Side lookup unavailable; the neuron table can still be saved")
+        else:
+            self.update_status(
+                f"Side lookup complete · Left {counts.get('Left', 0)} · "
+                f"Right {counts.get('Right', 0)} · Unknown {counts.get('Unknown', 0)}")
+
+    def save_neuron_catalog_table(self):
+        """Prompt for a CSV destination and save the current catalog record."""
+        snapshot = self._catalog_snapshot
+        side_result = self._catalog_side_result
+        sample_id = self._catalog_sample_id
+        if snapshot is None or side_result is None or sample_id is None:
+            self.update_status("Load the neuron list and finish side lookup before saving")
+            return
+        if (not IT.catalog_matches_sample(sample_id, self.sample_id.get())
+                or not IT.catalog_snapshot_unchanged(snapshot)):
+            self.update_status("The current neuron table is stale; reload it before saving")
+            return
+        monkey = (snapshot.get("monkey_id") or "").strip()
+        if not monkey:
+            try:
+                from .config import load as load_config
+                monkey = (load_config(self.config_path).get("samples", {})
+                          .get(sample_id, {}).get("monkey") or "")
+            except Exception:
+                monkey = ""
+        default_folder = Path(
+            getattr(self, "output_root", "") or self._configured_output_root()
+        ) / "table" / "ion_neuronlists"
+        try:
+            default_folder.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            self.update_status(f"Could not prepare default table folder: {exc}")
+            return
+        default_name = IT.neuron_catalog_table_filename(
+            snapshot, monkey or "unmapped")
+        chosen = filedialog.asksaveasfilename(
+            parent=self._neuron_catalog_window or self.root,
+            title="Save neuron catalog table",
+            initialdir=str(default_folder),
+            initialfile=default_name,
+            defaultextension=".csv",
+            filetypes=(("CSV table", "*.csv"), ("All files", "*.*")))
+        if not chosen:
+            self.update_status("Neuron table save cancelled")
+            return
+        try:
+            result = IT.write_neuron_catalog_table(
+                snapshot, side_result, Path(chosen).parent,
+                monkey or "unmapped", output_path=chosen)
+        except Exception as exc:
+            self.update_status(f"Could not save the neuron table: {exc}")
+            self._append_log(f"Neuron table save failed: {exc}")
+            return
+        self.update_status(
+            f"Saved {result['row_count']} neuron records to {result['path']}")
+        self._append_log(
+            f"Neuron table saved: {result['path']} · SHA-256 {result['sha256']}")
+        self.neuron_catalog_info.set(f"Saved record · {result['path']}")
 
     def _on_template_brain_view(self):
         """Pass current identity and catalog region to the audited OpenGL hook."""
@@ -1605,22 +2290,24 @@ class NeuroVisGUI:
             self._set_region_status(f"Region: unavailable ({detail})")
 
     def _refresh_neuron_side(self):
-        """Read an exact-neuron workbook off the UI thread when configured."""
+        """Acquire exact-neuron side off the UI thread."""
         sample = self.sample_id.get().strip()
         neuron = self.neuron_id.get().strip()
         identity = (sample, neuron)
-        if (not self._neuron_tables_root or not sample or not neuron or
-                identity in self._neuron_side_cache or identity in self._neuron_side_pending):
+        self._update_nmt_coordinate_display()
+        if (not sample or not neuron or identity in self._neuron_side_cache
+                or identity in self._neuron_side_pending):
             return
         self._neuron_side_pending.add(identity)
+        self._update_nmt_coordinate_display()
 
         def worker():
             try:
-                from .neuron_side import lookup_neuron_side
-                result = lookup_neuron_side(self._neuron_tables_root, sample, neuron)
+                from .data_input_adaptor import acquire_neuron_side
+                result = acquire_neuron_side(sample, neuron, self._side_config)
             except Exception as exc:
                 result = {'status': 'unknown', 'side': None,
-                          'reason': f'FULL workbook lookup failed: {exc}', 'source': None}
+                          'reason': f'side acquisition failed: {exc}', 'source': None}
             self._ui_call(self._store_neuron_side, identity, result)
 
         threading.Thread(target=worker, daemon=True).start()
@@ -1633,14 +2320,37 @@ class NeuroVisGUI:
         if result.get('status') == 'verified':
             source = result.get('source') or {}
             self._append_log(
-                f"Neuron side {result['side']} from FULL Summary row {source.get('row')} "
-                f"({Path(str(source.get('path', ''))).name}, SHA256 {source.get('sha256', '')})")
+                f"Neuron side {result['side']} via {source.get('method') or 'declared source'}: "
+                f"{source.get('atlas_region') or source.get('soma_region') or 'region unavailable'} "
+                f"({Path(str(source.get('atlas_path') or source.get('path') or '')).name})")
         self._update_neuron_status()
+
+    def _update_nmt_coordinate_display(self):
+        """Show the atlas voxel already resolved by VisPa's side lookup."""
+        variables = tuple(getattr(self, name, None)
+                          for name in ("nmt_x", "nmt_y", "nmt_z"))
+        if any(variable is None for variable in variables):
+            return
+        sample_id = self.sample_id.get().strip()
+        neuron_id = self.neuron_id.get().strip()
+        identity = (sample_id, neuron_id)
+        result = getattr(self, "_neuron_side_cache", {}).get(identity) or {}
+        source = result.get("source") or {}
+        voxel = source.get("atlas_voxel")
+        if result.get("status") == "verified" and isinstance(voxel, (list, tuple)) and len(voxel) == 3:
+            values = tuple(str(int(value)) for value in voxel)
+        elif identity in getattr(self, "_neuron_side_pending", set()):
+            values = ("…", "…", "…")
+        else:
+            values = ("—", "—", "—")
+        for variable, value in zip(variables, values):
+            variable.set(value)
 
     def _update_neuron_status(self):
         """Keep neuron lookup and region boxes current for the selected identity."""
         sample = self.sample_id.get().strip()
         neuron = self.neuron_id.get().strip()
+        self._update_nmt_coordinate_display()
         if not sample or not neuron:
             self._set_neuron_status("Neuron status: not loaded")
             self._set_region_status("Region: unavailable")
@@ -1648,14 +2358,20 @@ class NeuroVisGUI:
         mapping = self._portal_region_cache.get(sample) or {}
         region = mapping.get(neuron)
         side_result = getattr(self, '_neuron_side_cache', {}).get((sample, neuron)) or {}
-        side = (side_result['side'] if
-                side_result.get('status') == 'verified' else 'side unverified')
+        verified_side = (side_result.get('side') if
+                         side_result.get('status') == 'verified' else None)
         state = getattr(self, "_neuron_lookup_state", "idle")
         self._set_region_status(
-            f"Region: {region} · {side}" if region else
+            (f"Region: {verified_side} {region}" if verified_side else
+             f"Region: {region} · side unverified") if region else
             "Region: unavailable" if state == "not_found" else "Region: checking")
         if state == "found":
-            self._set_neuron_status("Neuron status: found")
+            cache_status = getattr(self, '_cache_status', '')
+            cache_state = (cache_status.partition(":")[2].strip()
+                           if cache_status.startswith("cached:") else "")
+            suffix = (" · cached" if cache_state and cache_state not in
+                      {"none", "checking", "not checked"} else "")
+            self._set_neuron_status(f"Neuron status: found{suffix}")
         elif state == "not_found":
             self._set_neuron_status("Neuron status: not found")
         elif state == "error":
@@ -1727,6 +2443,10 @@ class NeuroVisGUI:
             return
         kept = [path for path in paths if path]
         self._ui_call(self._register_outputs, kept)
+        self._cache_status = (
+            f"cached: current ({len(kept)} figures)" if request.save_outputs and kept
+            else "cached: preview only" if kept else "cached: none")
+        self._update_neuron_status()
         folder = os.path.dirname(kept[0]) if kept else request.output_dir
         note = "" if request.save_outputs else "  ·  preview only (not saved)"
         if errors:
@@ -1792,11 +2512,6 @@ class NeuroVisGUI:
             entry = SAMPLE_PATHS.get(sample) or {}
             ds_path = entry.get('ds00_processed')
             ds_name = os.path.basename(str(ds_path)) if ds_path else None
-            orientation = 'unspecified'
-            if ds_name:
-                match = re.search(r'orient[-_]([A-Za-z]+)', ds_name)
-                if match:
-                    orientation = match.group(1).upper()
             resolution = 'resolution unknown'
             if ds_name:
                 size = re.search(r'(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)', ds_name)
@@ -1806,8 +2521,7 @@ class NeuroVisGUI:
                 ok, text = False, f"No DS00 source registered for {sample}"
             else:
                 ok, text = True, (
-                    f"DS00 processed volume · {resolution} · "
-                    f"filename declares {orientation} orientation\n"
+                    f"DS00 processed volume · {resolution}\n"
                     f"File: {ds_name}")
         except Exception as exc:
             ok, text = False, f"Sagittal: source check failed ({exc})"
@@ -2229,8 +2943,8 @@ class NeuroVisGUI:
                     found[role] = path
         return folders, found, receipt_entry
 
-    def _reload_existing(self, quiet=False, prompt=True, prompt_on_difference=True):
-        """Load existing figures, checking whether a re-render is needed."""
+    def _reload_existing(self, quiet=False, rerender_if_stale=True):
+        """Update the preview from the newest cached rendering data."""
         try:
             if not self.root.winfo_exists():
                 return
@@ -2242,36 +2956,59 @@ class NeuroVisGUI:
             if not quiet:
                 self.update_status("Choose a sample and neuron first")
             return
-        folders, found, receipt_entry = self._find_cached_figures(sample, neuron)
+        self._activate_cached_figures(
+            sample, neuron, quiet=quiet, start_fnt=not quiet,
+            rerender_if_stale=rerender_if_stale)
+
+    def _activate_cached_figures(self, sample, neuron, *, quiet=False,
+                                 start_fnt=False, rerender_if_stale=False):
+        """Load cached rendering data without prompting or re-rendering."""
+        _folders, found, receipt_entry = self._find_cached_figures(sample, neuron)
         root = getattr(self, 'output_root', None) or self._configured_output_root()
         if not found:
+            self._cache_status = "cached: none"
+            self._update_neuron_status()
+            if rerender_if_stale:
+                self.update_status(
+                    f"No cached rendering data for {sample}/{neuron}; rendering now.")
+                self.run_selected(force_rerender=True)
+                return False
             if not quiet:
-                self.update_status(f"No existing figures for {sample}/{neuron} under {root}")
-            return
+                self.update_status(
+                    f"No cached rendering data for {sample}/{neuron} under {root}")
+            return False
+        folder = os.path.dirname(next(iter(found.values())))
         state, notes = (self._evaluate_cached(receipt_entry) if receipt_entry
                         else ('no_receipt', ['no render receipt recorded']))
-        ask = ((state == 'differs' and prompt_on_difference)
-               or (prompt and not quiet and state != 'no_coords'))
-        if ask:
-            detail = ("match the current coordinates and settings" if state == 'same'
-                      else "differ (" + "; ".join(notes) + ")")
-            question = (f"Cached figures for {sample}/{neuron} {detail}.\n\n"
-                        "Re-render now?\nYes = re-render, No = load the cached figures.")
-            if messagebox.askyesno("Cached figures", question):
-                self.run_selected(force_rerender=True)
-                return
+        if rerender_if_stale and state != 'same':
+            self._cache_status = "cached: stale · rendering"
+            self._update_neuron_status()
+            self.update_status(
+                "Cached figures do not match current coordinates/settings; "
+                "updating from existing acquisition cache.")
+            self.run_selected(force_rerender=True)
+            return False
         self.preview_files.update(found)
         self._refresh_preview_tabs()
         for role in ('Soma', 'Context', 'Sagittal', 'TrioPlot'):
             if role in found:
                 self._show_role(role)
                 break
-        note = "" if state == 'same' else f" · {state}: " + ", ".join(notes)
+        state_label = {
+            "same": "cached: current",
+            "differs": "cached: stale",
+            "no_receipt": "cached: unverified",
+            "no_coords": "cached: coordinates unavailable",
+        }.get(state, f"cached: {state}")
+        self._cache_status = (
+            f"{state_label} ({len(found)} figure{'s' if len(found) != 1 else ''})")
+        self._update_neuron_status()
+        note = "" if state == 'same' else f" · {', '.join(notes)}"
         self.update_status(
-            f"Updated preview from {len(found)} existing figure(s) for "
-            f"{sample}/{neuron}{note}")
-        if not quiet:
+            f"Loaded cached rendering data from output {folder}{note}")
+        if start_fnt:
             self._start_fnt_fetch(sample, neuron)
+        return True
 
     def _start_fnt_fetch(self, sample, neuron):
         """Fetch a matching FNT in the background without delaying cached figures."""
@@ -2410,7 +3147,7 @@ class NeuroVisGUI:
         scroll_y.grid(row=0, column=1, sticky='ns')
         scroll_x.grid(row=1, column=0, sticky='ew')
         default_tab = ttk.Frame(tabs)
-        tabs.add(default_tab, text='Default YAML')
+        tabs.add(default_tab, text='Frozen default YAML')
         ttk.Label(default_tab, text=f'Read-only reference · {default_source}',
                   wraplength=850).pack(anchor='w', padx=8, pady=(8, 2))
         ttk.Label(default_tab, text='Reset to default stages this profile in the editor; Save settings writes only the active configuration.',
@@ -2724,14 +3461,14 @@ class NeuroVisGUI:
         window.title("VisPa resource check")
         window.configure(bg=C['page'])
         window.transient(self.root)
-        width = min(self._px(760), self.root.winfo_screenwidth() - self._px(48))
-        height = min(self._px(720), self.root.winfo_screenheight() - self._px(72))
+        width = min(self._px(660), self.root.winfo_screenwidth() - self._px(48))
+        height = min(self._px(560), self.root.winfo_screenheight() - self._px(72))
         x = self.root.winfo_rootx() + max(0, (self.root.winfo_width() - width) // 2)
         y = self.root.winfo_rooty() + max(0, (self.root.winfo_height() - height) // 2)
         window.geometry(f"{width}x{height}+{x}+{y}")
-        window.minsize(self._px(620), self._px(520))
+        window.minsize(self._px(560), self._px(430))
         window.columnconfigure(0, weight=1)
-        window.rowconfigure(2, weight=1)
+        window.rowconfigure(3, weight=1)
 
         ready = bool(report.get("ready"))
         status_color = C['accent'] if ready else '#b34a4a'
@@ -2750,10 +3487,31 @@ class NeuroVisGUI:
                  bg=C['header'], fg=C['header_muted'],
                  font=('Segoe UI', 9), anchor='w').grid(
                      row=1, column=0, sticky='ew', pady=(self._px(2), 0))
+        version_report = getattr(self, "version_report", {})
+        versions = tk.Frame(header, bg=C['header'])
+        versions.grid(row=2, column=0, sticky='ew', pady=(self._px(5), 0))
+        versions.grid_columnconfigure(0, weight=1, uniform='versions')
+        versions.grid_columnconfigure(1, weight=1, uniform='versions')
+        version_rows = self._version_display_rows(version_report)
+        version_colors = (C['accent'], '#b9a4e4')
+        for column, ((label, value), color) in enumerate(
+                zip(version_rows, version_colors)):
+            block = tk.Frame(versions, bg=C['header'])
+            block.grid(row=0, column=column, sticky='nsew',
+                       padx=(0, self._px(12)) if column == 0 else
+                       (self._px(12), 0))
+            tk.Label(
+                block, text=label, bg=C['header'], fg=color,
+                font=('Segoe UI', 7, 'bold'), anchor='w').pack(fill='x')
+            tk.Label(
+                block, text=value, bg=C['header'], fg=C['header_text'],
+                font=('Consolas', 8, 'bold'), anchor='w', justify='left',
+                wraplength=max(self._px(220), width // 2 - self._px(36))).pack(
+                    fill='x')
         tk.Label(header, text=f"{report.get('checked', 0)} checks",
                  bg=C['header'], fg=C['header_text'],
                  font=('Segoe UI', 9, 'bold')).grid(
-                     row=0, column=1, rowspan=2, sticky='e')
+                     row=0, column=1, rowspan=3, sticky='e')
 
         summary = tk.Frame(window, bg=status_color, padx=self._px(20),
                            pady=self._px(10))
@@ -2765,9 +3523,43 @@ class NeuroVisGUI:
                  font=('Segoe UI', 11, 'bold'), anchor='w').pack(
                      fill='x')
 
+        key_panel = tk.Frame(
+            window, bg=C['page'], padx=self._px(18), pady=self._px(7))
+        key_panel.grid(row=2, column=0, sticky='ew')
+        key_panel.grid_columnconfigure(1, weight=1)
+        try:
+            from .config import load as load_config
+            configuration = load_config(self.config_path)
+            sample_entry = configuration["samples"].get(report.get("sample_id"), {})
+        except Exception:
+            configuration = {}
+            sample_entry = {}
+        defaults = configuration.get("defaults", {})
+        sources = configuration.get("sources", {})
+        visual = configuration.get("visual_toolkit", {})
+        key_values = (
+            ("Output", visual.get("output_root")),
+            ("Download cache", defaults.get("cache_root")),
+            ("IONData", sources.get("http_host")),
+            ("Processed SWC", sources.get("brain_view", {}).get("processed_swc_root")),
+            ("DS00", sample_entry.get("ds00_processed")),
+        )
+        for row_index, (label, value) in enumerate(key_values):
+            tk.Label(
+                key_panel, text=label, bg=C['page'], fg=C['muted'],
+                font=('Segoe UI', 8, 'bold'), anchor='nw').grid(
+                    row=row_index, column=0, sticky='nw',
+                    padx=(0, self._px(10)), pady=self._px(2))
+            tk.Label(
+                key_panel, text=str(value) if value else "not configured",
+                bg=C['page'], fg=C['text'], font=('Consolas', 8),
+                anchor='w', justify='left',
+                wraplength=max(self._px(300), width - self._px(150))).grid(
+                    row=row_index, column=1, sticky='ew', pady=self._px(2))
+
         body = tk.Frame(window, bg=C['card'], highlightthickness=1,
                         highlightbackground=C['border'])
-        body.grid(row=2, column=0, sticky='nsew',
+        body.grid(row=3, column=0, sticky='nsew',
                   padx=self._px(18), pady=(self._px(14), self._px(8)))
         body.columnconfigure(0, weight=1)
         body.rowconfigure(0, weight=1)
@@ -2836,7 +3628,7 @@ class NeuroVisGUI:
 
         footer = tk.Frame(window, bg=C['page'], padx=self._px(18),
                           pady=self._px(10))
-        footer.grid(row=3, column=0, sticky='ew')
+        footer.grid(row=4, column=0, sticky='ew')
         footer.columnconfigure(0, weight=1)
         tk.Label(
             footer,
@@ -2966,7 +3758,7 @@ class NeuroVisGUI:
         # Traces clear soma values and preview state as the identity changes. Call
         # explicitly too so partially initialized or headless instances stay safe.
         self._on_identity_change()
-        self._reload_existing(quiet=True, prompt=False, prompt_on_difference=False)
+        self._reload_existing(quiet=True, rerender_if_stale=False)
         self._review_session_error = None
         if not self._auto_fill_on_identity:
             self.update_status(
@@ -3039,12 +3831,16 @@ class NeuroVisGUI:
         """Compatibility entry point for the current live identity lookup."""
         self._auto_fill_current_identity()
 
-    def load_and_autofill(self, silent_success=False, silent_failure=False):
+    def load_and_autofill(self, silent_success=False, silent_failure=False,
+                          refresh=True, after_load=None):
         """Loads the neuron and automatically fills soma coordinates.
 
         Args:
             silent_success: If True, don't show success messagebox (for auto-load)
             silent_failure: If True, report lookup failure in the status panel only
+            refresh: Check IONData on every load; False explicitly reads local cache only.
+            after_load: Optional UI callback after coordinates and cache identity
+                are current. Defaults to loading cached rendering data.
         """
         sample_id = self.sample_id.get().strip()
         neuron_id = self.neuron_id.get().strip()
@@ -3062,11 +3858,13 @@ class NeuroVisGUI:
         def worker():
             self._ui_call(self._show_progress)
             try:
-                self.update_status(f"Loading {sample_id}/{neuron_id}…")
-                tree = IT.IONData().getRawNeuronTreeByID(sample_id, neuron_id)
+                source_label = "IONData" if refresh else "local cache"
+                self.update_status(f"Loading {sample_id}/{neuron_id} from {source_label}…")
+                tree = IT.IONData().getRawNeuronTreeByID(
+                    sample_id, neuron_id, refresh=refresh)
                 if tree is None:
-                    detail = (f"Could not load raw SWC for {sample_id}/{neuron_id}. "
-                              "Check the local cache or the portal settings.")
+                    detail = (f"Could not load raw SWC for {sample_id}/{neuron_id} "
+                              f"from {source_label}.")
                     def report_missing():
                         self._neuron_lookup_state = "not_found"
                         self._update_neuron_status()
@@ -3089,9 +3887,17 @@ class NeuroVisGUI:
                     self._neuron_lookup_state = "found"
                     self._neuron_lookup_error = None
                     self._update_neuron_status()
-                    self.update_status(f"✅ Loaded: {soma_xyz[0]:g}, {soma_xyz[1]:g}, {soma_xyz[2]:g}")
+                    self.update_status(
+                        f"✅ Loaded from {source_label}: "
+                        f"{soma_xyz[0]:g}, {soma_xyz[1]:g}, {soma_xyz[2]:g}")
                     if not silent_success:
                         messagebox.showinfo("Success", "Neuron Loaded & Coordinates Auto-filled!")
+                    if after_load is not None:
+                        after_load(sample_id, neuron_id)
+                    else:
+                        self._activate_cached_figures(
+                            sample_id, neuron_id.removesuffix(".swc"),
+                            quiet=False, start_fnt=False)
                 self.root.after(0, apply_if_current)
             except Exception as e:
                 status = f"⚠️ Auto-load failed: {e}" if silent_success else f"⚠️ Load failed: {e}"
@@ -3105,11 +3911,40 @@ class NeuroVisGUI:
                         self.update_status(status)
                     else:
                         messagebox.showerror("Load failed", status)
+                    self._check_identity_cache()
                 self.root.after(0, report_failure)
             finally:
                 self._ui_call(self._hide_progress)
 
         self._launch_processing(worker)
+
+    def _update_current_identity(self):
+        """Refresh the SWC, then rerender using existing acquisition caches."""
+        self.load_and_autofill(
+            silent_success=True,
+            after_load=lambda _sample, _neuron: self._render_from_acquisition_cache())
+
+    def _render_from_acquisition_cache(self):
+        """Force figure rendering while retaining downloaded cube/slice caches."""
+        self._cache_status = "cached: updating figures"
+        self._update_neuron_status()
+        self.update_status("Updating figures from cached acquisition data.")
+        self.run_selected(force_rerender=True, force_reprocess=False)
+
+    def _reprocess_current_identity(self):
+        """Refresh the SWC, then rebuild every panel from new acquisitions."""
+        self.load_and_autofill(
+            silent_success=True,
+            after_load=lambda _sample, _neuron: self._reprocess_from_sources())
+
+    def _reprocess_from_sources(self):
+        """Force all panels to acquire source cubes and slices again."""
+        self._cache_status = "cached: re-processing sources"
+        self._update_neuron_status()
+        self.update_status("Re-processing all figures with fresh source acquisition.")
+        self.run_selected(
+            roles=("Soma", "Context", "Sagittal"),
+            force_review_figure=True, force_reprocess=True)
 
     def _capture_processing_request(self):
         if not self.validate_inputs():
@@ -3210,7 +4045,7 @@ class NeuroVisGUI:
         self._ui_call(self._refresh_sagittal_hint)
         return panel
 
-    def _run_worker(self, request, work, message):
+    def _run_worker(self, request, work, message, *, force_reprocess=False):
         """Shared thread body: request + toolkit lifecycle, errors and progress."""
         def process():
             toolkit = None
@@ -3218,7 +4053,8 @@ class NeuroVisGUI:
                 self._ui_call(self._show_progress)
                 self._ui_call(self._append_log,
                               f"--- {request.sample_id}/{request.neuron_id} ---")
-                toolkit = VisPa(request.sample_id)
+                toolkit = VisPa(
+                    request.sample_id, force_reprocess=force_reprocess)
                 stream = getattr(self, '_log_stream', None)
                 if stream is not None:
                     # Show the toolkit's fetch/download/render lines in the GUI log.
@@ -3239,7 +4075,8 @@ class NeuroVisGUI:
                     toolkit.close()
         self._launch_processing(process)
 
-    def run_selected(self, roles=None, force_review_figure=False, force_rerender=False):
+    def run_selected(self, roles=None, force_review_figure=False,
+                     force_rerender=False, force_reprocess=False):
         """Render the panel set; no per-panel or per-artifact selection is exposed."""
         if getattr(self, '_operation_running', False):
             messagebox.showwarning("Busy", "A VisPa operation is already running.")
@@ -3261,7 +4098,7 @@ class NeuroVisGUI:
         make_review = force_review_figure or (
             bool(review_option.get()) if review_option is not None else False)
         force_option = getattr(self, 'force_rerender', None)
-        force = force_rerender or (
+        force = force_rerender or force_reprocess or (
             bool(force_option.get()) if force_option is not None else False)
         fingerprint = self._fingerprint()
 
@@ -3274,6 +4111,9 @@ class NeuroVisGUI:
                         and getattr(self, 'preview_label', None) is not None):
                     state, _notes = self._evaluate_cached(entry, roles=needed)
                     if state == 'same':
+                        self._cache_status = (
+                            f"cached: current ({len(needed)} figures)")
+                        self._update_neuron_status()
                         self.preview_files.update(
                             {role: found[role] for role in needed})
                         self._refresh_preview_tabs()
@@ -3345,7 +4185,8 @@ class NeuroVisGUI:
         self._begin_render_preview(request)
         self._run_worker(
             request, work,
-            lambda r: f"Rendered {' + '.join(rendered) if rendered else 'nothing'}")
+            lambda r: f"Rendered {' + '.join(rendered) if rendered else 'nothing'}",
+            force_reprocess=force_reprocess)
 
     def run_highres(self):
         """Render the Soma panel with the current ticks (kept as a direct action)."""
@@ -3418,6 +4259,8 @@ def _parse_launch_args(argv=None):
     parser.add_argument("--sample", dest="sample_id", help="exact sample ID, including any suffix")
     parser.add_argument("--neuron", dest="neuron_id", help="neuron basename, with or without .swc")
     parser.add_argument("--config", help="explicit dataset and output configuration file")
+    parser.add_argument("--test", action="store_true",
+                        help="use the selected config's local test-output overrides")
     parser.add_argument("--review-session", metavar="PATH",
                         help="read a projectome.neuron-review.v1 JSON identity handoff")
     parser.add_argument("--watch-session", action="store_true",
@@ -3465,7 +4308,7 @@ def _resolve_launch(parser, args):
 
 def _initialize_default_config_for_gui(args):
     """Initialize only a valid implicit first launch; explicit and read-only modes stay untouched."""
-    if args.config or args.dry_run:
+    if args.config or args.dry_run or args.test:
         return None
     if os.environ.get("VISPA_CONFIG"):
         return None
@@ -3476,13 +4319,22 @@ def _initialize_default_config_for_gui(args):
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     parser, args = _parse_launch_args(argv)
+    if args.test:
+        os.environ["VISPA_TEST_MODE"] = "1"
     _initialize_default_config_for_gui(args)
     identity, identity_source, effective_auto_load, config, session_event, session_payload = _resolve_launch(parser, args)
     if args.config:
         os.environ["VISPA_CONFIG"] = str(Path(args.config).expanduser().resolve())
     if args.dry_run:
+        from .config import config_version_report
+        version_report = config_version_report(config)
         output_root, output_root_source = _resolve_output_root(args.config)
         settings = {
+            "vispa_version": version_report["vispa_version"],
+            "config_name": version_report["config_name"],
+            "config_version": version_report["config_version"],
+            "config_sha256": version_report["config_sha256"],
+            "test_mode": bool(args.test),
             "sample_id": identity[0],
             "neuron_id": identity[1],
             "identity_source": identity_source,
@@ -3512,7 +4364,8 @@ def main(argv=None):
                       review_session=session_event,
                       watch_session=args.watch_session,
                       config_path=args.config,
-                      auto_fill_on_identity=not args.no_autoload)
+                      auto_fill_on_identity=not args.no_autoload,
+                      test_mode=args.test)
     app.identity_source = identity_source
     root.mainloop()
     return 0

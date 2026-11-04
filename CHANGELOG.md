@@ -1,5 +1,286 @@
 # VisPa change log
 
+## 1.13.0.dev14 — 2026-11-04 (local/unreleased candidate)
+- Show the application and selected configuration as separate version blocks in
+  the resource-check header. The package version and config version are distinct
+  values and must not be read as one interchangeable version.
+- Arrange Soma and Context as the compact top row of Plotting settings, restore
+  the horizontal `W` / `H` / `D` Context fields, and place Sagittal underneath
+  spanning both columns.
+- Reconcile the local VisPa clones and project checkouts onto the current
+  main-candidate source while preserving superseded branch work.
+- Validation: focused GUI/style tests plus the reconciled worktree inventory.
+
+## 1.13.0.dev13 — 2026-11-04 (local/unreleased candidate)
+- Replace the neuron-list free-text-only filter row with **Go to** followed by
+  the search entry and an exact **Region** selector. The selector lists
+  `All regions` plus the sorted portal labels in the loaded snapshot and filters
+  locally without refetching IONData. Escape clears both filters.
+- Rename the visible table heading from **Portal region** to
+  **Ion_NMT_region**. The underlying `portal_region` field and source values
+  remain unchanged.
+- Use a darker structural border family for the neuron-list summary, filter row,
+  table, shared buttons, editable fields and the outer left settings panel.
+  Existing surfaces, text colors, fonts and content styling remain unchanged.
+- Make the complete left settings panel respond to the mouse wheel from entries,
+  labels, plot cards and other child widgets, not only from the canvas
+  background. Keep the scroll range synchronized after the full card layout is
+  built.
+- Arrange Soma and Context as two equal-width cards on the compact top row and
+  place Sagittal underneath, spanning both columns. Context uses the compact
+  horizontal `W` / `H` / `D` field row, and source descriptions wrap within
+  their cards.
+- Validation: focused neuron-list filter/sort/GUI tests, wheel-binding tests and
+  a hidden Tk widget construction check.
+
+## 1.13.0.dev12 — 2026-11-04 (local/unreleased candidate)
+- Add `vispa context` for one exact sample/neuron: fetch the raw SWC, render
+  the native 5 µm Context panel through the standard VisPa acquisition path,
+  acquire the converted soma coordinate and configured ARM region, compare the
+  portal and atlas names without conflating their coordinate frames, and write
+  a JSON receipt beside the PNG. Include bounded overrides, cached-only raw-SWC
+  mode and a dry run. Sanitize all Windows-reserved filename punctuation when a
+  combined portal/atlas label is used. Validation: focused CLI tests and one
+  live native Context acquisition/render check.
+- Carry the catalog-side and GUI refinements from dev11 into this candidate:
+  color-coded VisPa-derived laterality with autoload/refresh, current-monkey CSV
+  record export, and shaded shared-button borders.
+- Rename the left settings card to **Sagittal plot**, remove the redundant
+  filename-orientation sentence, and separate the neuron-list identity, side
+  counts, and provenance into a distinct summary panel.
+- Rename the identity card to **Neuron input**. Split **Target soma
+  coordinates** into an editable physical X/Y/Z row in µm and a read-only NMT
+  template voxel row populated from the existing VisPa side acquisition. The
+  atlas voxel remains explicitly distinct from edited physical coordinates.
+- Validation: 65 focused side/catalog/GUI tests passed; Tk widget construction
+  with the canonical profile confirmed the Neuron input, Physical coordinate,
+  NMT template coordinate, and Sagittal plot labels. Launcher reports
+  `1.13.0.dev12`.
+- Standardize the Region title section around `nmt_portal`, the portal-derived
+  value with laterality added, for Soma, Context, Sagittal and TrioPlot.
+  Ordinary regions become e.g. `Region: nmt_portal=PrCO_49`. An optional
+  `nmt_corrected` value is accepted through the shared renderer API and appears
+  only when available, with normalized spacing:
+  `Region: nmt_portal=Left background · nmt_corrected=Right PrCO`.
+- Validation: focused renderer/source/GUI suite passed 93/93; the final
+  TrioPlot title rerun passed 9/9. The canonical `vispa` Conda environment was
+  replaced from the old dev10 wheel with an editable dev12 install;
+  `conda run -n vispa vispa --version` and `vispa.exe --version` both resolve
+  this checkout.
+- Fix the neuron-list dialog regression where the summary card referenced an
+  undefined local palette variable. A partially constructed dialog is now
+  discarded on retry instead of leaving `neuron_catalog_table` set to `None`.
+  Validation includes a hidden Tk open/close check and the 58/58 focused suite.
+- Add local neuron-list filtering across Side, SWC ID and Portal region, plus
+  clickable ascending/descending sorting on all three columns. Filtering is
+  debounced and never refetches the catalog. The list reports the visible/total
+  count and updates a fully loaded side column in place instead of rebuilding
+  the Treeview rows when no filter or sort is active.
+- Validation: focused GUI/renderer/side suite passed 60/60, including filter,
+  natural SWC-ID sorting, side ordering, local-only behavior and the Save As
+  default folder/filename.
+- Change **Save CSV table** to a Save As prompt. Its default directory is
+  `<configured VisPa output root>/table/ion_neuronlists/`, and the proposed
+  timestamped filename retains monkey and exact sample identity. Explicitly
+  chosen existing files are not overwritten.
+
+## Configuration history
+
+- **1.0.6** — `2026-11-04T15:48:44+08:00` — VisPa `1.13.0.dev10` — Move
+  configs, cached source data and rendered outputs under
+  `fMOST\VisPa\configs`, `cached_data` and `outputs`; test mode uses
+  `cached_data\test` and `outputs\test`; rename the active config with the
+  `_v1.0.6` filename suffix.
+- **1.0.5** — `2026-11-04T15:44:53+08:00` — VisPa `1.13.0.dev10` — Rename
+  managed cache directories to `VisPa\cache\vispa` and use `vispa_test` for
+  temporary test outputs; clarify the resource-check label as Download cache.
+- **1.0.4** — `2026-11-04T15:37:24+08:00` — VisPa `1.13.0.dev10` — Keep
+  only the compact config version/timestamp in YAML; move history here and
+  integrate identity into the resource check.
+- **1.0.3** — `2026-11-04` — VisPa `1.13.0.dev6` — Complete the active
+  IONData soma and NMT atlas side-acquisition contract.
+- **1.0.2** — `2026-11-04` — VisPa `1.13.0.dev5` — Add VisPa-native IONData
+  soma plus NMT atlas side acquisition.
+- **1.0.1** — `2026-11-04` — VisPa `1.13.0.dev4` — Add the read-only ReMAP
+  region-analysis source for exact soma-region laterality.
+- **1.0.0** — `2026-11-04` — VisPa `1.13.0.dev2` — Consolidate local caches
+  and the approved fMOST VisPa output tree.
+- **0.0.0** — `2026-11-03` — VisPa `1.13.0.dev1` — Record the two-profile
+  staging work superseded by the canonical profile.
+
+## 1.13.0.dev11 — 2026-11-04 (local/unreleased candidate)
+- Refine **Neuron list** with a Side column and subdued Left/Right row colors.
+  Opening the list, changing Sample ID while it is open, or refreshing its
+  source now performs a bounded catalog-side pass through the same
+  IONData-soma and NMT-atlas implementation used by the current-neuron Side
+  status. The list shows Checking during acquisition, then Left, Right, or
+  Unknown.
+- Add **Save CSV table** for the visible current-monkey catalog. The record
+  preserves exact Animal/Sample/Neuron IDs and includes side status and reason,
+  atlas region/voxel, soma coordinates, catalog/IONData/atlas hashes and local
+  record time. The timestamped filename preserves the exact sample suffix and
+  repeats receive a numeric suffix rather than overwriting prior records.
+- Apply the raised outlined/shaded border treatment to the remaining shared
+  action buttons and preview tabs.
+- Validation: 63 focused tests passed. A live 251637 catalog check returned
+  574/574 side results through `IONData_soma_catalog+NMT_atlas`
+  (`Left 209`, `Right 365`, `Unknown 0`); `004.swc` resolved to Right
+  `CR_PrCO`. This is technical/display evidence, not anatomical acceptance.
+
+## 1.13.0.dev10 — 2026-11-04 (local/unreleased candidate)
+- Reduce YAML metadata to `config_name`, `config_version`, and
+  `config_updated_at`; move the full config history into this changelog.
+- Remove the separate startup version confirmation. Show current VisPa/config
+  identity and update time inside the resource-check window, together with key
+  resolved output, cache, IONData, processed-SWC and DS00 paths above the
+  scrollable resource list.
+- Shrink the resource-check window to a compact scrollable layout.
+- Rename the production and test cache roots so the resource check no longer
+  appears to point at `ded_vispa_config`.
+- Centralize configuration, cached cubes/SWCs/FNT data and rendered outputs
+  beneath the shared `fMOST\VisPa` directory.
+- Validation: 35 focused readiness tests and config/CLI tests pass, including
+  legacy unversioned config loading and resource-check display behavior.
+
+## 1.13.0.dev9 — 2026-11-04 (local/unreleased candidate)
+- Finalize the GUI action placement: remove the standalone Load control, move
+  **Update figures** and **Re-process** directly beneath Neuron list, and
+  keep the rightmost **SWC Brain View** preview tab. Restore the original orange
+  **SWC Brain View interactive** action in the bottom bar. Both Update figures
+  and Re-process refresh the current SWC through IONData first.
+- Cache detection follows identity changes and populates the Neuron status.
+  Update rerenders stale coordinates/settings from existing acquisition data;
+  Re-process bypasses downloaded high-resolution cube and low-resolution slice
+  caches and rebuilds every panel.
+- Keep the Neuron status compact: append only `· cached` when rendering files
+  exist. Do not append `cached: none`, figure counts, or freshness detail there.
+- Remove the separate **Side** status box. Verified laterality remains embedded
+  in the Region status, for example `Region: Right PrCO_49`; unresolved cases
+  remain `side unverified`.
+- Move all neuron-side parsing, IONData soma acquisition, NMT atlas/mask
+  derivation, workbook fallback and atlas caching into `data_input_adaptor.py`.
+  The GUI now imports side acquisition directly from that module.
+- Retain `vispa.neuron_side` only as a compatibility alias to the same module
+  object, so existing imports share functions and cache state with no duplicate
+  implementation.
+- Validation: compatibility-identity, synthetic atlas, mocked IONData,
+  end-to-end live `251637/004.swc`, and focused GUI side-state tests pass.
+
+## 1.13.0.dev8 — 2026-11-04 (local/unreleased candidate)
+- Move **Load** into the bottom-left action bar and place
+  **SWC Brain View** in the Sample-card corner. Load, Update,
+  Re-process and SWC Brain View use the outlined shadow treatment already used
+  by Browse and Open output folder.
+- Supersede the temporary placement above: remove the standalone Load control,
+  place **Update** and **Re-process** in the bottom-left action area, and move
+  **SWC Brain View** to the right side of the figure toolbar. Both Update and
+  Re-process refresh the SWC through IONData before their respective
+  cache-aware update or full acquisition rebuild.
+- Cache detection follows a valid Neuron ID change and reports cache freshness
+  in the Neuron status. Update loads matching figures or rerenders stale
+  coordinates/settings from existing acquisitions; Re-process bypasses high-
+  resolution cube and low-resolution slice caches and rebuilds all panels.
+- Promote side acquisition into the Sample panel as a dedicated **Side** status
+  box (`checking`, `Left`, `Right`, or `unavailable`) while retaining the
+  side-first region text, such as `Region: Right PrCO_49`.
+- Compare VisPa's native side acquisition with every available 251637 table
+  reference. All 517/517 known FULL sides and 260/260 known ReMAP sides match,
+  with zero mismatches across the 574-identity union. The 44 identities without
+  known table sides are reported as reference gaps rather than matches.
+- Validation: focused GUI-side tests pass; the consolidated technical audit and
+  hashed receipt are under `work/vispa_side_validation_20261104/`.
+
+## 1.13.0.dev7 — 2026-11-04 (local/unreleased candidate)
+- Supersede the dev5 cache-choice prompt. The **Update** control now reloads
+  the newest cached rendering data without asking a question or starting a
+  render.
+- Cache detection now follows a valid Neuron ID change and live SWC load. When
+  figures are found, VisPa loads them and reports
+  `Loaded cached rendering data from output …`. The Neuron status box also
+  reports `cached: current`, `cached: stale`, `cached: unverified`,
+  `cached: none`, or `cached: checking`, including the figure count.
+- Update automatically rerenders stale coordinates/settings from existing
+  acquisition data. A separate **Re-process** action bypasses high-resolution
+  cube and low-resolution slice caches, acquires source data again, and rebuilds
+  all three panels plus the review figure.
+- Move **Load** into the bottom-left action area and place
+  **SWC Brain View interactive** in the Sample-card corner it previously
+  occupied. Load, Update, Re-process and SWC Brain View use the raised outlined
+  border treatment already used by Browse and Open output folder.
+- **Load** continues to refresh the raw SWC through IONData every time it is
+  clicked. Focused tests cover prompt-free Update behavior, automatic cache
+  loading, and the cache status embedded in neuron status.
+
+## 1.13.0.dev6 — 2026-11-04 (local/unreleased candidate)
+- Add `acquire_neuron_side()` as VisPa's native side-acquisition path. It reads
+  one exact soma coordinate from the configured bounded IONData `getSoma`
+  endpoint, maps it into the configured NMT atlas at 250 µm, and derives
+  `Left`/`Right` from the resulting explicit region prefix. A configured
+  hemisphere mask is an optional fallback for labels without a side prefix.
+- Add the IONData soma request and atlas/key/hemisphere-mask source declarations
+  to the maintained profile. No ReMAP runtime, ReMAP workbook, or manual side
+  table is required. The live neuron catalog still has no side field, and
+  side-collapsed portal codes are never treated as sides.
+- Validation: synthetic atlas acquisition and bounded mocked IONData soma tests,
+  active-profile validation, and end-to-end `251637/004.swc` acquisition
+  returning `Right` from `CR_PrCO`.
+
+## 1.13.0.dev5 — 2026-11-04 (local/unreleased candidate)
+- Replace the separate Fill/Load and Load-cached controls with one primary
+  **Load** button. Load always performs a live raw-SWC check through IONData,
+  fills the soma, then checks the processed figure cache in the selected output
+  directory.
+- When processed figures exist, prompt with the exact output directory and
+  offer cached-image reuse or an explicit force re-render. With no cache, render
+  the refreshed SWC directly. Auto-load on identity changes keeps its existing
+  non-rendering behavior.
+- Validation: focused cache-choice tests cover use-cached, redo-render and
+  no-cache paths; targeted CLI/config/version and GUI identity tests pass.
+
+## 1.13.0.dev4 — 2026-11-04 (local/unreleased candidate)
+- Add a VisPa-native region-side parser and make the exact-workbook lookup read
+  ReMAP's per-sample `*_results.xlsx` directly. VisPa derives side from an
+  explicit region prefix such as `CR_PrCO` or `CL_PrCO` without importing
+  ReMAP, and cross-checks an explicit `Soma_Side` column when present.
+- Wire the active profile to an explicit ReMAP region-analysis table directory.
+  The live IONData catalog has no side field; its side-collapsed portal key such
+  as `PrCO_49` is never used to infer laterality.
+- Validation: focused parser and GUI status tests, active-config validation, and
+  an end-to-end `251637/004.swc` lookup returning `Right` from ReMAP row 5.
+
+## 1.13.0.dev3 — 2026-11-04 (local/unreleased candidate)
+- Reorder the exact-neuron soma-region status box so a verified hemisphere
+  appears before the portal region, for example `Region: Right PrCO_49`.
+  Unknown laterality remains explicit as `side unverified`; portal labels,
+  workbook lookup, rendering data and files are unchanged.
+- Validation: focused GUI status tests cover verified Right and unknown-side
+  formatting, plus the existing stale-identity guards.
+
+## 1.13.0.dev2 — 2026-11-04 (local/unreleased candidate)
+- Consolidated the maintained runtime configuration into
+  `ded_vispa_config.yaml`, with local managed caches and the approved fMOST
+  VisPa output root. Added first-class `config_name`, `config_version`, and
+  append-only `version_log` metadata while retaining load compatibility for
+  legacy unversioned YAML files.
+- Added `vispa --test` and `vispa gui --test` as process-local overrides on the
+  same YAML: cache/output roots resolve under `D:\VisPa\cache` and
+  `D:\VisPa\output`, while scientific source declarations and config identity
+  remain unchanged.
+- `vispa --version` now reports both the installed VisPa version and the exact
+  active config identity/path. `config-check --validate-only`,
+  `config-check --compare-defaults`, and GUI dry-run expose the same identities.
+  GUI titles, header text, a Version action, and a startup confirmation dialog
+  show the current package/config pair.
+- Validation: package/config metadata and legacy compatibility unit checks,
+  selected-config version CLI check, and frozen-default no-write comparison.
+  GUI dialog behavior is unit-tested with mocked window primitives; live visual
+  acceptance remains separate.
+
+## 1.13.0.dev1 — 2026-11-03 (local/unreleased candidate)
+- Added read-only `config-check --compare-defaults`: field-path differences, installed template hash/version and optional frozen-baseline comparison, preserving active YAML bytes and omitting values. GUI labels its snapshot Frozen default YAML. Two local managed profiles select local-test versus approved fMOST outputs with identical read-only resources and separate local caches; package upgrades do not overwrite them. Focused comparison/no-write test and both profile validations passed.
+- Added explicit processed IONData source planning and loading with exact sample/neuron identities, bounded HTTP, SWC validation, managed cache, and SHA-256 source receipts. Live checks retain changed managed cache versions before replacing the active copy; unchanged responses reuse bytes. The raw portal reader uses the same bounded HTTP and versioned publisher. Normal `IONData` raw/processed calls request a live check; `refresh=False` is cached-only. A guard keeps managed caches outside declared processed source roots. Seven focused mocked source tests passed. One bounded live 252527/048 raw and processed fetch passed using the historically configured `10.10.48.110` portal IP in a temporary in-memory override; the packaged `bap.cebsit.ac.cn` host did not resolve inside the sandbox. Image-frame and scientific acceptance remain unverified.
+- Corrected the local dev1 first-pass cache writer to preserve exact HTTP response bytes rather than translating LF to Windows CRLF. A fresh bounded 252527/048 live fetch has matching response/cached SHA-256: processed `9eff5e63...`, raw `e692eaa5...`. First-pass converted caches remain diagnostic and are identified in the shared work receipt; no source was overwritten.
+
 ## 1.13.0.dev0 — 2026-11-02 (development build)
 - Package the exact user-supplied VisPa PNG and a multi-size ICO made from it; use them for the GUI window icon and Desktop shortcut without changing the artwork. The GUI continues if a platform cannot load an icon.
 - Package the reviewed GUI figure, strict cortical region, exact workbook laterality, and Windows saved-path improvements from dev4 in the first 1.13 development build. The 3D worker leaves subcortical portal numeric namespaces unmapped and never infers neuron side from portal suffixes.

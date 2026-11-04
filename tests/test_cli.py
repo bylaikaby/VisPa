@@ -1,7 +1,7 @@
 """CLI contract tests for bounded standalone use.
 
-Version: 1.11.0.dev25 (local/unreleased)
-Last updated: 2026-10-27
+Version: 1.13.0.dev14 (local/unreleased)
+Last updated: 2026-11-04
 Change history: ../CHANGELOG.md
 """
 from __future__ import annotations
@@ -25,7 +25,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TEST_INSTALLED = os.environ.get("VISPA_TEST_INSTALLED") == "1"
 if not TEST_INSTALLED:
     sys.path.insert(0, str(ROOT / "src"))
-from vispa import __version__
+from vispa import __version__, cli
 ENV = {key: value for key, value in os.environ.items()
        if key not in {"PYTHONPATH", "VISPA_CONFIG", "VISUAL_TOOLKIT_CONFIG", "PROJECTOME_DATASETS"}}
 ENV.update({"MPLBACKEND": "Agg", "PYTHONDONTWRITEBYTECODE": "1"})
@@ -130,6 +130,31 @@ class CliContractTests(unittest.TestCase):
             version = run_cli("--version", cwd=tmp_path)
             self.assertEqual(version.returncode, 0)
             self.assertIn(__version__, version.stdout)
+
+    def test_version_reports_selected_config_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "ded_vispa_config_v1.0.6.yaml"
+            config.write_text(
+                "version: 1\n"
+                "config_name: ded_vispa_config\n"
+                "config_version: 1.0.0\n"
+                "config_updated_at: '2026-11-04T15:37:24+08:00'\n"
+                "defaults: {}\n"
+                "samples: {}\n"
+                "sources: {}\n"
+                "visual_toolkit: {}\n",
+                encoding="utf-8")
+            result = run_cli("--version", "--config", config)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(__version__, result.stdout)
+            self.assertIn("ded_vispa_config 1.0.0", result.stdout)
+            test_result = run_cli("gui", "--dry-run", "--test", "--config", config)
+            self.assertEqual(test_result.returncode, 0, test_result.stderr)
+            settings = json.loads(test_result.stdout)
+            self.assertTrue(settings["test_mode"])
+            self.assertEqual(
+                Path(settings["output_root"]).resolve(),
+                (Path(directory).parent / "output" / "vispa_test").resolve())
 
     def test_settings_command_prints_discoverable_json_without_optional_imports(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -302,6 +327,109 @@ assert main(["settings", "--scope", "all"]) == 0
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("error:", result.stderr)
                 self.assertFalse((tmp_path / "out").exists())
+
+    def test_context_dry_run_and_bounded_acquisition(self):
+        from types import SimpleNamespace
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cache = root / "cache"
+            output = root / "output"
+            config = root / "context-settings.json"
+            config.write_text(json.dumps({
+                "version": 1,
+                "config_name": "context-test",
+                "config_version": "1.0.0",
+                "config_updated_at": "2026-11-04T00:00:00+08:00",
+                "defaults": {"cache_root": str(cache), "output_root": str(output)},
+                "samples": {"0007": {}},
+                "sources": {
+                    "neuron_catalog": {
+                        "mode": "live-iondata",
+                        "host": "http://example.invalid",
+                    },
+                    "atlas": {
+                        "root": str(root / "atlas.nii.gz"),
+                        "key": str(root / "atlas.txt"),
+                    },
+                },
+                "visual_toolkit": {"settings": {"review": {}}},
+            }), encoding="utf-8")
+
+            dry = run_cli(
+                "context", "--config", config, "--sample", "0007",
+                "--neuron", "003", "--output-dir", output, "--dry-run",
+                cwd=root)
+            self.assertEqual(dry.returncode, 0, dry.stderr)
+            plan = json.loads(dry.stdout)
+            self.assertEqual(plan["schema"], "vispa.context-review.v1")
+            self.assertEqual(plan["neuron_id"], "003.swc")
+            self.assertIn("raw SWC parent=-1 root", plan["context_coordinate_source"])
+            self.assertIn("getSoma converted coordinate", plan["region_coordinate_source"])
+            self.assertFalse(output.exists())
+
+            png = root / "context.png"
+            png.write_bytes(b"rendered-context")
+
+            class FakeTool:
+                last_low_res_metadata = {"complete": True}
+
+                def get_low_res_widefield(self, soma, **kwargs):
+                    self.soma = soma
+                    return np.ones((2, 4, 4), dtype=np.uint8), [0, 0, 0], [5, 5, 3]
+
+                def plot_widefield_context(self, volume, origin, resolution,
+                                           soma, neuron, **kwargs):
+                    self.close()
+                    return {
+                        "output_png": str(png),
+                        "title": "fixture",
+                        "role": "Widefield context (5 µm)",
+                        "axis_labels": ("x", "y"),
+                        "legend": [],
+                        "notes": [],
+                    }
+
+                def close(self):
+                    self.closed = True
+
+            tree = SimpleNamespace(root=SimpleNamespace(xyz=(1.0, 2.0, 3.0)))
+            ion = SimpleNamespace(getRawNeuronTreeByID=lambda *args, **kwargs: tree)
+            region = {
+                "status": "verified",
+                "side": "Right",
+                "source": {"atlas_region": "CR_PrCO"},
+            }
+            catalog = {
+                "rows": [{
+                    "sample_id": "0007",
+                    "neuron_id": "003.swc",
+                    "portal_region": "PrCO_49",
+                }],
+                "request_url": "http://example.invalid/selectNeurons?id=0007",
+                "fetched_at": "2026-11-04T00:00:00Z",
+                "sha256": "a" * 64,
+                "snapshot_id": "b" * 64,
+            }
+            with mock.patch("vispa.data_input_adaptor.IONData", return_value=ion), \
+                    mock.patch("vispa.data_input_adaptor.acquire_neuron_side",
+                               return_value=region), \
+                    mock.patch("vispa.data_input_adaptor.list_neurons",
+                               return_value=catalog), \
+                    mock.patch("vispa.renderers.microscopy_panels.configure_data_sources"), \
+                    mock.patch("vispa.renderers.microscopy_panels.VisPa",
+                               return_value=FakeTool()):
+                result = cli.main([
+                    "context", "--config", str(config), "--sample", "0007",
+                    "--neuron", "003.swc", "--output-dir", str(output),
+                ])
+            self.assertEqual(result, 0)
+            receipt_path = png.with_suffix(".json")
+            receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+            self.assertEqual(receipt["status"], "complete_portal_match")
+            self.assertEqual(receipt["portal_atlas_comparison"], "match")
+            self.assertEqual(receipt["raw_swc_root_native_xyz_um"], [1.0, 2.0, 3.0])
+            self.assertEqual(receipt["context_png_sha256"], hashlib.sha256(png.read_bytes()).hexdigest())
 
     def test_missing_input_and_collision_fail_without_overwrite(self):
         with tempfile.TemporaryDirectory() as directory:

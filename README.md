@@ -1,7 +1,7 @@
 # VisPa — Visual Projectome Analysis tool
 
 VisPa reviews macaque neuron and microscopy data configured by the DEB lab.
-This checkout identifies as **1.12.0.dev3**, without a release tag. VisPa is a
+This checkout identifies as **1.13.0.dev14**, without a release tag. VisPa is a
 Python package inside a Conda environment. Launch the GUI directly from this
 checkout with `python run_vispa.py`.
 
@@ -20,7 +20,7 @@ run_vispa.py                         checkout GUI shortcut
 src/vispa/
 ├── config.py                        defaults, validation, settings editing and safe saves
 ├── configs/config_deb.yaml           the single packaged profile
-├── data_input_adaptor.py             dataset, raw/processed SWC and ReMAP-table inputs
+├── data_input_adaptor.py             dataset, SWC, IONData soma/side and ReMAP-table inputs
 ├── reviewer.py                       interactive review and preview orchestration
 ├── commands.py                       command routing; installed vispa command
 ├── input_resource_check.py           availability checks, not image/anatomy acceptance
@@ -33,11 +33,12 @@ src/vispa/
 └── legacy_gl/                       preserved low-level graphics engine
 ```
 
-Small former-name modules remain as compatibility aliases to the same module
-objects; they contain no second implementation or independent state. New code
-uses the names above. YAML/JSON stores values; `config.py` owns configuration
-behavior. Packaged defaults live in `configs/`; existing explicit user profiles,
-scientific data and cache locations are not moved.
+Small former-name modules, including `neuron_side.py`, remain as compatibility
+aliases to the same module objects; they contain no second implementation or
+independent state. New code uses the names above. YAML/JSON stores values;
+`config.py` owns configuration behavior. Packaged defaults live in `configs/`;
+existing explicit user profiles, scientific data and cache locations are not
+moved.
 
 ```mermaid
 flowchart TD
@@ -46,8 +47,32 @@ flowchart TD
   C --> K[config.py]
   G --> K
   Y[configs/config_deb.yaml or explicit user profile] --> K
-  K --> D[data_input_adaptor.py]
-  I[Dataset manifests, raw and processed SWCs, ReMAP workbooks] --> D
+  K --> D
+  I[Dataset manifests, raw and processed SWCs, ReMAP workbooks] -->|data| D
+  subgraph DI["data_input_adaptor.py"]
+    D([dataset/SWC adaptor APIs])
+    DSOMA([get_soma_coordinates()])
+    DFETCH([_fetch_soma_catalog()])
+    DSIDE([acquire_neuron_side()])
+    DBATCH([acquire_neuron_sides()])
+    DAPPLY([_acquire_side_from_soma()])
+    SREG([side_from_region()])
+    DCW([write_neuron_catalog_table()])
+  end
+  ION[/IONData getSoma JSON/] -->|data| DFETCH
+  DFETCH -->|one exact soma| DSOMA
+  DFETCH -->|all exact somas| DBATCH
+  ATL[/NMT atlas, key and hemisphere mask/] -->|data| DAPPLY
+  DSOMA -->|exact soma XYZ| DAPPLY
+  DSIDE -->|calls| DAPPLY
+  DBATCH -->|calls per requested ID| DAPPLY
+  DAPPLY -->|calls| SREG
+  G -->|calls for current neuron| DSIDE
+  G -->|calls for visible catalog| DBATCH
+  DSIDE -->|Side checking/Left/Right/unavailable| G
+  DBATCH -->|Side rows and counts| G
+  G -->|Save CSV table| DCW
+  DCW -->|returns| CSV[/monkey_sample_neuron_table_timestamp.csv/]
   D --> P[renderers/microscopy_panels.py]
   K --> P
   G --> P
@@ -67,13 +92,20 @@ flowchart TD
   K --> W
   W --> O
   T -. planned .-> TR[Terminal image review]
+  classDef callable fill:#E8F5EE,stroke:#23845B,color:#173B2C
+  classDef data fill:#F1F5F9,stroke:#64748B,color:#1F2937
+  class D,DSOMA,DFETCH,DSIDE,DBATCH,DAPPLY,SREG,DCW callable
+  class I,ION,ATL,CSV data
+  style DI fill:#F4F8FF,stroke:#6186B5,color:#1F2937
 ```
 
 Solid arrows show implemented components; terminal image-review integration is
-planned. The adaptor reads declared ReMAP/legacy Step1 results; it does not run
-ReMAP analysis, choose the newest scientific source by modification time, or
-register outputs automatically. Native raw traces and atlas/processed traces
-remain separate inputs with declared frame, units and provenance.
+planned. The adaptor reads declared ReMAP/legacy Step1 results, acquires exact
+IONData soma coordinates, and derives side from the configured NMT atlas or
+hemisphere mask. It does not run ReMAP analysis, choose the newest scientific
+source by modification time, or register outputs automatically. Native raw
+traces and atlas/processed traces remain separate inputs with declared frame,
+units and provenance.
 
 The GUI's **fnt-tracer** action calls the borrowed legacy `swc_fnt_tracer`
 and `swc2fnt` functions in `fnt_tracer_launcher.py`. They retain the legacy
@@ -273,6 +305,42 @@ This optional command removes all packages in that environment, including ReMAP.
 
 ## Create or select a configuration
 
+The canonical shared profile is
+`\\10.102.8.200\microscopy_data\fMOST\VisPa\configs\ded_vispa_config_v1.0.6.yaml`.
+It declares the shared sample, DS00,
+5 µm, raw SWC, processed SWC, mesh, catalog, and IONData resources as read-only
+inputs. Cubes, SWCs and FNT work use
+`\\10.102.8.200\microscopy_data\fMOST\VisPa\cached_data`; figures are written
+under `\\10.102.8.200\microscopy_data\fMOST\VisPa\outputs`.
+
+The YAML contains only `config_name`, `config_version`, and
+`config_updated_at` (an ISO-8601 timestamp with offset). Configuration history
+is maintained in [CHANGELOG.md](CHANGELOG.md#configuration-history). This is
+configuration provenance, not proof that a scientific run was accepted.
+Package upgrades do not overwrite the local YAML.
+
+Confirm the package/config pair without launching the GUI:
+
+```powershell
+python -m vispa --version --config \\10.102.8.200\microscopy_data\fMOST\VisPa\configs\ded_vispa_config_v1.0.6.yaml
+python -m vispa config-check --validate-only --config \\10.102.8.200\microscopy_data\fMOST\VisPa\configs\ded_vispa_config_v1.0.6.yaml
+python -m vispa config-check --compare-defaults --config \\10.102.8.200\microscopy_data\fMOST\VisPa\configs\ded_vispa_config_v1.0.6.yaml
+```
+
+Use `vispa --test` (or `vispa gui --test`) for a local test launch. It loads the
+same `ded_vispa_config` identity and read-only resources, then redirects caches
+to `fMOST\VisPa\cached_data\test` and outputs to `fMOST\VisPa\outputs\test`
+for that process only. The YAML is not
+rewritten. `config-check --test` exposes the same resolved test paths.
+
+The GUI title, Version action, and resource-check header show the same current
+identities and config update time. The resource-check window also shows key
+resolved paths above its compact scrollable checklist. To select this profile
+for one PowerShell session, set
+`$env:VISPA_CONFIG='\\10.102.8.200\microscopy_data\fMOST\VisPa\configs\ded_vispa_config_v1.0.6.yaml'`. Validate configured
+source paths separately; this syntax check does not establish anatomical or
+scientific acceptance.
+
 Create the per-user profile without overwriting an existing file:
 
 ```powershell
@@ -324,16 +392,29 @@ python run_vispa.py
 1. Wait for **VisPa data check**. A ready profile shows a check mark and the
    resolved location for every required resource.
 2. Confirm the Sample ID and Neuron ID, or open **Neuron list** and select one.
-3. A valid Sample ID and Neuron ID trigger the Soma lookup automatically. The
-   status bar reports **Neuron: found**, **not found**, or a lookup error and
-   shows the portal region when known.
-4. Click **Render** after the coordinates appear, and wait for the progress bar
-   to finish.
+   The catalog briefly shows **Checking** while VisPa loads all sides through
+   the same IONData-soma/NMT-atlas mechanism used by the current-neuron Side
+   status, then colors rows by Left, Right, or Unknown.
+3. A valid Sample ID and Neuron ID trigger the Soma lookup automatically.
+   After loading, VisPa automatically reports and opens matching cached
+   rendering data. The Neuron status uses a compact `cached` suffix when cached
+   figures exist; missing or stale-cache details remain in the status bar.
+   **Target soma coordinates** shows editable physical X/Y/Z in µm and a
+   read-only NMT template voxel row from the existing VisPa IONData-soma/atlas
+   side lookup. Editing physical coordinates does not relabel that atlas voxel.
+4. **Update figures** beneath Neuron list refreshes IONData and rerenders the
+   selected figures from the existing acquisition cache. **Re-process** refreshes
+   the SWC and acquires source
+   cubes/slices again before rebuilding all panels. **Render** remains available
+   for an ordinary render.
 5. Review **Soma**, **Context**, **Sagittal**, **TrioPlot** and **SWC Brain View**. The
    **SWC Brain View** tab shows a static snapshot of the current processed neuron on the template mesh.
    A grey panel tab means Render did not produce its image; check **Process log**
    for the panel error. **TrioPlot** requires all three other panels. A ready
    data check confirms configured resources, not a successful render.
+   Panel titles keep one Region section. The portal-derived NMT value is shown
+   as `nmt_portal`; an optional corrected value appears only when supplied, for
+   example `Region: nmt_portal=Left background · nmt_corrected=Right PrCO`.
 6. Use **SWC Brain View interactive** for the separate rotatable OpenGL viewer; use **fnt-tracer** for the
    matching annotation project.
 7. Use **Check data** at any time to repeat the readiness checklist.
@@ -677,7 +758,7 @@ Passing `--output` selects the packaged same-intranet template; it never overwri
 
 All lab server addresses and source roots live in the editable profile. In the packaged profile, each sample's `ds00_relative` is resolved under `defaults.ds00_root`, and `sources.dataset_manifest_relative` follows the same root. The `resample_5um` entries follow `defaults.resample_5um_root`. Changing these roots redirects the declared paths without editing ten per-sample UNC strings; existing profiles that use `ds00_processed` keep their original path meaning. Relative child paths must stay within their declared root. The sample filenames and SHA-256 declarations remain candidate provenance; changing a root does not verify that files or geometry match. The optional `python run_vispa.py example` CLI owns its checksum-pinned public source defaults and does not add example fields to the GUI profile.
 
-For SSH sections, set `ssh_sample_id` alongside `ssh_remote_base`; that remote root is only eligible for the matching sample. `low_res_ssh_base=` is an explicit per-instance override. The GUI identity is selected from `visual_toolkit.default_sample` and `visual_toolkit.default_neuron`; the packaged profile starts on sample `251637` and `004.swc`, which has registered DS00 and 5 µm sources. A valid Sample/Neuron identity, including the configured startup identity, triggers automatic soma lookup unless `--no-autoload` is passed. The highlighted Sample-section status panel reports whether the neuron was found and its portal region. In the GUI, **Neuron list** uses the selected source and shows every API row for the exact sample ID, preserving zero-padded filenames and suffixes; selecting a row fills the Neuron ID and starts the same automatic lookup. The source selector offers Live IONData explicitly alongside a configured dated CSV; on older CSV-only profiles, CSV remains selected unless you choose Live IONData. The compact note lists the eight INS-cohort AnimalIDs from the megatable and separately identifies sample 250432 / AnimalID 747; it does not classify individual neuron rows. **Render** (F5) produces the complete panel set (Soma, Context, Sagittal and TrioPlot); there is no per-panel selection. **Save outputs** beside Render chooses whether the run writes files (unticked = preview only), and **Save Soma NIfTI (.nii.gz)** in Saving controls the soma volume. The **SWC Brain View interactive** action carries the current sample, neuron ID, and any loaded portal region to the isolated original OpenGL worker, using the configured processed SWC only. **fnt-tracer** uses an explicitly configured matching project first, then an exact VisPa native FNT cache project; its executable is needed only to launch the external tracer. There is no bulk action.
+For SSH sections, set `ssh_sample_id` alongside `ssh_remote_base`; that remote root is only eligible for the matching sample. `low_res_ssh_base=` is an explicit per-instance override. The GUI identity is selected from `visual_toolkit.default_sample` and `visual_toolkit.default_neuron`; the packaged profile starts on sample `251637` and `004.swc`, which has registered DS00 and 5 µm sources. A valid Sample/Neuron identity, including the configured startup identity, triggers automatic soma lookup unless `--no-autoload` is passed. The highlighted Sample-section status panel reports whether the neuron was found, its portal region, and whether cached rendering data is current, stale, unverified or absent. **Update figures** beneath Neuron list refreshes the current SWC through IONData and rerenders the selected panels from existing acquisition caches. **Re-process** refreshes the SWC, bypasses downloaded cube/section caches, acquires source data again and rebuilds all panels. The rightmost **SWC Brain View** preview tab displays the static snapshot; the orange **SWC Brain View interactive** action in the bottom bar launches the rotatable OpenGL worker with the current sample, neuron ID, and portal region. **Neuron list** uses the selected source and shows every API row for the exact sample ID, preserving zero-padded filenames and suffixes; selecting a row fills the Neuron ID and starts the same automatic lookup. The source selector offers Live IONData explicitly alongside a configured dated CSV; on older CSV-only profiles, CSV remains selected unless you choose Live IONData. The compact note lists the eight INS-cohort AnimalIDs from the megatable and separately identifies sample 250432 / AnimalID 747; it does not classify individual neuron rows. **Render** (F5) produces the complete panel set (Soma, Context, Sagittal and TrioPlot); there is no per-panel selection. **Save outputs** beside Render chooses whether the run writes files (unticked = preview only), and **Save Soma NIfTI (.nii.gz)** in Saving controls the soma volume. **fnt-tracer** uses an explicitly configured matching project first, then an exact VisPa native FNT cache project; its executable is needed only to launch the external tracer. There is no bulk action.
 
 Per-sample `ds00_expected_geometry` declares the expected `shape_ijk`,
 `spacing_mm_ijk`, and `affine_diag` for validation and provenance. A configured
@@ -739,11 +820,22 @@ heterogeneous or irregular-pitch grid mapping.
 
 `dataset_config.load(path=None, base_dir=None)` returns resolved `defaults`, `samples`, `visual_toolkit`, and `sources`. Backend cache/output roots use `defaults.cache_root` and `defaults.output_root`; `visual_toolkit.output_root` is the GUI review-output root. `dataset_config.default_config_path()` and `default_output_root()` provide per-user locations without creating them. A project adapter may call `toolkit.configure_data_sources(path)` after selecting its config; the selected config then applies to subsequent toolkit instances.
 
-The GUI's **Neuron list** uses `sources.neuron_catalog.mode: live-iondata` in the packaged profile and queries `http://10.10.48.110/neuronbrowser/api/user/selectNeurons?id=<sample-id>` with a bounded timeout and response size. It validates the JSON rows and keeps exact `sampleid` and `name` values, including leading zeroes and sample suffixes. The display has two columns, **SWC ID** and **Portal region**; provenance shows whether the list came from live IONData or a dated CSV, its row count, fetch time or source date, URL or file path, and SHA-256. To add a dated snapshot alongside live mode, set `sources.neuron_catalog.snapshot_path`; in a CSV-mode profile, `sources.neuron_catalog.path` selects the CSV. If both sources are available, choose explicitly in the GUI. On existing CSV-only profiles, Live IONData is an explicit option and uses the configured host or the intranet default; the current CSV remains the default. No source is silently substituted. For a bounded backend check, run `python run_vispa.py config-check --catalog --sample 250432 --catalog-source live-iondata --dry-run` to inspect the resolved endpoint without fetching, or omit `--dry-run` to fetch just that sample's catalog and report its count and provenance. `vispa.sources.list_neurons(sample_id, config=None, source=None)` supports `live-iondata` and `csv` with the same explicit-source behavior.
+The GUI's **Neuron list** uses `sources.neuron_catalog.mode: live-iondata` in the packaged profile and queries `http://10.10.48.110/neuronbrowser/api/user/selectNeurons?id=<sample-id>` with a bounded timeout and response size. It validates the JSON rows and keeps exact `sampleid` and `name` values, including leading zeroes and sample suffixes. The display has **Side**, **SWC ID**, and **Ion_NMT_region** columns. Opening the list or changing Sample ID while it is open automatically reloads the exact catalog and calls `acquire_neuron_sides()`; both its rows and the single-neuron status use `_acquire_side_from_soma()` and `side_from_region()`. Rows are color-coded Left/Right/Unknown, and the header reports the source and all three counts. The **Go to** entry searches side, SWC ID and region text, while the adjacent **Region** selector filters to one exact `Ion_NMT_region` value. Both filters are local, issue no additional network request, and reset when the Sample ID changes; clicking a column heading sorts it ascending or descending, and the visible/total count remains visible. **Save CSV table** opens a Save As prompt defaulting to `<configured VisPa output root>/table/ion_neuronlists/` and proposing `monkey_sample_neuron_table_timestamp.csv`. The record preserves exact IDs plus side status, atlas region/voxel, soma coordinates, catalog/IONData/atlas hashes and record time. The catalog side pass is descriptive evidence for review; it does not modify a source SWC or establish anatomical acceptance. To add a dated snapshot alongside live mode, set `sources.neuron_catalog.snapshot_path`; in a CSV-mode profile, `sources.neuron_catalog.path` selects the CSV. If both sources are available, choose explicitly in the GUI. On existing CSV-only profiles, Live IONData is an explicit option and uses the configured host or the intranet default; the current CSV remains the default. No source is silently substituted. For a bounded backend check, run `python run_vispa.py config-check --catalog --sample 250432 --catalog-source live-iondata --dry-run` to inspect the resolved endpoint without fetching, or omit `--dry-run` to fetch just that sample's catalog and report its count and provenance. `vispa.sources.list_neurons(sample_id, config=None, source=None)` supports `live-iondata` and `csv` with the same explicit-source behavior.
+
+The live IONData catalog has no neuron-side field. Its numeric portal suffix is
+a side-collapsed region key and cannot be used to infer `Left` or `Right`.
+When `sources.neuron_tables.root` points to a ReMAP `tables` directory or an
+exact ReMAP `*_results.xlsx` workbook, VisPa reads the exact `Summary` row and
+derives side from an explicit region prefix such as `CR_PrCO` or `CL_PrCO`.
+An explicit `Soma_Side` column is cross-checked when present. The verified side
+appears before the portal region, such as `Region: Right PrCO_49`. Missing,
+duplicate or conflicting identities remain `side unverified`.
 
 The optional **SWC Brain View interactive** action uses `sources.brain_view.mesh_path`, `processed_swc_root`, and the optional manifest-bound `region_mesh_root`, with declared `coordinate_frame` / `coordinate_units` and optional `settings`; `visual_toolkit.worker_python` selects its isolated worker when set. A generic config does not receive default anatomical frame or unit declarations: the worker preflight requires explicit values when 3D view is requested. The default projectome config points to the preserved root.obj, processed-SWC tree and copied legacy CHARM/SARM OBJ dependency folder and declares their current stored convention. The handoff passes the exact current sample and neuron ID plus the portal snapshot's soma region when available. A verified cortical canonical key may add one bilateral region overlay; no match or ambiguity remains root-only and is recorded rather than guessed. It never substitutes a raw SWC or downloads a model. The GUI starts the worker in a separate process, leaving the host Python imports isolated.
 
-`vispa.sources.IONData()` reads the configured local SWC cache first. A project can register a fallback implementing `getRawNeuronTreeByID(sample_id, neuron_id)` using `set_iondata_provider_factory(factory)`. Without a registered factory, setting `sources.http_host` and `sources.raw_swc_base` enables the built-in portal fetch: it reads the sample's `project_id` from the portal and downloads `<project>/<sample>/swc_raw/<neuron>` into `sources.legacy_raw_swc_root`. The returned tree protocol exposes `root.x/y/z`, `root.xyz`, `points`, and iterable `edges` whose `.data` contains points with `.x/y/z` attributes. The local parser rejects malformed, disconnected, cyclic, and missing-parent trees.
+`vispa.sources.IONData()` reads configured local raw SWCs when `refresh=False`. A project can register a raw provider implementing `getRawNeuronTreeByID(sample_id, neuron_id)` using `set_iondata_provider_factory(factory)`; its own freshness behavior is provider-defined. Without a registered factory, setting `sources.http_host` and `sources.raw_swc_base` enables the built-in portal fetch: it reads the sample's `project_id` from the portal and downloads `<project>/<sample>/swc_raw/<neuron>` into the managed cache. The returned tree protocol exposes `root.x/y/z`, `root.xyz`, `points`, and iterable `edges` whose `.data` contains points with `.x/y/z` attributes. The local parser rejects malformed, disconnected, cyclic, and missing-parent trees.
+
+In local dev1, `IONData.getRawNeuronTreeByID` and `getNeuronByID`/`getNeuronTreeByID` explicitly check their configured portal on normal calls (`refresh=True`). Use `refresh=False` for cached-only operation; a network failure during a live check is reported, not silently replaced by a stale cache. Processed SWCs use the portal `getSWC` endpoint, and their managed cache defaults to `defaults.cache_root/swc_processed`; configured `brain_view.processed_swc_root` is read-only. Raw live checks publish to `defaults.cache_root/swc_raw`, preserving declared source folders. Changed managed SWCs retain the prior bytes by SHA-256 under `.history/` and update `<name>.source.json` with exact identity, source URL, time, and hashes. `processed_neuron_plan` and `load_processed_neuron` also accept a caller-owned `cache_root`; the latter defaults to cached-only unless `allow_download=True`, with `refresh=True` forcing a live check. No bulk fetch is implied.
 
 The processed-DS sagittal implementation requires a resolved dataset manifest, `defaults.ds00_root`, a configured per-sample image path and checksum, and local SWC input or cache. It records source identity and geometry. The current panel shows only the provisional soma-location marker, without A/B trace overlays; marker placement remains unvalidated, and successful loading or rendering is not anatomical acceptance.
 
@@ -773,7 +865,7 @@ At **fnt-tracer** launch, an explicit manual project remains first choice. If it
 
 Run `python run_vispa.py config-check --config settings.yaml --sample 251637 --neuron 004.swc --dry-run` for a read-only JSON inventory (file hashes, source dates unknown as null, coordinate declarations, cache references and cube route/geometry). Add `--fnt` to require both a configured executable and an exact matching manual or native cached FNT project; this mode returns failure when either is unavailable and never starts the binary. The JSON also reports `project_ready` and `executable_ready` separately. Directory references are not recursively hashed; the inventory alone does not establish complete offline panel coverage or scientific acceptance.
 
-The active VisPa profile can fetch one exact native FNT with `python run_vispa.py fnt-fetch --config PATH --sample 251637 --neuron 004.swc --dry-run`; remove `--dry-run` to download and verify it into the VisPa cache. `visual_toolkit.fnt_tracer` exposes `auto_download` (boolean, default true), `cache_root` (optional path), `server_base_url` and `catalog_base_url` (plain HTTP(S) base URLs), `timeout_seconds` (positive integer, default 30), and `max_response_bytes` (positive integer, default 67108864). An explicit `project_root` keeps a matching annotated local project as first choice; otherwise the exact verified VisPa cache project is used. `config-check --fnt` stays read-only and reports project and executable readiness separately. The executable is required only to launch **fnt-tracer**. In the GUI, **Settings** opens the active config with five sections in **Organized editor**, complete editable **Raw YAML** (or **Raw JSON** for an explicit JSON config), and a read-only **Default YAML** reference. Choose Data folders, Sources, Brain view, FNT or Startup; use **Browse…** for paths. The public-neuron example is intentionally absent from the GUI. Raw mode includes sample-specific paths, geometry, provenance and display settings. Switching between the editing tabs transfers valid unsaved edits. No-op saves preserve exact bytes; changed form saves keep unknown keys but may reformat YAML comments and whitespace. Invalid active YAML opens in Raw for correction. On first open, VisPa copies its installed default profile to `vispa_config.default.yaml` beside the active config; an existing copy is never replaced. If that copy is unavailable or invalid, Default YAML shows the installed profile with a warning. **Reset to default** stages the frozen local profile; **Restore backup…** stages a selected historical YAML/JSON. Neither writes the active file until **Save settings**. Save validates the complete file, backs up its previous bytes under `config_backups/` with a unique timestamp, and refuses an externally changed file or failed backup. Default YAML cannot be edited or saved directly. **Reload** discards unsaved edits. Restart VisPa after changing source folders. The cache and FNT paths do not change scientific rendering parameters.
+The active VisPa profile can fetch one exact native FNT with `python run_vispa.py fnt-fetch --config PATH --sample 251637 --neuron 004.swc --dry-run`; remove `--dry-run` to download and verify it into the VisPa cache. `visual_toolkit.fnt_tracer` exposes `auto_download` (boolean, default true), `cache_root` (optional path), `server_base_url` and `catalog_base_url` (plain HTTP(S) base URLs), `timeout_seconds` (positive integer, default 30), and `max_response_bytes` (positive integer, default 67108864). An explicit `project_root` keeps a matching annotated local project as first choice; otherwise the exact verified VisPa cache project is used. `config-check --fnt` stays read-only and reports project and executable readiness separately. The executable is required only to launch **fnt-tracer**. In the GUI, **Settings** opens the active config with five sections in **Organized editor**, complete editable **Raw YAML** (or **Raw JSON** for an explicit JSON config), and a read-only **Default YAML** reference. Choose Data folders, Sources, Brain view, FNT or Startup; use **Browse…** for paths. The public-neuron example is intentionally absent from the GUI. Raw mode includes sample-specific paths, geometry, provenance and display settings. Switching between the editing tabs transfers valid unsaved edits. No-op saves preserve exact bytes; changed form saves keep unknown keys but may reformat YAML comments and whitespace. Invalid active YAML opens in Raw for correction. On first open, VisPa copies its installed default profile to `vispa_config.default.yaml` beside the active config; an existing copy is never replaced. If that copy is unavailable or invalid, Default YAML shows the installed profile with a warning. **Reset to default** stages the frozen local profile; **Restore backup…** stages a selected historical YAML/JSON. Neither writes the active file until **Save settings**. Save validates the complete file, backs up its previous bytes under `config_backups/` with a unique timestamp, and refuses an externally changed file or failed backup. Frozen default YAML cannot be edited or saved directly. It is a one-time local copy and may differ from the current installed template; use `config-check --compare-defaults` to inspect that drift without a write. **Reload** discards unsaved edits. Restart VisPa after changing source folders. The cache and FNT paths do not change scientific rendering parameters.
 
 Combined review figures derive text wrapping, legend/footer height and labeled-axis separation from the selected font metrics and available axes width; panels retain full image extents and original aspect ratios, anchored at the top. These are automatic layout constraints rather than separate scientific parameters. Tune `figure.review_figsize` and `figure.review_dpi` through the existing settings interface.
 
