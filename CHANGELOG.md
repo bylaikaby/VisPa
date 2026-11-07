@@ -1,5 +1,21 @@
 # VisPa change log
 
+## 1.20.2 — 2026-11-07 (local/unreleased)
+- Add checkout-only whole-animal review preparation from the configured
+  catalog or an exact identity CSV. Freeze source identities and checksums,
+  cache raw SWCs locally or explicitly fetch missing IDs into a managed cache,
+  and record blocked neurons before any rendering.
+- Render four review figures per eligible neuron in a run-specific leaf under
+  the sample and neuron layout. Keep a separate batch receipt for each run.
+  Resume verifies the frozen SWC, settings, software version and four PNGs
+  before reusing a result. Existing ReMAP/FNT jobs retain their legacy layout.
+- Pass the already verified raw SWC path to Context and Sagittal. This fixes
+  the missing Sagittal and TrioPlot outputs when an unrelated profile is active.
+- Verification: 99 of 99 raw SWCs cached for 945 / 252527 without downloads.
+  A local two-neuron render produced eight decoded, hash-matched PNGs; resume
+  reused both completed cases. No cohort-wide figure render or anatomical
+  acceptance is claimed.
+
 ## 1.20.1 — 2026-11-04 (local/unreleased)
 - Route GUI Render figures to a configurable `visual_toolkit.figure_output_root`,
   grouped as `<sample>/neurons/<neuron>/`. Save outputs remains the switch for

@@ -1,7 +1,7 @@
 """Legacy SWC parser and geometry preparation.
 
-Version: 1.20.1 (local/unreleased)
-Last updated: 2026-11-04
+Version: 1.20.2 (local/unreleased)
+Last updated: 2026-11-07
 Change history: ../../../CHANGELOG.md
 Status: candidate
 """

@@ -1,23 +1,87 @@
-# ReMAP-to-VisPa batch bridge
+# VisPa batch review
 
-Candidate 1.12.0.dev3; repository checkout operator, not currently included as an installed wheel command. One JSON case declares exact source and destination paths. [Example](remap_stepwise.example.json) contains placeholders.
+Version 1.20.2. Run these commands from the VisPa checkout with its Python
+environment. The ReMAP/FNT bridge and the whole-animal workflow both produce
+a frozen review jobs file.
+
+The chart shows calls and data flow. The IONData catalog and declared raw
+SWC sources are external inputs.
 
 ```mermaid
-flowchart LR
- A[Case: exact sample, SWCs, atlas, saved FNT, VisPa config] --> B[Dry-run and hashes; limit one]
- B --> C[ReMAP population workbook]
- B --> D[Saved FNT scores: unpenalized raw Score and explicit linkage/k]
- C --> E[Exact identity matching; ambiguous aliases rejected]
- D --> E
- E --> F[Review jobs plus receipts]
- F --> G[Bounded VisPa render using declared local sources]
- G -. technical PNG inspection and anatomy review .-> H[Human interpretation]
+flowchart TD
+  A[/Configured catalog or exact identity CSV/]
+  B[/VisPa profile and declared raw SWC roots/]
+  F[/ReMAP case with saved FNT scores/]
+  subgraph PREP["prepare_review_bulk.py"]
+    P([plan_jobs and prepare_jobs])
+    C{Exact raw SWC available?}
+    M([Record unready neuron])
+  end
+  subgraph LEGACY["remap_stepwise.py"]
+    R([Join declared ReMAP and FNT inputs])
+  end
+  subgraph BULK["render_review_bulk.py"]
+    V([load_review_jobs])
+    S{Resume receipt and four PNG hashes match?}
+    N([render_review_neuron])
+  end
+  J[/Frozen review jobs and raw SWC hashes/]
+  O[/Soma, Context, Sagittal, TrioPlot and receipts/]
+  A -->|data| P
+  B -->|data| P
+  P --> C
+  C -->|Resolved or explicitly acquired| J
+  C -->|Unavailable| M
+  M -->|records blocked input| J
+  F -->|data| R
+  R -->|writes| J
+  J -->|data| V
+  V --> S
+  S -->|Yes| O
+  S -->|No or fresh run| N
+  N -->|writes| O
+  classDef callable fill:#E8F5EE,stroke:#23845B,color:#173B2C
+  classDef data fill:#F1F5F9,stroke:#64748B,color:#1F2937
+  class P,M,R,V,N callable
+  class A,B,F,J,O data
+  style PREP fill:#F4F8FF,stroke:#6186B5,color:#1F2937
+  style LEGACY fill:#F4F8FF,stroke:#6186B5,color:#1F2937
+  style BULK fill:#F4F8FF,stroke:#6186B5,color:#1F2937
 ```
 
-Run `python -m batch.remap_stepwise --case <case.json> --limit 1 --dry-run`, then a fresh local `--output-root <path>` for one case. Use `python -m batch.render_review_bulk --jobs <vispa_bulk_jobs.json> --output-root <fresh-path> --limit 1 --dry-run` before rendering. Both commands accept `--version`. Full selection requires explicit `--all` and `allow_all=true`; share publication requires explicit `--publish share`. No existing output root is overwritten. Review config and jobs hashes are checked before use; incomplete panels are reported partial or failed.
+## Prepare and render one animal
 
-Region outputs inherit ReMAP legacy proxy definitions: endpoint-target categories include all recorded compartments, and retained regional reconstruction lengths are not proven axon-only projections. Type, laterality and projection labels are atlas-derived technical outputs, not independent anatomical acceptance. The FNT path reads the supplied complete saved score matrix; it does not regenerate or calibrate distances, and uses all supplied FNT markers for its exploratory clustering, not only render-selected IDs. `requested_k` and `realized_k` are recorded; `final_k` remains null. This bridge does not implement the legacy type-guided penalty or imply biological clusters.
+Select the animal by VisPa sample ID. Use the configured catalog with
+`--catalog` or provide an exact `sample,neuron_id` CSV with `--identities`.
+Repeat `--raw-root` for sources outside the profile. Supply `--source-receipt` to require the expected raw SWC hashes from a prior source receipt.
+Preparation uses the raw SWC root as the candidate microscopy center and
+records its source and hash. The configured portal soma is a separate
+coordinate source. These jobs do not establish coordinate equivalence or
+anatomical acceptance.
 
-The renderer uses VisPa's configured local raw-SWC adaptor with `allow_download=False`; the config's declared raw root must resolve the same sample/neuron. It never authorizes automatic portal SWC retrieval. When the job derives soma coordinates from a raw SWC, the chosen config's raw SWC must match that recorded hash before and after rendering; summary-derived soma has unknown source equivalence. PNG completion requires four distinct nonempty Soma, Context, Sagittal and TrioPlot files that Pillow identifies, verifies and decodes as PNGs; rendering is technical, not anatomical acceptance.
+1. Run `python -m batch.prepare_review_bulk --config <profile> --sample <sample> --catalog --cache-root <cache> --output-jobs <jobs.json> --limit 1 --dry-run`. Review the resolved IDs and input paths.
+2. Repeat without `--dry-run` to prepare the jobs file. Choose a managed cache directory separate from all raw source roots. `--allow-download` explicitly allows fetching missing raw SWCs. Check the jobs file for unready IDs and reasons.
+3. Run `python -m batch.render_review_bulk --jobs <jobs.json> --output-root <local-stage> --limit 1 --dry-run`, then repeat without `--dry-run`. Use a stage separate from the jobs directory. Inspect the four plots and receipt.
+4. For an animal run, prepare a new jobs file with `--all` and explicitly render with `--all`. Review the intended root before selecting a server destination. A run-specific subfolder separates the batch figures from existing GUI output.
+5. Use `--resume` with the same jobs file and destination after an interruption. Inspect the batch receipt for reused, rendered and unready neurons. Resume reuses a result only if the input identity and four verified PNGs match.
 
-Validation: initial inherited 9 tests passed, expanded 13 pass; one synthetic neuron ran through actual ReMAP 0.1.0.dev9 planner and population plus a three-marker saved-score FNT fixture. Current VisPa config, adaptor and renderer call signatures were inspected. This bounded test is not a real-microscopy render.
+Batch receipts are stored under `<root>/<sample>/bulk_runs/<run>/`. Use a fresh jobs file and output root if a microscopy dataset was replaced in place. Resume checks the frozen SWC, profile, settings and PNG bytes.
+
+The DEB GUI figure root is `X:/fMOST/Vispa_outputs`. Choose a local stage for
+the first run. Inspect PNG roles, axes, scale bars, and sagittal extent before
+using the configured server root.
+
+## Existing ReMAP and saved FNT jobs
+
+Run `python -m batch.remap_stepwise --case <case.json> --limit 1 --dry-run`,
+then use a fresh local `--output-root <path>` for one case. Its jobs file can
+be passed directly to `batch.render_review_bulk`. Full render selection
+requires explicit `--all` and a jobs file with `allow_all=true`. See the
+[example](remap_stepwise.example.json) for case inputs. The ReMAP bridge
+requires explicit `--publish share` for its own share publication.
+
+ReMAP endpoint-target categories include all recorded compartments. Retained
+regional reconstruction lengths are proxy measures. The FNT path reads the
+declared saved scores and records `requested_k` and `realized_k`; `final_k`
+remains null. Scientific interpretation and anatomical acceptance require
+separate review.

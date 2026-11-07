@@ -1,15 +1,15 @@
 # VisPa — Visual Projectome Analysis tool
 
 VisPa reviews macaque neuron and microscopy data configured by the DEB lab.
-This checkout identifies as **1.20.1**. VisPa is a
+This checkout identifies as **1.20.2**. VisPa is a
 Python package inside a Conda environment. Launch the GUI directly from this
 checkout with `python run_vispa.py`.
 
 [Install](#install-on-windows) · [Update an existing environment](#update-an-existing-vispa-environment) · [Remove VisPa](#remove-vispa)
 
-## ReMAP review bridge
+## Batch review
 
-The checkout-only `batch.remap_stepwise` and `batch.render_review_bulk` operators connect explicit ReMAP inputs and saved FNT scores to VisPa review panels. Start with a dry run and one case; see the [batch bridge guide](batch/MODULE.md) for inputs, output contracts and limits. These modules are not installed wheel commands. Their outputs are technical candidates requiring separate anatomical review.
+The checkout-only `batch.remap_stepwise` and `batch.render_review_bulk` operators connect explicit ReMAP inputs and saved FNT scores to VisPa review panels. Start with a dry run and one case; see the [batch bridge guide](batch/MODULE.md) for inputs, output contracts and limits. These modules are not installed wheel commands. Their outputs are technical candidates requiring separate anatomical review. The checkout also prepares an exact animal catalog, caches raw SWCs, and resumes verified per-neuron renders with `batch.prepare_review_bulk` and `batch.render_review_bulk`.
 
 ## Code layout and responsibilities
 
@@ -89,6 +89,8 @@ flowchart TD
   D -. optional API .-> T[swc_terminal_candidates.py]
   R[Repository batch.remap_stepwise: explicit case] --> S[ReMAP population and saved FNT candidate]
   S --> W[Repository batch.render_review_bulk]
+  BC[/Exact animal catalog or identity CSV/] -->|data| BP[Repository batch.prepare_review_bulk]
+  BP -->|frozen jobs| W
   K --> W
   W --> O
   T -. planned .-> TR[Terminal image review]

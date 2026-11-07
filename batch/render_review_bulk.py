@@ -1,7 +1,7 @@
 """Render one VisPa review set per published region/FNT job.
 
-Version: 1.12.0.dev3 (local/unreleased)
-Last updated: 2026-10-31
+Version: 1.20.2 (local/unreleased)
+Last updated: 2026-11-07
 Change history: ../CHANGELOG.md
 Status: candidate
 
@@ -78,10 +78,16 @@ def load_review_jobs(jobs_path: Path, output_root: Path, limit: int | None, all_
     config_path = config_path.resolve(strict=True)
     if not config_path.is_file():
         raise ValueError("vispa_config must be a file")
+    config_hash = _sha256(config_path)
+    if payload.get("vispa_config_sha256") and payload["vispa_config_sha256"] != config_hash:
+        raise ValueError("Prepared VisPa config hash differs from current config")
     output_root = Path(output_root).expanduser().resolve()
     if output_root == jobs_path.parent or jobs_path.parent in output_root.parents:
         raise ValueError("Output root must be separate from the jobs file")
     ready, skipped = [], []
+    layout = payload.get("output_layout", "legacy")
+    if layout not in {"legacy", "sample_neurons"}:
+        raise ValueError("output_layout must be legacy or sample_neurons")
     seen = set()
     for entry in payload.get("jobs", []):
         if not isinstance(entry, dict):
@@ -104,6 +110,8 @@ def load_review_jobs(jobs_path: Path, output_root: Path, limit: int | None, all_
                 "soma_units": entry.get("soma_units"),
                 "soma_coordinate_source": entry.get("soma_coordinate_source"),
                 "raw_swc_sha256": entry.get("raw_swc_sha256"),
+                "raw_swc_path": entry.get("raw_swc_path"),
+                "raw_source_path": entry.get("raw_source_path"),
                 "fnt_marker": entry.get("fnt_marker"),
                 "fnt_cluster": entry.get("fnt_cluster"),
             })
@@ -123,17 +131,34 @@ def load_review_jobs(jobs_path: Path, output_root: Path, limit: int | None, all_
         selected = ready[:limit]
     if not selected:
         raise ValueError("No render-ready neurons are available for this limit")
+    jobs_hash = _sha256(jobs_path)
     for entry in selected:
-        entry["output_dir"] = str(output_root / sample / entry["neuron_id"][:-4])
+        if layout == "sample_neurons":
+            folder = output_root / sample / "neurons" / entry["neuron_id"][:-4] / f"bulk_{jobs_hash[:12]}"
+        else:
+            folder = output_root / sample / entry["neuron_id"][:-4]
+        entry["output_dir"] = str(folder)
+    from vispa import __version__
+    review_settings, figure_output_root = {}, None
+    if layout == "sample_neurons":
+        from vispa.config import load, resolve_settings
+        resolved_config = load(config_path)
+        review_settings = resolve_settings("review", config=resolved_config)
+        figure_output_root = str(resolved_config["visual_toolkit"]["figure_output_root"])
     return {
         "schema": payload["schema"],
         "jobs_path": str(jobs_path),
-        "jobs_sha256": _sha256(jobs_path),
+        "jobs_sha256": jobs_hash,
         "vispa_config": str(config_path),
-        "vispa_config_sha256": _sha256(config_path),
+        "vispa_config_sha256": config_hash,
         "output_root": str(output_root),
         "sample_id": sample,
         "requested": len(selected),
+        "all_jobs": all_jobs,
+        "output_layout": layout,
+        "vispa_version": __version__,
+        "review_settings": review_settings,
+        "figure_output_root": figure_output_root,
         "skipped_not_ready": skipped,
         "jobs": selected,
         "anatomical_acceptance": "not established",
@@ -147,13 +172,31 @@ def _verified_raw_path(config: dict, job: dict) -> Path | None:
     if not isinstance(expected, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", expected):
         raise ValueError("Invalid expected raw SWC hash")
     from vispa.data_input_adaptor import resolve_declared_raw_swc
-    root = (config.get("sources") or {}).get("legacy_raw_swc_root")
-    if not root:
-        raise ValueError("VisPa config lacks declared raw SWC root")
-    path = resolve_declared_raw_swc(root, job["sample_id"], job["neuron_id"])
-    if _sha256(path).lower() != expected.lower():
-        raise ValueError("Configured raw SWC differs from stepwise soma source")
-    return path
+    explicit = job.get("raw_swc_path")
+    if explicit:
+        path = Path(explicit).resolve(strict=True)
+        if path.name != job["neuron_id"]:
+            raise ValueError("Explicit raw SWC path has a different neuron filename")
+        candidates = [path]
+    else:
+        roots = []
+        managed = (config.get("defaults") or {}).get("cache_root")
+        if managed:
+            roots.append(Path(managed) / "swc_raw")
+        declared = (config.get("sources") or {}).get("legacy_raw_swc_root")
+        if declared:
+            roots.append(Path(declared))
+        candidates = []
+        for root in roots:
+            try:
+                candidates.append(resolve_declared_raw_swc(
+                    root, job["sample_id"], job["neuron_id"]))
+            except (OSError, ValueError):
+                continue
+    for path in candidates:
+        if path.is_file() and _sha256(path).lower() == expected.lower():
+            return path
+    raise ValueError("Configured raw SWC differs from job's frozen source hash or is missing")
 
 
 def render_review_neuron(job: dict, output_dir: Path, config_path: Path) -> dict:
@@ -162,7 +205,7 @@ def render_review_neuron(job: dict, output_dir: Path, config_path: Path) -> dict
     matplotlib.use("Agg", force=False)
     from vispa.config import load
     from vispa.reviewer import make_processing_request
-    from vispa.data_input_adaptor import load_raw_neuron
+    from vispa.data_input_adaptor import load_raw_neuron, read_swc
     from vispa.toolkit import BLOCK_SIZE_PIXELS, REVIEW_SETTINGS, VisPa, configure_data_sources
 
     config = load(config_path)
@@ -200,7 +243,8 @@ def render_review_neuron(job: dict, output_dir: Path, config_path: Path) -> dict
             except Exception as exc:
                 errors.append(f"Soma plot: {exc}")
         try:
-            tree = load_raw_neuron(config, job["sample_id"], job["neuron_id"], allow_download=False)
+            tree = (read_swc(raw_path) if raw_path is not None else
+                    load_raw_neuron(config, job["sample_id"], job["neuron_id"], allow_download=False))
             if tree is None:
                 raise ValueError("raw SWC was not found")
             wide, wide_origin, wide_resolution = tool.get_low_res_widefield(
@@ -212,9 +256,16 @@ def render_review_neuron(job: dict, output_dir: Path, config_path: Path) -> dict
         except Exception as exc:
             errors.append(f"Context: {exc}")
         try:
+            sagittal_raw_path = raw_path
+            if sagittal_raw_path is None:
+                from vispa.data_input_adaptor import resolve_declared_raw_swc
+                declared_root = (config.get("sources") or {}).get("legacy_raw_swc_root")
+                if declared_root:
+                    sagittal_raw_path = resolve_declared_raw_swc(
+                        declared_root, job["sample_id"], job["neuron_id"])
             panels["Sagittal"] = tool.render_sagittal_context_from_ds(
                 job["neuron_id"], request.soma_xyz, output_dir=str(output_dir),
-                soma_region=region)["panel"]
+                soma_region=region, swc_path=sagittal_raw_path)["panel"]
         except Exception as exc:
             errors.append(f"Sagittal: {exc}")
         if all(isinstance(panels.get(role), dict) for role in ("Soma", "Context", "Sagittal")):
@@ -251,7 +302,64 @@ def _status_for(outputs: dict, errors: list) -> str:
     return "rendered_candidate"
 
 
-def run_review_bulk(plan: dict, *, dry_run: bool, renderer=None) -> dict:
+def _settings_sha256(plan: dict) -> str:
+    encoded = json.dumps(plan["review_settings"], sort_keys=True, default=str).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _job_sha256(job: dict) -> str:
+    encoded = json.dumps(job, sort_keys=True, default=str).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _current_receipt(job: dict, plan: dict) -> dict | None:
+    """Reuse only a complete receipt whose frozen inputs and PNG bytes still match."""
+    if not job.get("raw_swc_sha256"):
+        return None
+    from vispa.config import load
+    try:
+        _verified_raw_path(load(plan["vispa_config"]), job)
+        folder = Path(job["output_dir"]).resolve()
+        record = json.loads((folder / "review_receipt.json").read_text(encoding="utf-8"))
+        if (record.get("status") != "rendered_candidate" or record.get("errors") or
+            record.get("job_sha256") != _job_sha256(job) or
+            record.get("config_sha256") != plan["vispa_config_sha256"] or
+            record.get("vispa_version") != plan["vispa_version"] or
+            record.get("settings_sha256") != _settings_sha256(plan) or
+            set(record.get("outputs") or {}) != {"Soma", "Context", "Sagittal", "TrioPlot"}):
+            return None
+        from PIL import Image
+        seen_paths = set()
+        for output in record["outputs"].values():
+            path = Path(output["path"]).resolve(strict=True)
+            if (not path.is_relative_to(folder) or not path.stat().st_size or
+                _sha256(path) != output["sha256"]):
+                return None
+            if path in seen_paths:
+                return None
+            seen_paths.add(path)
+            with Image.open(path) as image:
+                if image.format != "PNG":
+                    return None
+                image.verify()
+            with Image.open(path) as image:
+                image.load()
+        return record
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def run_review_bulk(plan: dict, *, dry_run: bool, renderer=None, resume: bool = False) -> dict:
+    if dry_run:
+        return _run_review_bulk(plan, dry_run=True, renderer=renderer, resume=resume)
+    from vispa.batch_run_lock import exclusive_batch
+    root = Path(plan["output_root"])
+    lock = root.parent / f".{root.name}.review_bulk.lock"
+    with exclusive_batch(lock):
+        return _run_review_bulk(plan, dry_run=False, renderer=renderer, resume=resume)
+
+
+def _run_review_bulk(plan: dict, *, dry_run: bool, renderer=None, resume: bool = False) -> dict:
     result = {
         **plan,
         "status": "dry_run" if dry_run else "in_progress",
@@ -265,13 +373,37 @@ def run_review_bulk(plan: dict, *, dry_run: bool, renderer=None) -> dict:
     if dry_run:
         return result
     output_root = Path(plan["output_root"])
-    if output_root.exists():
+    if output_root.exists() and not resume and plan["output_layout"] == "legacy":
         raise FileExistsError("Fresh output root required; existing plots are not overwritten")
-    output_root.mkdir(parents=True)
+    if output_root.exists() and not resume and any(
+        Path(job["output_dir"]).exists() for job in plan["jobs"]):
+        raise FileExistsError("A selected neuron run folder already exists; use --resume")
+    output_root.mkdir(parents=True, exist_ok=True)
+    if plan["output_layout"] == "sample_neurons":
+        receipt_root = output_root / plan["sample_id"] / "bulk_runs" / f"bulk_{plan['jobs_sha256'][:12]}"
+    else:
+        receipt_root = output_root
+    if not resume and (receipt_root / "batch_receipt.json").exists():
+        raise FileExistsError("This job set already has a batch receipt; use --resume")
+    receipt_root.mkdir(parents=True, exist_ok=True)
+    previous_path = receipt_root / "batch_receipt.json"
+    if resume and previous_path.is_file():
+        previous = json.loads(previous_path.read_text(encoding="utf-8"))
+        for key in ("jobs_sha256", "vispa_config_sha256", "vispa_version", "output_layout"):
+            if previous.get(key) != plan[key]:
+                raise ValueError(f"Cannot resume: {key} differs from prior batch")
+        if _settings_sha256(previous) != _settings_sha256(plan):
+            raise ValueError("Cannot resume: resolved review settings differ")
     render = renderer or render_review_neuron
     try:
         for job in plan["jobs"]:
             folder = Path(job["output_dir"])
+            if resume:
+                existing = _current_receipt(job, plan)
+                if existing is not None:
+                    result["completed"].append({**existing, "resume_action": "verified_skip"})
+                    _atomic_json(previous_path, result)
+                    continue
             folder.mkdir(parents=True, exist_ok=True)
             try:
                 if _sha256(Path(plan["vispa_config"])) != plan["vispa_config_sha256"]:
@@ -290,6 +422,8 @@ def run_review_bulk(plan: dict, *, dry_run: bool, renderer=None) -> dict:
                     candidate = Path(path).resolve(strict=True)
                     if not candidate.is_file() or not candidate.stat().st_size:
                         raise ValueError("not a nonempty file")
+                    if plan["output_layout"] == "sample_neurons" and not candidate.is_relative_to(folder.resolve()):
+                        raise ValueError("panel path escapes neuron run folder")
                     if candidate in seen_paths:
                         raise ValueError("duplicate panel path")
                     with Image.open(candidate) as image:
@@ -318,21 +452,28 @@ def run_review_bulk(plan: dict, *, dry_run: bool, renderer=None) -> dict:
                 "fnt_marker": job.get("fnt_marker"),
                 "fnt_cluster": job.get("fnt_cluster"),
                 "status": status,
+                "job_sha256": _job_sha256(job),
+                "config_sha256": plan["vispa_config_sha256"],
+                "vispa_version": plan["vispa_version"],
+                "settings_sha256": _settings_sha256(plan),
+                "resume_action": "rendered",
                 "outputs": outputs,
                 "errors": errors,
                 "anatomical_acceptance": "not established",
             }
             _atomic_json(folder / "review_receipt.json", record)
             result["completed"].append(record)
+            _atomic_json(previous_path, result)
         result["status"] = (
             "pass" if result["completed"] and all(
                 item["status"] == "rendered_candidate" for item in result["completed"])
+                and not (plan["all_jobs"] and plan["skipped_not_ready"])
             else "partial_or_failed")
     except Exception as exc:
         result["status"] = "partial_or_failed"
         result["error"] = str(exc)
     finally:
-        _atomic_json(output_root / "batch_receipt.json", result)
+        _atomic_json(previous_path, result)
     return result
 
 
@@ -346,10 +487,12 @@ def main(argv=None) -> int:
     group.add_argument("--limit", type=int)
     group.add_argument("--all", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--resume", action="store_true",
+                        help="verify and skip complete neuron receipts, retry incomplete neurons")
     args = parser.parse_args(argv)
     try:
         plan = load_review_jobs(args.jobs, args.output_root, args.limit, args.all)
-        result = run_review_bulk(plan, dry_run=args.dry_run)
+        result = run_review_bulk(plan, dry_run=args.dry_run, resume=args.resume)
     except (OSError, RuntimeError, TypeError, ValueError, KeyError) as exc:
         result = {"status": "failed", "error": str(exc)}
     print(json.dumps(result, indent=2, sort_keys=True, default=str))

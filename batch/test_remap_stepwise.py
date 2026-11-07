@@ -1,7 +1,7 @@
 """Stepwise region-to-FNT planning tests with local stand-ins for ReMAP.
 
-Version: 1.12.0.dev3 (local/unreleased)
-Last updated: 2026-10-31
+Version: 1.20.2 (local/unreleased)
+Last updated: 2026-11-07
 Change history: ../CHANGELOG.md
 Status: candidate
 """
@@ -338,6 +338,47 @@ class BulkRenderTests(unittest.TestCase):
         self.assertEqual(result["status"], "partial_or_failed")
         self.assertTrue((output / "251637" / "001" / "Soma.png").is_file())
         self.assertTrue((output / "batch_receipt.json").is_file())
+
+    def test_new_layout_resume_checks_source_and_four_png_hashes(self):
+        import hashlib
+        from PIL import Image
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            raw = root / "raw" / "001.swc"
+            raw.parent.mkdir()
+            raw.write_text("1 1 1 2 3 1 -1\n", encoding="utf-8")
+            digest = hashlib.sha256(raw.read_bytes()).hexdigest()
+            config = Path(__file__).parents[1] / "src/vispa/configs/config_deb.yaml"
+            jobs = root / "inputs" / "jobs.json"
+            jobs.parent.mkdir()
+            jobs.write_text(json.dumps({
+                "schema": "vispa.review_bulk.v1", "sample_id": "251637",
+                "vispa_config": str(config), "output_layout": "sample_neurons",
+                "jobs": [{"sample_id": "251637", "neuron_id": "001.swc",
+                          "render_ready": True, "soma_xyz": [1, 2, 3],
+                          "raw_swc_path": str(raw), "raw_swc_sha256": digest}],
+            }), encoding="utf-8")
+            plan = load_review_jobs(jobs, root / "figures", 1, False)
+            calls = []
+
+            def render(job, folder, config_path):
+                calls.append(job["neuron_id"])
+                outputs = {}
+                for role in ("Soma", "Context", "Sagittal", "TrioPlot"):
+                    path = folder / f"{role}.png"
+                    Image.new("RGB", (2, 2)).save(path)
+                    outputs[role] = str(path)
+                return {"outputs": outputs, "errors": []}
+
+            self.assertEqual(run_review_bulk(plan, dry_run=False, renderer=render)["status"], "pass")
+            resumed = run_review_bulk(plan, dry_run=False, renderer=render, resume=True)
+            self.assertEqual(resumed["completed"][0]["resume_action"], "verified_skip")
+            self.assertEqual(calls, ["001.swc"])
+            png = Path(plan["jobs"][0]["output_dir"]) / "Soma.png"
+            png.write_bytes(b"corrupt")
+            retried = run_review_bulk(plan, dry_run=False, renderer=render, resume=True)
+            self.assertEqual(retried["completed"][0]["resume_action"], "rendered")
+            self.assertEqual(calls, ["001.swc", "001.swc"])
 
 
 if __name__ == "__main__":

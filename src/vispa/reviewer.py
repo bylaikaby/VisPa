@@ -1,8 +1,8 @@
 """
 vispa_gui.py - GUI for NeuroVis Visual Toolkit
 
-Version: 1.20.1 (local/unreleased)
-Last updated: 2026-11-04
+Version: 1.20.2 (local/unreleased)
+Last updated: 2026-11-07
 Change history: ../../CHANGELOG.md
 Status: candidate (GUI layout reviewed; scientific review pending)
 2026-10-30: Record effective fixed crosshair and smaller legacy square separately from legacy

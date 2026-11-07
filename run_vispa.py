@@ -1,7 +1,7 @@
 """Launch VisPa from this checkout.
 
-Version: 1.12.0.dev3 (local/unreleased)
-Last updated: 2026-10-31
+Version: 1.20.2 (local/unreleased)
+Last updated: 2026-11-07
 Change history: CHANGELOG.md
 """
 from pathlib import Path

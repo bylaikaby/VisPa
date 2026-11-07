@@ -1,7 +1,7 @@
 """Synthetic render-style regression checks.
 
-Version: 1.20.1 (local/unreleased)
-Last updated: 2026-11-04
+Version: 1.20.2 (local/unreleased)
+Last updated: 2026-11-07
 Change history: ../CHANGELOG.md
 2026-10-30: Cover the fixed 320-pixel crosshair, reduced legacy square,
 exact centre, and GUI receipt

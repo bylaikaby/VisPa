@@ -1,7 +1,7 @@
 """Checks for the public data-check API, CLI and GUI progress plumbing.
 
-Version: 1.20.1 (local/unreleased)
-Last updated: 2026-11-04
+Version: 1.20.2 (local/unreleased)
+Last updated: 2026-11-07
 Change history: ../CHANGELOG.md
 Status: candidate
 """
@@ -78,8 +78,13 @@ class DataCheckTests(unittest.TestCase):
             root = Path(folder)
             config = self._config(root)
             progress = []
-            report = data_check(
-                config, progress=lambda done, total: progress.append((done, total)))
+            with mock.patch("vispa.updates.load_updates", return_value={
+                "matches_installed": True,
+                "installed_version": vispa.__version__,
+                "latest_version": vispa.__version__,
+            }):
+                report = data_check(
+                    config, progress=lambda done, total: progress.append((done, total)))
             self.assertIs(vispa.check, data_check)
             self.assertTrue(report["ready"], report["checklist"])
             self.assertEqual(report["checked"], 16)
