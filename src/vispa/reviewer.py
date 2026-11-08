@@ -1,7 +1,7 @@
 """
 vispa_gui.py - GUI for NeuroVis Visual Toolkit
 
-Version: 1.21.0 (local/unreleased)
+Version: 1.21.1 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../../CHANGELOG.md
 Status: candidate (GUI layout reviewed; scientific review pending)
@@ -160,14 +160,11 @@ from .config import _stamp
 SWC_BRAIN_VIEW_LABEL = "SWC Brain View"
 CATALOG_ALL_REGIONS = "All regions"
 FIXED_CROSSHAIR_NOTICE = (
-    "Review crosshair arms are fixed at 320 display pixels. "
-    "marker.crosshair_px is retained for older profiles and does not change the drawn length.")
+    "Crosshair arm length follows marker.crosshair_px in the review settings; "
+    "the box follows marker.box_mode.")
 SWC_BRAIN_VIEW_INTERACTIVE_LABEL = "SWC Brain View interactive"
 
-EMPTY_PREVIEW_TEXT = (
-    "No figure yet\n\nEnter Sample ID and Neuron ID; soma coordinates load "
-    "automatically. Then click Render."
-)
+EMPTY_PREVIEW_TEXT = ""
 
 try:  # preview pane only; the rest of the GUI works without Pillow
     from PIL import Image, ImageTk
@@ -439,7 +436,6 @@ try:
     from .renderers.microscopy_panels import VisPa
     from .renderers.microscopy_panels import REVIEW_SETTINGS
     from .renderers.microscopy_panels import BLOCK_SIZE_PIXELS
-    from .renderers.microscopy_panels import TARGET_CROSSHAIR_ARM_PX
     from .renderers.microscopy_panels import TARGET_BOX_SIDE_SCALE
     from .renderers.microscopy_panels import configure_data_sources
     from . import sources as IT
@@ -449,16 +445,16 @@ except ImportError as e:
 class NeuroVisGUI:
     """Complete GUI for NeuroVis Visual Toolkit."""
 
-    # Palette taken from the Binavi interactive viewer (white cards on a pale page,
-    # navy header strip, teal accent, muted slate labels, 1-px pale borders).
+    # Graphite surfaces follow the reviewed classic preview. Plot action colours
+    # remain semantic and are kept at their call sites below.
     COLORS = {
-        'page': '#f6f8fa', 'card': '#ffffff', 'border': '#d9e3e9',
-        'header': '#263746', 'header_text': '#f4f7f9', 'header_muted': '#a9c0cc',
-        'text': '#173747', 'muted': '#526b79', 'accent': '#168a91',
-        'accent_dark': '#126b78', 'accent_soft': '#edf6f7', 'strip': '#eef3f6',
-        'preview_bg': '#0f1a24', 'field': '#fbfdfe', 'disabled': '#9aa9b3',
-        'border_dark': '#5f686b', 'field_border': '#7f898d',
-        'button_border': '#606d72',
+        'page': '#303637', 'card': '#414a4c', 'border': '#697575',
+        'header': '#171d1e', 'header_text': '#c5ddca', 'header_muted': '#b7c9ba',
+        'text': '#e4e4dc', 'muted': '#c5cecb', 'accent': '#168a91',
+        'accent_dark': '#126b78', 'accent_soft': '#263031', 'strip': '#465052',
+        'preview_bg': '#0c1213', 'field': '#202728', 'disabled': '#aab5b2',
+        'border_dark': '#899e91', 'field_border': '#738183',
+        'button_border': '#879092',
     }
 
     def __init__(self, root, sample_id=None, neuron_id=None,
@@ -485,6 +481,7 @@ class NeuroVisGUI:
         self.scale = max(1.0, float(self.root.winfo_fpixels('1i')) / 96.0)
         self.root.geometry(self._window_geometry())
         self.root.configure(bg=self.COLORS['page'])
+        self._configure_graphite_ttk()
         # Resizable, with the minimum taken from the built layout below, so a future
         # extra control cannot trap the status bar outside a fixed window.
         self.root.resizable(True, True)
@@ -630,6 +627,27 @@ class NeuroVisGUI:
         if self.watch_review_session:
             self.root.after(500, self._poll_review_session)
 
+    def _configure_graphite_ttk(self):
+        """Keep native ttk controls legible beside the Graphite Tk surfaces."""
+        C = self.COLORS
+        style = ttk.Style(self.root)
+        style.theme_use('clam')
+        style.configure('.', background=C['page'], foreground=C['text'],
+                        fieldbackground=C['field'], font=('Segoe UI', 9))
+        style.configure('TFrame', background=C['page'])
+        style.configure('TLabel', background=C['page'], foreground=C['text'])
+        style.configure('TButton', background=C['card'], foreground=C['text'],
+                        bordercolor=C['button_border'], padding=5)
+        style.map('TButton', background=[('active', C['strip'])])
+        style.configure('TEntry', fieldbackground=C['field'], foreground=C['text'],
+                        bordercolor=C['field_border'])
+        style.configure('TCombobox', fieldbackground=C['field'], foreground=C['text'],
+                        background=C['card'])
+        style.map('TCombobox', fieldbackground=[('readonly', C['field'])],
+                  foreground=[('readonly', C['text'])])
+        style.configure('TCheckbutton', background=C['page'], foreground=C['text'])
+        style.configure('TRadiobutton', background=C['page'], foreground=C['text'])
+
     def _generate_default_path(self, sample_id, neuron_id=None):
         """Per-neuron figure folder under the configured GUI figure root."""
         neuron = neuron_id if neuron_id is not None else self.neuron_id.get()
@@ -724,7 +742,7 @@ class NeuroVisGUI:
             label.configure(image="", text=EMPTY_PREVIEW_TEXT)
         caption = getattr(self, "preview_caption", None)
         if caption is not None:
-            caption.set("Run a plot to see it here")
+            caption.set("")
         if hasattr(self, "_refresh_preview_tabs"):
             self._refresh_preview_tabs()
         if (hasattr(self, "_refresh_dataset_sources")
@@ -862,7 +880,7 @@ class NeuroVisGUI:
             status_row.grid_columnconfigure(column, weight=1)
         status_boxes = (
             (self.neuron_status_var, C['accent_soft'], 0, 0, 2),
-            (self.region_status_var, '#eee8f8', 1, 0, 2),
+            (self.region_status_var, C['strip'], 1, 0, 2),
         )
         for variable, fill, row, column, columnspan in status_boxes:
             box = tk.Frame(status_row, bg=fill, highlightthickness=1,
@@ -893,17 +911,17 @@ class NeuroVisGUI:
                 row=0, column=1, sticky='ew', padx=(P(3), 0))
         body = self._card(inner, "Target soma coordinates")
         physical = tk.Frame(
-            body, bg='#f7fafb', highlightthickness=1,
+            body, bg=C['accent_soft'], highlightthickness=1,
             highlightbackground=C['border'])
         physical.grid(row=0, column=0, sticky='ew', pady=(P(2), P(5)))
         tk.Label(
-            physical, text='Physical coordinate (µm)', bg='#f7fafb',
-            fg=C['header'], font=('Segoe UI', 9, 'bold')).grid(
+            physical, text='Physical coordinate (µm)', bg=C['accent_soft'],
+            fg=C['header_text'], font=('Segoe UI', 9, 'bold')).grid(
                 row=0, column=0, columnspan=6, sticky='w',
                 padx=P(7), pady=(P(5), P(2)))
         for column, (label, variable) in enumerate((
                 ("X", self.x_coord), ("Y", self.y_coord), ("Z", self.z_coord))):
-            tk.Label(physical, text=label, bg='#f7fafb', fg=C['muted'],
+            tk.Label(physical, text=label, bg=C['accent_soft'], fg=C['muted'],
                      font=('Segoe UI', 9)).grid(
                          row=1, column=column * 2, sticky='w',
                          padx=(P(7) if column == 0 else P(6), 0),
@@ -920,25 +938,25 @@ class NeuroVisGUI:
             physical.grid_columnconfigure(column * 2 + 1, weight=1)
 
         template = tk.Frame(
-            body, bg='#f4f0fa', highlightthickness=1,
-            highlightbackground='#cfc4e2')
+            body, bg=C['strip'], highlightthickness=1,
+            highlightbackground=C['border'])
         template.grid(row=1, column=0, sticky='ew', pady=(0, P(3)))
         tk.Label(
-            template, text='NMT template coordinate (voxel)', bg='#f4f0fa',
-            fg='#5d467e', font=('Segoe UI', 9, 'bold')).grid(
+            template, text='NMT template coordinate (voxel)', bg=C['strip'],
+            fg=C['header_text'], font=('Segoe UI', 9, 'bold')).grid(
                 row=0, column=0, columnspan=6, sticky='w',
                 padx=P(7), pady=(P(5), P(2)))
         for column, (label, variable) in enumerate((
                 ("X", self.nmt_x), ("Y", self.nmt_y), ("Z", self.nmt_z))):
-            tk.Label(template, text=label, bg='#f4f0fa', fg='#6d5a85',
+            tk.Label(template, text=label, bg=C['strip'], fg=C['muted'],
                      font=('Segoe UI', 9)).grid(
                          row=1, column=column * 2, sticky='w',
                          padx=(P(7) if column == 0 else P(6), 0),
                          pady=(0, P(5)))
             entry = tk.Entry(
                 template, textvariable=variable, width=7, relief='flat',
-                bg='#ece6f5', fg='#3f3155', readonlybackground='#ece6f5',
-                highlightthickness=1, highlightbackground='#c7bbdb',
+                bg=C['field'], fg=C['text'], readonlybackground=C['field'],
+                highlightthickness=1, highlightbackground=C['field_border'],
                 font=('Segoe UI', 9, 'bold'), state='readonly')
             entry.grid(row=1, column=column * 2 + 1, sticky='ew',
                        padx=(P(6), P(8) if column < 2 else P(7)),
@@ -966,7 +984,7 @@ class NeuroVisGUI:
                 padx=(0 if column == 0 else P(3),
                       0 if column + columnspan >= 2 else P(3)),
                 pady=(0, P(4)) if row else (0, P(6)))
-            tk.Label(box, text=title, bg=C['card'], fg=C['header'],
+            tk.Label(box, text=title, bg=C['card'], fg=C['header_text'],
                      font=('Segoe UI', 9, 'bold'), justify='left').pack(
                          anchor='w', padx=P(6), pady=(P(5), P(3)))
             return box
@@ -1058,17 +1076,17 @@ class NeuroVisGUI:
                                 highlightthickness=1)
         preview_card.grid(row=0, column=0, sticky='nsew')
         preview_card.grid_propagate(False)
-        head = tk.Frame(preview_card, bg='#6b4fa0')
+        head = tk.Frame(preview_card, bg=C['header'])
         head.pack(fill='x', pady=(0, P(6)))
-        tk.Label(head, text="Figure preview", bg='#6b4fa0', fg='#ffffff',
+        tk.Label(head, text="Figure preview", bg=C['header'], fg=C['header_text'],
                  font=('Segoe UI', 11, 'bold')).pack(
                      side='left', padx=P(14), pady=P(6))
-        self.preview_caption = tk.StringVar(value="Run a plot to see it here")
-        tk.Label(head, textvariable=self.preview_caption, bg='#6b4fa0', fg='#e7dff5',
+        self.preview_caption = tk.StringVar(value="")
+        tk.Label(head, textvariable=self.preview_caption, bg=C['header'], fg=C['header_muted'],
                  font=('Segoe UI', 9)).pack(side='right', padx=P(14), pady=(P(10), P(2)))
         self.preview_identity = tk.StringVar(value="")
-        tk.Label(head, textvariable=self.preview_identity, bg='#6b4fa0',
-                 fg='#ffffff', font=('Segoe UI', 9, 'bold')).pack(
+        tk.Label(head, textvariable=self.preview_identity, bg=C['header'],
+                 fg=C['header_text'], font=('Segoe UI', 9, 'bold')).pack(
                      side='right', padx=(0, P(10)), pady=(P(10), P(2)))
         for variable in (self.sample_id, self.neuron_id):
             variable.trace_add('write', lambda *_: self._refresh_preview_identity())
@@ -1096,7 +1114,7 @@ class NeuroVisGUI:
             button = tk.Button(tab_grid, text=label,
                                command=lambda r=role: self._show_role(r),
                                relief='raised', bd=1, bg=C['card'], fg=C['text'],
-                               activebackground='#e7eef3', activeforeground=C['text'],
+                               activebackground=C['strip'], activeforeground=C['text'],
                                disabledforeground=C['disabled'],
                                font=('Segoe UI', 9, 'bold'), padx=P(16), pady=P(4),
                                cursor='hand2', highlightthickness=1,
@@ -1111,9 +1129,9 @@ class NeuroVisGUI:
         log_frame.pack(fill='x', padx=P(14), pady=(0, P(10)))
         tk.Label(log_frame, text="Process log", bg=C['card'], fg=C['muted'],
                  font=('Segoe UI', 8, 'bold')).pack(anchor='w')
-        self.log_widget = tk.Text(log_frame, height=5, bg='#f7fafb', fg='#334955',
+        self.log_widget = tk.Text(log_frame, height=5, bg=C['field'], fg=C['text'],
                                   relief='flat', highlightthickness=1,
-                                  highlightbackground='#d9e3e9',
+                                  highlightbackground=C['border'],
                                   font=('Consolas', 8), wrap='none', state='disabled')
         self.log_widget.pack(fill='x', pady=(P(2), 0))
         self._append_log("Ready.")
@@ -1183,14 +1201,14 @@ class NeuroVisGUI:
         """One review-stage row: numbered badge, bold stage, muted detail."""
         C = self.COLORS
         P = self._px
-        bg = '#f08a24' if highlight else ('#f7f9fa' if row % 2 else C['card'])
+        bg = '#f08a24' if highlight else (C['strip'] if row % 2 else C['card'])
         fg = '#ffffff' if highlight else C['text']
         frame = tk.Frame(parent, bg=bg)
         frame.grid(row=row, column=0, sticky='ew', pady=(0, P(2)))
         frame.grid_columnconfigure(1, weight=1)
         tk.Label(frame, text=str(number), width=2,
-                 bg='#ffffff' if highlight else '#cbd8e0',
-                 fg='#e07a1f' if highlight else '#ffffff',
+                 bg='#ffffff' if highlight else C['field'],
+                 fg='#e07a1f' if highlight else C['text'],
                  font=('Segoe UI', 8, 'bold')).grid(
                      row=0, column=0, rowspan=2, sticky='nw',
                      padx=(P(8), P(8)), pady=(P(5), P(2)))
@@ -1227,7 +1245,7 @@ class NeuroVisGUI:
         window.geometry(f'{width}x{height}+{x}+{y}')
         window.minsize(P(480), P(400))
         window.protocol('WM_DELETE_WINDOW', window.destroy)
-        tk.Label(window, text='Review workflow', bg=C['page'], fg=C['header'],
+        tk.Label(window, text='Review workflow', bg=C['page'], fg=C['header_text'],
                  font=('Segoe UI', 14, 'bold')).pack(anchor='w', padx=P(16), pady=(P(14), P(5)))
         outer = tk.Frame(window, bg=C['page'])
         outer.pack(fill='both', expand=True, padx=P(12), pady=(0, P(12)))
@@ -1324,7 +1342,7 @@ class NeuroVisGUI:
         card.pack(fill='x', padx=P(2), pady=(0, P(1)))
         head = tk.Frame(card, bg=C['card'])
         head.pack(fill='x', anchor='w', padx=P(12), pady=(P(4), P(2)))
-        tk.Label(head, text=title, bg=C['card'], fg=C['header'],
+        tk.Label(head, text=title, bg=C['card'], fg=C['header_text'],
                  font=('Segoe UI', 11, 'bold')).pack(side='left')
         if subtitle:
             tk.Label(head, text=subtitle, bg=C['card'], fg=C['muted'],
@@ -1358,14 +1376,16 @@ class NeuroVisGUI:
                      color=None, active=None, outlined=True):
         C = self.COLORS
         fill = color or (C['accent'] if primary else C['card'])
-        hover = active or (C['accent_dark'] if primary else '#e7eef3')
+        hover = active or (C['accent_dark'] if primary else C['strip'])
+        button_text = ('#173747' if color in {'#eef3f6', '#eef6f6', '#fff3e8'}
+                       else '#ffffff' if primary else C['text'])
         return tk.Button(
             parent, text=text, command=command,
             relief='raised' if outlined else 'flat', bd=1 if outlined else 0,
             bg=fill,
-            fg='#ffffff' if primary else C['text'],
+            fg=button_text,
             activebackground=hover,
-            activeforeground='#ffffff' if primary else C['text'],
+            activeforeground=button_text,
             highlightthickness=1,
             highlightbackground=C['button_border'],
             highlightcolor=C['accent'],
@@ -1451,6 +1471,7 @@ class NeuroVisGUI:
 
         window = tk.Toplevel(self.root)
         window.withdraw()
+        window.configure(bg=C['page'])
         window.title("Neuron list")
         window.transient(self.root)
         window.grid_rowconfigure(3, weight=1)
@@ -1464,12 +1485,12 @@ class NeuroVisGUI:
         summary.grid_columnconfigure(0, weight=1)
         tk.Label(
             summary, textvariable=self.neuron_catalog_title,
-            bg=C['accent_soft'], fg=C['header'],
+            bg=C['accent_soft'], fg=C['header_text'],
             font=('Segoe UI', 10, 'bold'), anchor='w').grid(
                 row=0, column=0, sticky='ew', padx=(9, 6), pady=(8, 2))
         tk.Label(
             summary, textvariable=self.neuron_catalog_side_summary,
-            bg=C['accent_soft'], fg=C['accent_dark'],
+            bg=C['accent_soft'], fg=C['header_text'],
             font=('Segoe UI', 9, 'bold'), anchor='e').grid(
                 row=0, column=1, sticky='e', padx=(6, 9), pady=(8, 2))
         tk.Label(
@@ -1484,7 +1505,7 @@ class NeuroVisGUI:
             text=("INS cohort AnimalIDs (megatable): 331, 605, 631, 797, 900, 936, 945, 948\n"
                   "Separate sample: 747 (SampleID 250432)"),
             justify='left', anchor='w', wraplength=520, padx=12, pady=0,
-            foreground='#4d5f6f').grid(
+            bg=C['page'], foreground=C['muted']).grid(
                 row=1, column=0, columnspan=2, sticky='ew')
         filter_row = tk.Frame(
             window, bg=C['page'], highlightthickness=1,
@@ -1494,7 +1515,7 @@ class NeuroVisGUI:
         filter_row.grid_columnconfigure(1, weight=1)
         tk.Label(
             filter_row, text="Go to", font=('Segoe UI', 9, 'bold'),
-            bg=C['page'], foreground='#4d5f6f').grid(
+            bg=C['page'], foreground=C['muted']).grid(
                 row=0, column=0, sticky='w', padx=(8, 6), pady=6)
         filter_entry = tk.Entry(
             filter_row, textvariable=self._catalog_filter_var, relief='flat',
@@ -1511,7 +1532,7 @@ class NeuroVisGUI:
         filter_entry.bind('<Escape>', clear_catalog_filters)
         tk.Label(
             filter_row, text="Region", font=('Segoe UI', 9, 'bold'),
-            bg=C['page'], foreground='#4d5f6f').grid(
+            bg=C['page'], foreground=C['muted']).grid(
                 row=0, column=2, sticky='w', padx=(10, 6), pady=6)
         region_values = self._catalog_region_values(
             (self._catalog_snapshot or {}).get("rows") or ())
@@ -1528,7 +1549,7 @@ class NeuroVisGUI:
             font=('Segoe UI', 8), bg=C['page'],
             foreground=C['muted']).grid(
                 row=0, column=4, sticky='e', padx=(9, 8), pady=6)
-        table_frame = tk.Frame(window)
+        table_frame = tk.Frame(window, bg=C['page'])
         table_frame.grid(row=3, column=0, columnspan=2, sticky='nsew', padx=12)
         table_frame.grid_rowconfigure(0, weight=1)
         table_frame.grid_columnconfigure(0, weight=1)
@@ -1541,14 +1562,14 @@ class NeuroVisGUI:
             darkcolor=C['border_dark'], padding=3)
         catalog_style.configure(
             "VisPa.Neuron.Treeview",
-            background="#ffffff", fieldbackground="#ffffff",
+            background=C['field'], fieldbackground=C['field'],
             foreground=self.COLORS['text'], rowheight=self._px(26),
             borderwidth=1, relief="solid", bordercolor=C['border_dark'],
             lightcolor=C['border_dark'], darkcolor=C['border_dark'])
         catalog_style.map(
             "VisPa.Neuron.Treeview",
-            background=[("selected", "#c9dce9")],
-            foreground=[("selected", "#102f42")])
+            background=[("selected", C['accent'])],
+            foreground=[("selected", C['header'])])
         self.neuron_catalog_table = ttk.Treeview(
             table_frame, columns=('side', 'neuron_id', 'portal_region'),
             show='headings', height=18, selectmode='browse',
@@ -1565,13 +1586,13 @@ class NeuroVisGUI:
         self.neuron_catalog_table.column('neuron_id', width=108, stretch=False)
         self.neuron_catalog_table.column('portal_region', width=282, stretch=True)
         self.neuron_catalog_table.tag_configure(
-            'side-left', background='#eaf4fb', foreground='#164f78')
+            'side-left', background='#263c48', foreground='#c5e1f2')
         self.neuron_catalog_table.tag_configure(
-            'side-right', background='#fff0e4', foreground='#814313')
+            'side-right', background='#483629', foreground='#f2ceb2')
         self.neuron_catalog_table.tag_configure(
-            'side-checking', background='#fffbea', foreground='#665515')
+            'side-checking', background='#46412c', foreground='#f0e5b5')
         self.neuron_catalog_table.tag_configure(
-            'side-unknown', background='#f4f7f8', foreground='#4d626f')
+            'side-unknown', background=C['card'], foreground=C['muted'])
         catalog_scroll = ttk.Scrollbar(
             table_frame, orient='vertical', command=self.neuron_catalog_table.yview)
         self.neuron_catalog_table.configure(yscrollcommand=catalog_scroll.set)
@@ -1580,11 +1601,11 @@ class NeuroVisGUI:
         self.neuron_catalog_table.bind('<<TreeviewSelect>>',
                                        self._on_neuron_catalog_selected)
         self.neuron_catalog_table.bind('<Double-1>', self._load_catalog_row_event)
-        actions = tk.Frame(window)
+        actions = tk.Frame(window, bg=C['page'])
         actions.grid(row=4, column=0, columnspan=2, sticky='ew', padx=12, pady=8)
-        source_row = tk.Frame(actions)
+        source_row = tk.Frame(actions, bg=C['page'])
         source_row.pack(fill='x')
-        button_row = tk.Frame(actions)
+        button_row = tk.Frame(actions, bg=C['page'])
         button_row.pack(fill='x', pady=(6, 0))
         self.neuron_catalog_load_button = self._flat_button(
             source_row, "Refresh list", self.load_neuron_catalog, small=True)
@@ -2874,7 +2895,8 @@ class NeuroVisGUI:
             'soma_cubes': round(cubes, 3),
             'context_um': context,
             'review_settings': json.loads(json.dumps(REVIEW_SETTINGS)),
-            'effective_marker': {'crosshair_arm_px': TARGET_CROSSHAIR_ARM_PX,
+            'effective_marker': {'crosshair_arm_px': REVIEW_SETTINGS['marker']['crosshair_px'],
+                                 'box_mode': REVIEW_SETTINGS['marker']['box_mode'],
                                  'box_side_scale': TARGET_BOX_SIDE_SCALE},
         }
 
@@ -3221,7 +3243,8 @@ class NeuroVisGUI:
         for name in section_names:
             section_list.insert('end', name)
         section_list.pack(fill='x')
-        form_canvas = tk.Canvas(editor_body, highlightthickness=0)
+        form_canvas = tk.Canvas(editor_body, bg=self.COLORS['page'],
+                                highlightthickness=0)
         form_scroll = ttk.Scrollbar(editor_body, orient='vertical', command=form_canvas.yview)
         form_canvas.configure(yscrollcommand=form_scroll.set)
         form_canvas.pack(side='left', fill='both', expand=True)
@@ -3727,8 +3750,8 @@ class NeuroVisGUI:
             row.columnconfigure(1, weight=1)
             tk.Label(
                 row, text="✓" if item_ready else "!",
-                bg=C['accent_soft'] if item_ready else '#f8e9e9',
-                fg=C['accent_dark'] if item_ready else '#9d3030',
+                bg=C['accent_soft'] if item_ready else '#493034',
+                fg=C['header_text'] if item_ready else '#f0b9b9',
                 font=('Segoe UI', 10, 'bold'), width=3,
                 padx=self._px(2), pady=self._px(3),
             ).grid(row=0, column=0, rowspan=2, sticky='n',

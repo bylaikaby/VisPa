@@ -1,8 +1,9 @@
 """Bounded command line for VisPa review renders and source acquisition.
 
-Version: 1.21.0 (local/unreleased)
+Version: 1.21.1 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../../CHANGELOG.md
+2026-11-08: Describe the shared soma locator without implying an always-on box.
 """
 from __future__ import annotations
 
@@ -184,7 +185,7 @@ def _render(args):
                 panel = tool.plot_widefield_context(volume, origin, resolution, soma, neuron,
                                                     output_dir=temp_dir)
                 source_label = "local NPY input · threshold composite of ZYX MIP"
-            marker_label = "target soma marker (box + cross, not to scale)"
+            marker_label = "target soma locator (not to scale)"
             panel["role"] = args.role.title()
             panel["title"] = (f"{sample} | {neuron} | {args.role.title()} local array | "
                               f"{input_path.name} | frame: {args.coordinate_frame}")

@@ -1,6 +1,6 @@
 """Tk controls for packaged, receipt-backed whole-animal review rendering.
 
-Version: 1.21.0 (local/unreleased)
+Version: 1.21.1 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../../CHANGELOG.md
 Status: candidate
@@ -18,6 +18,14 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from .config import load
+from .data_input_adaptor import list_neurons
+
+
+GRAPHITE = {
+    "page": "#303637", "card": "#414a4c", "field": "#202728",
+    "text": "#e4e4dc", "muted": "#c5cecb", "border": "#738183",
+    "title": "#c5ddca", "log": "#182021",
+}
 
 
 def bulk_command(action: str, values: dict) -> list[str]:
@@ -66,6 +74,8 @@ def bulk_command(action: str, values: dict) -> list[str]:
             command.append("--dry-run")
         if values["allow_download"]:
             command.append("--allow-download")
+        for region in sorted(values.get("regions") or []):
+            command += ["--region", region]
     else:
         if not jobs.is_file():
             raise ValueError("Choose an existing prepared jobs JSON")
@@ -88,15 +98,16 @@ def bulk_command(action: str, values: dict) -> list[str]:
 
 
 def batch_receipt_path(jobs_path: Path, output_root: Path) -> Path:
+    from .review_bulk_render import run_folder_name
     jobs_path = jobs_path.expanduser().resolve(strict=True)
     payload = json.loads(jobs_path.read_text(encoding="utf-8"))
     sample = payload["sample_id"]
     if not isinstance(sample, str) or not sample.replace("_", "").replace("-", "").isalnum():
         raise ValueError("Jobs file has an invalid sample ID")
-    digest = hashlib.sha256(jobs_path.read_bytes()).hexdigest()[:12]
+    digest = hashlib.sha256(jobs_path.read_bytes()).hexdigest()
     root = output_root.expanduser().resolve()
     if payload.get("output_layout") == "sample_neurons":
-        return root / sample / "bulk_runs" / f"bulk_{digest}" / "batch_receipt.json"
+        return root / sample / "bulk_runs" / run_folder_name(payload, digest) / "batch_receipt.json"
     return root / "batch_receipt.json"
 
 
@@ -106,94 +117,263 @@ class BulkReviewDialog:
         self.log = log
         self.window = tk.Toplevel(parent)
         self.window.title("VisPa · Bulk review")
-        self.window.geometry("850x710")
-        self.window.minsize(750, 600)
+        self.window.geometry("850x680")
+        self.window.minsize(650, 500)
+        self.window.configure(bg=GRAPHITE["page"])
         self.window.transient(parent)
         self.window.protocol("WM_DELETE_WINDOW", self._close)
         self.busy = False
         self._receipt_poll_running = False
         self.values = {}
+        self.status = tk.StringVar(value="Ready. Existing completed runs can be opened without rerendering.")
         config = load(config_path)
         resolved = config.get("path") or config_path
         if not resolved:
             raise ValueError("Bulk review needs a saved VisPa profile")
-        cache = Path(config["defaults"]["cache_root"]) / "review_bulk_raw"
-        jobs = Path.home() / "VisPa" / "bulk_jobs" / f"{sample or 'sample'}_review_jobs.json"
+        self.config_path = str(Path(resolved).resolve(strict=True))
+        cache = Path(config["defaults"]["cache_root"]) / "swc_raw"
+        jobs = Path(config["defaults"]["cache_root"]) / "review_jobs" / f"{sample or 'sample'}_review_jobs.json"
         defaults = {"sample": sample, "config": str(resolved), "csv": "",
                     "raw_roots": "", "source_receipt": "", "cache": str(cache),
                     "jobs": str(jobs),
                     "output": str(config["visual_toolkit"]["figure_output_root"])}
-        form = ttk.Frame(self.window, padding=12)
-        form.pack(fill="both", expand=True)
+        style = ttk.Style(self.window)
+        style.configure("Bulk.TFrame", background=GRAPHITE["page"])
+        style.configure("Bulk.TLabel", background=GRAPHITE["page"],
+                        foreground=GRAPHITE["text"], font=("Segoe UI", 9))
+        style.configure("Bulk.Title.TLabel", background=GRAPHITE["page"],
+                        foreground=GRAPHITE["title"], font=("Segoe UI", 11, "bold"))
+        style.configure("Bulk.TButton", background=GRAPHITE["card"],
+                        foreground=GRAPHITE["text"], padding=5)
+        style.map("Bulk.TButton", background=[("active", "#465052")])
+        style.configure("Bulk.TEntry", fieldbackground=GRAPHITE["field"],
+                        foreground=GRAPHITE["text"], bordercolor=GRAPHITE["border"])
+        style.configure("Bulk.TRadiobutton", background=GRAPHITE["page"],
+                        foreground=GRAPHITE["text"])
+        style.configure("Bulk.TCheckbutton", background=GRAPHITE["page"],
+                        foreground=GRAPHITE["text"])
+        canvas = tk.Canvas(self.window, bg=GRAPHITE["page"], highlightthickness=0)
+        scrollbar = ttk.Scrollbar(self.window, orient="vertical", command=canvas.yview)
+        scrollbar.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+        form = ttk.Frame(canvas, padding=12, style="Bulk.TFrame")
+        form_window = canvas.create_window((0, 0), window=form, anchor="nw")
+        form.bind("<Configure>", lambda _event: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.bind("<Configure>", lambda event: canvas.itemconfigure(form_window, width=event.width))
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.bind("<MouseWheel>", lambda event: canvas.yview_scroll(-1 if event.delta > 0 else 1, "units"))
         self.values["source"] = tk.StringVar(value="catalog")
         self.values["allow_download"] = tk.BooleanVar(value=False)
         ttk.Label(form, text="One animal · four candidate review figures per neuron",
-                  font=("Segoe UI", 11, "bold")).grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 8))
-        labels = [("sample", "Sample ID", False), ("config", "VisPa profile", True),
-                  ("csv", "Identity CSV", True), ("raw_roots", "Raw source roots (; separated)", False),
-                  ("source_receipt", "Source hash receipt", True),
-                  ("cache", "Managed raw cache", True), ("jobs", "Prepared jobs JSON", True),
-                  ("output", "Figure output root", True)]
+                  style="Bulk.Title.TLabel").grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 8))
+        self.region_labels = ()
+        self.selected_regions = set()
+        self._region_generation = 0
+        self._region_after = None
+        self._regions_loading = False
+        self._region_error = None
+        self._jobs_root = jobs.parent
+        labels = [("sample", "Animal / sample ID", False),
+                  ("output", "Figure output root · active profile", False),
+                  ("config", "Active VisPa profile", False),
+                  ("cache", "Managed raw cache · active profile", False),
+                  ("jobs", "Prepared jobs JSON", True)]
+        advanced = ttk.Frame(form, style="Bulk.TFrame")
         for row, (key, label, browse) in enumerate(labels, start=1):
-            ttk.Label(form, text=label).grid(row=row, column=0, sticky="w", pady=4)
+            section = form if key in {"sample", "output"} else advanced
+            visual_row = 1 if key == "sample" else 3 if key == "output" else row
+            ttk.Label(section, text=label, style="Bulk.TLabel").grid(row=visual_row, column=0, sticky="w", pady=4)
             var = tk.StringVar(value=defaults[key])
             self.values[key] = var
-            ttk.Entry(form, textvariable=var).grid(row=row, column=1, sticky="ew", padx=8, pady=4)
+            ttk.Entry(section, textvariable=var, style="Bulk.TEntry",
+                      state="normal" if key == "sample" else "readonly").grid(
+                          row=visual_row, column=1, sticky="ew", padx=8, pady=4)
             if browse:
-                ttk.Button(form, text="Browse…", command=lambda k=key: self._browse(k)).grid(row=row, column=2)
+                ttk.Button(section, text="Browse…", style="Bulk.TButton",
+                           command=lambda k=key: self._browse(k)).grid(row=visual_row, column=2)
         form.columnconfigure(1, weight=1)
-        options = ttk.Frame(form)
-        options.grid(row=9, column=0, columnspan=3, sticky="w", pady=(7, 10))
-        ttk.Label(options, text="Identities:").pack(side="left")
-        ttk.Radiobutton(options, text="Live/configured catalog", variable=self.values["source"],
-                        value="catalog").pack(side="left", padx=8)
-        ttk.Radiobutton(options, text="CSV", variable=self.values["source"], value="csv").pack(side="left")
-        ttk.Checkbutton(options, text="Allow raw SWC download", variable=self.values["allow_download"]).pack(side="left", padx=18)
-        ttk.Label(form, text="First preview one, then prepare all. Rendering writes to <figure root>/<sample>/neurons/<ID>/bulk_<jobs hash>.",
-                  wraplength=800).grid(row=10, column=0, columnspan=3, sticky="w", pady=4)
-        actions = ttk.Frame(form)
-        actions.grid(row=11, column=0, columnspan=3, sticky="w", pady=8)
-        buttons = [("Preview one", "prepare_one_preview"), ("Prepare all", "prepare_all"),
-                   ("Render one dry run", "render_one_preview"), ("Render one", "render_one"),
-                   ("Render all", "render_all"), ("Resume all", "resume_all")]
+        advanced.columnconfigure(1, weight=1)
+        ttk.Label(form, text="Atlas regions", style="Bulk.TLabel").grid(
+            row=2, column=0, sticky="w", pady=4)
+        self.region_button = tk.Menubutton(form, text="All regions ▾", relief="raised",
+                                           bg=GRAPHITE["card"], fg=GRAPHITE["text"],
+                                           activebackground="#465052", activeforeground=GRAPHITE["text"])
+        self.region_button.grid(row=2, column=1, sticky="ew", padx=8, pady=4)
+        self.region_menu = tk.Menu(self.region_button, tearoff=False,
+                                   bg=GRAPHITE["card"], fg=GRAPHITE["text"],
+                                   activebackground="#465052", activeforeground=GRAPHITE["text"])
+        self.region_button.configure(menu=self.region_menu)
+        self.values["sample"].trace_add("write", lambda *_: self._schedule_region_load())
+        self._load_regions()
+        ttk.Label(advanced, text="Source identities and raw SWC roots follow the active profile.",
+                  style="Bulk.TLabel").grid(row=9, column=0, columnspan=3,
+                                               sticky="w", pady=(7, 10))
+        advanced_toggle = ttk.Button(form, text="Advanced ▸", style="Bulk.TButton")
+        advanced_toggle.grid(row=4, column=0, columnspan=3, sticky="w", pady=(4, 8))
+        def toggle_advanced():
+            if advanced.winfo_manager():
+                advanced.grid_remove()
+                advanced_toggle.configure(text="Advanced ▸")
+            else:
+                advanced.grid()
+                advanced_toggle.configure(text="Advanced ▾")
+        advanced_toggle.configure(command=toggle_advanced)
+        advanced.grid(row=9, column=0, columnspan=3, sticky="ew", pady=5)
+        advanced.grid_remove()
+        actions = ttk.Frame(form, style="Bulk.TFrame")
+        actions.grid(row=5, column=0, columnspan=3, sticky="w", pady=8)
         self.buttons = []
-        for label, action in buttons:
-            button = ttk.Button(actions, text=label, command=lambda a=action: self._launch(a))
-            button.pack(side="left", padx=(0, 6))
+        for label, action in (("Check one", "check_one"),
+                              ("Run / resume all", "run_resume_all")):
+            button = ttk.Button(actions, text=label, style="Bulk.TButton",
+                                command=lambda a=action: self._launch(a))
+            button.pack(side="left", padx=(0, 8))
             self.buttons.append(button)
-        result_actions = ttk.Frame(form)
+        ttk.Button(actions, text="Open results", style="Bulk.TButton",
+                   command=self._open_results).pack(side="left")
+        result_actions = ttk.Frame(advanced, style="Bulk.TFrame")
         result_actions.grid(row=12, column=0, columnspan=3, sticky="w", pady=4)
-        ttk.Button(result_actions, text="Open results", command=self._open_results).pack(side="left", padx=(0, 6))
-        ttk.Button(result_actions, text="Open batch receipt", command=self._open_receipt).pack(side="left", padx=(0, 6))
-        ttk.Button(result_actions, text="Choose existing jobs…", command=lambda: self._browse("jobs")).pack(side="left")
-        self.status = tk.StringVar(value="Ready. Existing completed runs can be opened without rerendering.")
-        ttk.Label(form, textvariable=self.status, wraplength=800).grid(row=13, column=0, columnspan=3, sticky="w", pady=5)
+        ttk.Button(result_actions, text="Open batch receipt", style="Bulk.TButton",
+                   command=self._open_receipt).pack(side="left", padx=(0, 6))
+        ttk.Button(result_actions, text="Choose existing jobs…", style="Bulk.TButton",
+                   command=lambda: self._browse("jobs")).pack(side="left")
+        ttk.Label(form, textvariable=self.status, wraplength=740, style="Bulk.TLabel").grid(row=6, column=0, columnspan=3, sticky="w", pady=5)
         self.receipt_status = tk.StringVar(value="No batch receipt selected.")
-        ttk.Label(form, textvariable=self.receipt_status, wraplength=800).grid(
-            row=15, column=0, columnspan=3, sticky="w", pady=5)
-        self.details = tk.Text(form, height=13, wrap="word")
-        self.details.grid(row=14, column=0, columnspan=3, sticky="nsew")
-        form.rowconfigure(14, weight=1)
+        ttk.Label(form, textvariable=self.receipt_status, wraplength=740, style="Bulk.TLabel").grid(
+            row=7, column=0, columnspan=3, sticky="w", pady=5)
+        self.details = tk.Text(form, height=12, wrap="word", bg=GRAPHITE["log"],
+                               fg=GRAPHITE["text"], insertbackground=GRAPHITE["text"],
+                               highlightbackground=GRAPHITE["border"])
+        self.details.grid(row=8, column=0, columnspan=3, sticky="nsew")
         self._poll_receipt()
 
     def _browse(self, key):
-        directory = key in {"cache", "output"}
-        selected = (filedialog.askdirectory(parent=self.window) if directory else
-                    filedialog.askopenfilename(parent=self.window))
+        if key != "jobs":
+            return
+        selected = filedialog.askopenfilename(parent=self.window)
         if selected:
-            self.values[key].set(selected)
-            if key == "jobs":
-                try:
-                    payload = json.loads(Path(selected).read_text(encoding="utf-8"))
-                    config = Path(payload["vispa_config"])
-                    if not config.is_absolute():
-                        config = Path(selected).parent / config
-                    self.values["sample"].set(payload["sample_id"])
-                    self.values["config"].set(str(config.resolve()))
-                    if payload.get("cache_root"):
-                        self.values["cache"].set(str(payload["cache_root"]))
-                except (OSError, ValueError, KeyError, TypeError) as exc:
-                    messagebox.showerror("Bulk review", f"Could not read jobs: {exc}", parent=self.window)
+            try:
+                self._validate_jobs(Path(selected), self._snapshot(), require_exists=True,
+                                    view_only=True)
+                self.values["jobs"].set(selected)
+            except (OSError, ValueError, KeyError, TypeError) as exc:
+                messagebox.showerror("Bulk review", f"Could not use jobs: {exc}", parent=self.window)
+
+    def _schedule_region_load(self):
+        if self._region_after is not None:
+            self.window.after_cancel(self._region_after)
+        self._region_generation += 1
+        self._regions_loading = True
+        self.selected_regions.clear()
+        self.region_button.configure(text="Loading atlas regions…")
+        self._region_after = self.window.after(300, self._load_regions)
+
+    def _load_regions(self):
+        """Read exact catalog atlas labels without blocking the Tk event loop."""
+        self._region_after = None
+        self._region_generation += 1
+        generation = self._region_generation
+        sample = self.values["sample"].get().strip()
+        self._regions_loading = True
+        self._region_error = None
+        self.selected_regions.clear()
+        self.values["jobs"].set(str(self._default_jobs_path(sample, ())))
+        self.region_button.configure(text="Loading atlas regions…")
+        if not sample:
+            self._regions_loading = False
+            self.region_button.configure(text="All regions ▾")
+            return
+
+        def worker():
+            try:
+                rows = list_neurons(sample, load(self.config_path))["rows"]
+                labels = sorted({str(row.get("portal_region") or "").strip()
+                                 for row in rows if str(row.get("portal_region") or "").strip()})
+                error = None
+            except (OSError, ValueError, KeyError, TypeError) as exc:
+                labels, error = [], str(exc)
+            try:
+                self.parent.after(0, lambda: self._show_regions(generation, labels, error))
+            except tk.TclError:
+                pass
+        threading.Thread(target=worker, name="vispa-bulk-regions", daemon=True).start()
+
+    def _show_regions(self, generation, labels, error):
+        if generation != self._region_generation or not self.window.winfo_exists():
+            return
+        self.region_labels = tuple(labels)
+        self._regions_loading = False
+        self._region_error = error
+        self.region_menu.delete(0, "end")
+        self._region_vars = {}
+        all_var = tk.BooleanVar(value=True)
+        def select_all():
+            for var in self._region_vars.values():
+                var.set(False)
+            self.selected_regions.clear()
+            all_var.set(True)
+            self._region_summary()
+        self.region_menu.add_checkbutton(label="All regions", variable=all_var,
+                                         command=select_all)
+        if labels:
+            self.region_menu.add_separator()
+        for label in labels:
+            var = tk.BooleanVar(value=False)
+            self._region_vars[label] = var
+            def select_region(name=label, selected=var):
+                if selected.get():
+                    self.selected_regions.add(name)
+                else:
+                    self.selected_regions.discard(name)
+                all_var.set(not self.selected_regions)
+                self._region_summary()
+            self.region_menu.add_checkbutton(label=label, variable=var,
+                                             command=select_region)
+        self.region_button.configure(text="All regions ▾")
+        if error:
+            self.status.set(f"Atlas regions unavailable: {error}")
+
+    def _region_summary(self):
+        selected = sorted(self.selected_regions)
+        self.values["jobs"].set(str(self._default_jobs_path(
+            self.values["sample"].get().strip(), selected)))
+        self.region_button.configure(text=("All regions ▾" if not selected else
+                                           ", ".join(selected[:2]) +
+                                           (f" +{len(selected) - 2} more ▾" if len(selected) > 2 else " ▾")))
+
+    def _default_jobs_path(self, sample, regions):
+        suffix = ("" if not regions else "_" + hashlib.sha256(
+            json.dumps(sorted(regions), ensure_ascii=False).encode("utf-8")).hexdigest()[:8])
+        return self._jobs_root / f"{sample or 'sample'}_review{suffix}_jobs.json"
+
+    @staticmethod
+    def _validate_jobs(jobs: Path, values: dict, *, require_exists=False,
+                       view_only=False):
+        if not jobs.is_file():
+            if require_exists:
+                raise FileNotFoundError(jobs)
+            return
+        payload = json.loads(jobs.read_text(encoding="utf-8"))
+        declared = Path(payload["vispa_config"])
+        if not declared.is_absolute():
+            declared = jobs.parent / declared
+        if declared.resolve() != Path(values["config"]).resolve():
+            raise ValueError("Prepared jobs use another profile; keep the active VisPa profile")
+        if payload.get("sample_id") != values["sample"]:
+            raise ValueError("Prepared jobs use another animal/sample")
+        frozen_regions = sorted((payload.get("region_filter") or {}).get("labels") or [])
+        if frozen_regions != sorted(values.get("regions") or []):
+            raise ValueError("Prepared jobs use another atlas region selection")
+        if (payload.get("figure_output_root") and
+                Path(payload["figure_output_root"]).resolve() != Path(values["output"]).resolve()):
+            raise ValueError("Prepared jobs use another figure output root")
+        if (not view_only and payload.get("cache_root") and
+                Path(payload["cache_root"]).resolve() != Path(values["cache"]).resolve()):
+            raise ValueError("Prepared jobs use another managed raw cache")
+        if not view_only and payload.get("vispa_config_sha256") and (
+                hashlib.sha256(Path(values["config"]).read_bytes()).hexdigest()
+                != payload["vispa_config_sha256"]):
+            raise ValueError("Prepared jobs use an older profile revision; prepare new jobs")
 
     def _close(self):
         if self.busy:
@@ -203,12 +383,39 @@ class BulkReviewDialog:
         self.window.destroy()
 
     def _snapshot(self):
-        return {key: value.get() for key, value in self.values.items()}
+        config = load(self.config_path)
+        if Path(config.get("path") or self.config_path).resolve() != Path(self.config_path):
+            raise ValueError("Active VisPa profile changed while bulk review was open")
+        values = {key: value.get() for key, value in self.values.items()}
+        values.update({
+            "config": self.config_path,
+            "output": str(config["visual_toolkit"]["figure_output_root"]),
+            "cache": str(Path(config["defaults"]["cache_root"]) / "swc_raw"),
+            "source": "catalog", "csv": "", "raw_roots": "",
+            "source_receipt": "", "allow_download": False,
+            "regions": sorted(self.selected_regions),
+        })
+        self.values["config"].set(values["config"])
+        self.values["output"].set(values["output"])
+        self.values["cache"].set(values["cache"])
+        return values
 
     def _launch(self, action):
         if self.busy:
             return
-        values = self._snapshot()
+        if self._regions_loading or self._region_error:
+            messagebox.showerror("Bulk review", self._region_error or
+                                 "Wait for atlas regions to load.", parent=self.window)
+            return
+        try:
+            values = self._snapshot()
+            self._validate_jobs(Path(values["jobs"]), values)
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            messagebox.showerror("Bulk review", str(exc), parent=self.window)
+            return
+        if action in {"check_one", "run_resume_all"}:
+            self._launch_guided(action, values)
+            return
         if action in {"prepare_all", "render_all", "resume_all"}:
             verb = {"prepare_all": "Prepare all selected neurons?",
                     "render_all": "Verify completed neurons and render every remaining prepared neuron?",
@@ -244,6 +451,44 @@ class BulkReviewDialog:
                     pass
         threading.Thread(target=worker, name="vispa-bulk-review", daemon=True).start()
 
+    def _launch_guided(self, action, values):
+        """Run the small visible path through the existing validated commands."""
+        if action == "run_resume_all" and not messagebox.askyesno(
+                "Bulk review", "Prepare any missing jobs and render or resume all neurons?",
+                parent=self.window):
+            return
+        self.busy = True
+        for button in self.buttons:
+            button.state(["disabled"])
+        self.status.set("Checking one neuron…" if action == "check_one" else "Preparing or resuming all…")
+        self.details.delete("1.0", "end")
+        self.log("Bulk review", "requested", action=action, sample=values["sample"])
+
+        def worker():
+            try:
+                jobs = Path(values["jobs"]).expanduser()
+                steps = ((["render_one_preview", "render_one"] if jobs.is_file() else
+                          ["prepare_one_preview", "prepare_all", "render_one"])
+                         if action == "check_one" else
+                         (["resume_all"] if jobs.is_file() else ["prepare_all", "resume_all"]))
+                for step in steps:
+                    command = bulk_command(step, values)
+                    self.parent.after(0, lambda s=step, c=command: self._show_command(s, c))
+                    process = subprocess.run(command, text=True, capture_output=True,
+                                             encoding="utf-8", errors="replace", check=False,
+                                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                    output = process.stdout.strip() or process.stderr.strip()
+                    self.parent.after(0, lambda o=output, s=step:
+                                      self.details.insert("end", f"{s}: {o}\n"))
+                    if process.returncode:
+                        self.parent.after(0, lambda s=step, c=process.returncode, o=output:
+                                          self._finish(s, c, o, process.stderr))
+                        return
+                self.parent.after(0, lambda: self._finish(action, 0, "", ""))
+            except (OSError, ValueError, KeyError, TypeError) as exc:
+                self.parent.after(0, lambda error=str(exc): self._finish(action, 2, error, ""))
+        threading.Thread(target=worker, name="vispa-bulk-review", daemon=True).start()
+
     def _show_command(self, action, command):
         if self.window.winfo_exists():
             self.details.insert("end", subprocess.list2cmdline(command) + "\n")
@@ -264,7 +509,10 @@ class BulkReviewDialog:
         self.log("Bulk review", "finished" if code == 0 else "failed", action=action, exit_code=code)
 
     def _receipt(self):
-        return batch_receipt_path(Path(self.values["jobs"].get()), Path(self.values["output"].get()))
+        values = self._snapshot()
+        self._validate_jobs(Path(values["jobs"]), values, require_exists=True,
+                            view_only=True)
+        return batch_receipt_path(Path(values["jobs"]), Path(values["output"]))
 
     def _open_results(self):
         self._open_selected("results")
@@ -273,14 +521,20 @@ class BulkReviewDialog:
         self._open_selected("receipt")
 
     def _open_selected(self, kind):
-        jobs = Path(self.values["jobs"].get())
-        output = Path(self.values["output"].get())
+        try:
+            values = self._snapshot()
+            self._validate_jobs(Path(values["jobs"]), values, require_exists=True,
+                                view_only=True)
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            self._show_open_error(str(exc))
+            return
+        jobs = Path(values["jobs"])
+        output = Path(values["output"])
         def worker():
             try:
                 receipt = batch_receipt_path(jobs, output)
                 path = (receipt.parent.parent.parent / "neurons"
-                        if kind == "results" and receipt.parent.name.startswith("bulk_")
-                        and receipt.parent.parent.name == "bulk_runs" else
+                        if kind == "results" and receipt.parent.parent.name == "bulk_runs" else
                         receipt.parent if kind == "results" else receipt)
                 if path.exists():
                     os.startfile(str(path))
@@ -304,8 +558,16 @@ class BulkReviewDialog:
             self.window.after(1500, self._poll_receipt)
             return
         self._receipt_poll_running = True
-        jobs = self.values["jobs"].get()
-        output = self.values["output"].get()
+        try:
+            values = self._snapshot()
+            self._validate_jobs(Path(values["jobs"]), values, view_only=True)
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            self._receipt_poll_running = False
+            self.receipt_status.set(f"Prepared jobs need review: {exc}")
+            self.window.after(1500, self._poll_receipt)
+            return
+        jobs = values["jobs"]
+        output = values["output"]
         def read_receipt():
             try:
                 path = batch_receipt_path(Path(jobs), Path(output))

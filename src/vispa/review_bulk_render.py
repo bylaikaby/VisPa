@@ -1,7 +1,7 @@
 """Render one VisPa review set per published region/FNT job.
 
-Version: 1.20.2 (local/unreleased)
-Last updated: 2026-11-07
+Version: 1.21.1 (local/unreleased)
+Last updated: 2026-11-08
 Change history: ../CHANGELOG.md
 Status: candidate
 
@@ -25,6 +25,22 @@ import tempfile
 
 _NEURON = re.compile(r"[A-Za-z0-9_-]+\.swc\Z", re.IGNORECASE)
 _TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,80}\Z")
+_RUN_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,79}\Z")
+
+
+def validate_run_name(name: str) -> str:
+    """Accept one portable path component; never normalize an unsafe name."""
+    reserved = {"CON", "PRN", "AUX", "NUL"} | {f"COM{i}" for i in range(1, 10)} | {f"LPT{i}" for i in range(1, 10)}
+    if (not isinstance(name, str) or not _RUN_NAME.fullmatch(name)
+            or name.upper() in reserved):
+        raise ValueError("run_name must be one path-safe name (1-80 letters, digits, hyphens or underscores)")
+    return name
+
+
+def run_folder_name(payload: dict, jobs_sha256: str) -> str:
+    """Keep historical hash-named jobs in their original locations."""
+    name = payload.get("run_name")
+    return validate_run_name(name) if name is not None else f"bulk_{jobs_sha256[:12]}"
 
 
 def _sha256(path: Path) -> str:
@@ -88,6 +104,16 @@ def load_review_jobs(jobs_path: Path, output_root: Path, limit: int | None, all_
     layout = payload.get("output_layout", "legacy")
     if layout not in {"legacy", "sample_neurons"}:
         raise ValueError("output_layout must be legacy or sample_neurons")
+    region_filter = payload.get("region_filter")
+    if region_filter is not None:
+        if (not isinstance(region_filter, dict) or
+                region_filter.get("field") != "portal_region" or
+                not isinstance(region_filter.get("labels"), list) or
+                any(not isinstance(label, str) or not label for label in region_filter["labels"])):
+            raise ValueError("region_filter must contain exact portal_region labels")
+        selected_regions = set(region_filter["labels"])
+    else:
+        selected_regions = set()
     seen = set()
     for entry in payload.get("jobs", []):
         if not isinstance(entry, dict):
@@ -97,12 +123,16 @@ def load_review_jobs(jobs_path: Path, output_root: Path, limit: int | None, all_
             raise ValueError("Each neuron_id must be an explicit .swc filename")
         if entry.get("sample_id") != sample:
             raise ValueError("Every job must use the file sample_id")
+        if selected_regions:
+            entries = entry.get("soma_region_entries")
+            if not isinstance(entries, dict) or entries.get("portal_region") not in selected_regions:
+                raise ValueError(f"{neuron} differs from frozen region_filter")
         identity = (sample.casefold(), neuron.casefold())
         if identity in seen:
             raise ValueError("Review jobs must have unique neurons including case-insensitive names")
         seen.add(identity)
         if entry.get("render_ready") is True:
-            ready.append({
+            ready_job = {
                 "sample_id": sample,
                 "neuron_id": neuron,
                 "soma_region": entry.get("soma_region"),
@@ -114,7 +144,12 @@ def load_review_jobs(jobs_path: Path, output_root: Path, limit: int | None, all_
                 "raw_source_path": entry.get("raw_source_path"),
                 "fnt_marker": entry.get("fnt_marker"),
                 "fnt_cluster": entry.get("fnt_cluster"),
-            })
+            }
+            if "soma_region_source" in entry:
+                ready_job["soma_region_source"] = entry["soma_region_source"]
+            if "soma_region_entries" in entry:
+                ready_job["soma_region_entries"] = entry["soma_region_entries"]
+            ready.append(ready_job)
         else:
             skipped.append({"sample_id": sample, "neuron_id": neuron,
                             "soma_error": entry.get("soma_error")})
@@ -132,9 +167,10 @@ def load_review_jobs(jobs_path: Path, output_root: Path, limit: int | None, all_
     if not selected:
         raise ValueError("No render-ready neurons are available for this limit")
     jobs_hash = _sha256(jobs_path)
+    run_name = run_folder_name(payload, jobs_hash)
     for entry in selected:
         if layout == "sample_neurons":
-            folder = output_root / sample / "neurons" / entry["neuron_id"][:-4] / f"bulk_{jobs_hash[:12]}"
+            folder = output_root / sample / "neurons" / entry["neuron_id"][:-4] / run_name
         else:
             folder = output_root / sample / entry["neuron_id"][:-4]
         entry["output_dir"] = str(folder)
@@ -149,6 +185,7 @@ def load_review_jobs(jobs_path: Path, output_root: Path, limit: int | None, all_
         "schema": payload["schema"],
         "jobs_path": str(jobs_path),
         "jobs_sha256": jobs_hash,
+        "run_name": run_name,
         "vispa_config": str(config_path),
         "vispa_config_sha256": config_hash,
         "output_root": str(output_root),
@@ -159,6 +196,7 @@ def load_review_jobs(jobs_path: Path, output_root: Path, limit: int | None, all_
         "vispa_version": __version__,
         "review_settings": review_settings,
         "figure_output_root": figure_output_root,
+        "region_filter": region_filter,
         "skipped_not_ready": skipped,
         "jobs": selected,
         "anatomical_acceptance": "not established",
@@ -199,6 +237,22 @@ def _verified_raw_path(config: dict, job: dict) -> Path | None:
     raise ValueError("Configured raw SWC differs from job's frozen source hash or is missing")
 
 
+def _region_display_value(job: dict) -> str | None:
+    """Tag a frozen source label for plot titles without changing its stored value."""
+    value = job.get("soma_region")
+    if not isinstance(value, str) or not value.strip():
+        return None
+    source = job.get("soma_region_source")
+    field = source.get("field") if isinstance(source, dict) else None
+    if field in {"checked_region", "soma_region.checked_region"}:
+        return f"checked_region={value}"
+    if field in {"ion_atlas", "soma_region.ion_atlas"}:
+        return f"ion_atlas={value}"
+    if field == "portal_region":
+        return f"portal_region={value}"
+    return value
+
+
 def render_review_neuron(job: dict, output_dir: Path, config_path: Path) -> dict:
     """Render one neuron with the GUI's toolkit calls."""
     import matplotlib
@@ -219,7 +273,7 @@ def render_review_neuron(job: dict, output_dir: Path, config_path: Path) -> dict
         str(output_dir), save_outputs=True, save_soma_nifti=True,
         make_review_figure=True)
     side = int(round(float(request.soma_cubes) * BLOCK_SIZE_PIXELS[0]))
-    region = job.get("soma_region")
+    region = _region_display_value(job)
     tool = VisPa(job["sample_id"])
     panels, errors = {}, []
     try:
@@ -380,11 +434,13 @@ def _run_review_bulk(plan: dict, *, dry_run: bool, renderer=None, resume: bool =
         raise FileExistsError("A selected neuron run folder already exists; use --resume")
     output_root.mkdir(parents=True, exist_ok=True)
     if plan["output_layout"] == "sample_neurons":
-        receipt_root = output_root / plan["sample_id"] / "bulk_runs" / f"bulk_{plan['jobs_sha256'][:12]}"
+        receipt_root = output_root / plan["sample_id"] / "bulk_runs" / plan["run_name"]
     else:
         receipt_root = output_root
     if not resume and (receipt_root / "batch_receipt.json").exists():
         raise FileExistsError("This job set already has a batch receipt; use --resume")
+    if receipt_root.exists() and any(receipt_root.iterdir()) and not (receipt_root / "batch_receipt.json").is_file():
+        raise FileExistsError("Run folder contains unrelated files without a batch receipt")
     receipt_root.mkdir(parents=True, exist_ok=True)
     previous_path = receipt_root / "batch_receipt.json"
     if resume and previous_path.is_file():
@@ -392,9 +448,21 @@ def _run_review_bulk(plan: dict, *, dry_run: bool, renderer=None, resume: bool =
         for key in ("jobs_sha256", "vispa_config_sha256", "vispa_version", "output_layout"):
             if previous.get(key) != plan[key]:
                 raise ValueError(f"Cannot resume: {key} differs from prior batch")
+        if previous.get("run_name", plan["run_name"]) != plan["run_name"]:
+            raise ValueError("Cannot resume: run_name differs from prior batch")
         if _settings_sha256(previous) != _settings_sha256(plan):
             raise ValueError("Cannot resume: resolved review settings differ")
     render = renderer or render_review_neuron
+    if plan["output_layout"] == "sample_neurons":
+        for job in plan["jobs"]:
+            folder = Path(job["output_dir"])
+            if folder.exists() and any(folder.iterdir()):
+                receipt = folder / "review_receipt.json"
+                if not resume or not receipt.is_file():
+                    raise FileExistsError(f"Neuron run folder contains unrelated files: {folder}")
+                old = json.loads(receipt.read_text(encoding="utf-8"))
+                if old.get("job_sha256") != _job_sha256(job):
+                    raise ValueError(f"Neuron run folder belongs to a different job: {folder}")
     try:
         for job in plan["jobs"]:
             folder = Path(job["output_dir"])
@@ -444,6 +512,8 @@ def _run_review_bulk(plan: dict, *, dry_run: bool, renderer=None, resume: bool =
                 "sample_id": job["sample_id"],
                 "neuron_id": job["neuron_id"],
                 "soma_region": job.get("soma_region"),
+                "soma_region_source": job.get("soma_region_source"),
+                "soma_region_entries": job.get("soma_region_entries"),
                 "soma_xyz": job["soma_xyz"],
                 "soma_units": job.get("soma_units"),
                 "soma_coordinate_source": job.get("soma_coordinate_source"),

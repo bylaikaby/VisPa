@@ -1,9 +1,11 @@
 """
 vispa.py - Macaque Brain Hybrid-Resolution Visualization Toolkit
 
-Version: 1.21.0 (local/unreleased)
+Version: 1.21.1 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../../../CHANGELOG.md
+2026-11-08: Size trio columns to panel aspect; honor configurable crosshair
+length and make the centre square optional (off by default).
 2026-11-04: Collapse portal and atlas provenance into one Region title
 section shared by Soma, Context, Sagittal and TrioPlot.
 2026-11-04: Sanitize all Windows-reserved punctuation in Context filenames so
@@ -247,7 +249,6 @@ ACTIVE_CONFIG = None
 RESOLUTION_LOW = [5.0, 5.0, 3.0]
 
 # Shared pure-Python defaults, schema, and validators live in vispa.config.
-TARGET_CROSSHAIR_ARM_PX = 320.0
 TARGET_BOX_SIDE_SCALE = 0.65
 
 from ..config import (REVIEW_SETTINGS, _DEFAULT_REVIEW_SETTINGS, _SETTING_SPECS,
@@ -1075,6 +1076,16 @@ class VisPa:
     def _region_title_value(soma_region, nmt_corrected=None):
         """Format portal-derived and optional corrected NMT region values."""
         text = str(soma_region or "").strip()
+        # Bulk jobs can carry their own named region sources. Keep those
+        # declared names instead of relabeling them as portal assignments.
+        if re.match(r"^(?:checked_region|ion_atlas|portal_region|nmt_portal)\s*=", text, re.IGNORECASE):
+            pieces = [re.sub(r"\s+", " ", part).strip()
+                      for part in re.split(r"\s*[|·]\s*", text) if part.strip()]
+            if nmt_corrected:
+                corrected = re.sub(r"^(?:nmt_corrected\s*[=:]\s*)", "",
+                                   str(nmt_corrected).strip(), flags=re.IGNORECASE)
+                pieces.append(f"nmt_corrected={re.sub(r'\s+', ' ', corrected).strip()}")
+            return " · ".join(pieces)
         portal_match = re.search(
             r"(?:^|\|)\s*Portal:\s*(.*?)(?=\s*\|\s*Atlas:|$)",
             text, flags=re.IGNORECASE)
@@ -1121,13 +1132,12 @@ class VisPa:
     def _draw_target_marker(self, ax, x, y, color=None, size_um=None,
                             label="Target Soma", min_px=None, crosshair_px=None,
                             label_fontsize=None, label_offset_px=None, label_mode=None,
-                            resolution_um=None):
-        """Draw the shared target marker: one cyan/turquoise open box with a cross.
+                            resolution_um=None, box_mode=None):
+        """Draw the shared target marker: a cyan cross with an optional box.
 
         Every panel type (Soma, Context, Sagittal) and the legacy single-plot path
-        use this helper, so the three review panels cannot drift apart. The box and
-        the cross are both centred on the exact mapped point; only the drawn size is
-        enlarged for visibility, so the intersection is the true position.
+        use this helper, so the three review panels cannot drift apart. The
+        cross intersection remains at the exact mapped point.
         """
         style = REVIEW_SETTINGS['marker']
         mode = style['label_mode'] if label_mode is None else label_mode
@@ -1140,19 +1150,25 @@ class VisPa:
         size_px = nominal_size_px * TARGET_BOX_SIDE_SCALE
         # Scatter sizes use points squared; convert the requested display pixels.
         size_pt = size_px * 72.0 / ax.figure.dpi
-        ax.scatter(x, y, s=size_pt ** 2, marker='s', facecolors='none',
-                   edgecolors=color, linewidth=0.9, zorder=10, label=label)
-        # Legacy profiles pin this setting to 60 px. Keep one visible review size
-        # in every output, independent of profile and per-panel style copies.
-        arms_px = TARGET_CROSSHAIR_ARM_PX
+        box_mode = style['box_mode'] if box_mode is None else box_mode
+        if box_mode not in ('off', 'on'):
+            raise ValueError('marker box_mode must be off or on')
+        if box_mode == 'on':
+            ax.scatter(x, y, s=size_pt ** 2, marker='s', facecolors='none',
+                       edgecolors=color, linewidth=0.9, zorder=10, label=label)
+        arms_px = float(style['crosshair_px'] if crosshair_px is None else crosshair_px)
         if arms_px > 0:
             for dx, dy in ((arms_px, 0), (-arms_px, 0),
                            (0, arms_px), (0, -arms_px)):
-                ax.annotate('', xy=(x, y), xytext=(dx, dy),
-                            textcoords='offset pixels',
-                            arrowprops={'arrowstyle': '-', 'color': color,
-                                        'linewidth': 2.0, 'alpha': 0.9,
-                                        'shrinkA': 0, 'shrinkB': 0}, zorder=11)
+                arm = ax.annotate('', xy=(x, y), xytext=(dx, dy),
+                                  textcoords='offset pixels',
+                                  arrowprops={'arrowstyle': '-', 'color': color,
+                                              'linewidth': 2.0, 'alpha': 0.9,
+                                              'shrinkA': 0, 'shrinkB': 0}, zorder=11)
+                arm.set_clip_on(True)
+                arm.set_clip_path(ax.patch)
+                arm.arrow_patch.set_clip_on(True)
+                arm.arrow_patch.set_clip_path(ax.patch)
         text = {'none': '', 'short': 'S', 'numbered': '1'}[mode] if label else ''
         if text:
             offset_px = float(style['label_offset_px'] if label_offset_px is None
@@ -1163,7 +1179,8 @@ class VisPa:
                     fontweight='bold', zorder=12,
                     bbox=dict(boxstyle='round,pad=0.15', fc='black', ec='none', alpha=0.7),
                     arrowprops=dict(arrowstyle='-', color=color, linewidth=0.6) if mode == 'numbered' else None)
-        return {'color': color, 'size_px': size_px, 'crosshair_px': arms_px,
+        return {'color': color, 'size_px': size_px if box_mode == 'on' else 0.0,
+                'box_mode': box_mode, 'crosshair_px': arms_px,
                 'label_mode': mode, 'label_text': text}
 
     def _draw_panel(self, ax, panel, marker_min_px=None):
@@ -1176,6 +1193,10 @@ class VisPa:
             ax.imshow(display, cmap=panel.get('cmap') or 'gray', origin='upper')
         else:
             ax.imshow(display, origin='upper')
+        # One source pixel may represent different physical distances on each
+        # axis (DS00 sagittal: 90 x 100 µm). Preserve that geometry on screen.
+        resolution = panel.get('resolution_um', (1.0, 1.0))
+        ax.set_aspect(float(resolution[1]) / float(resolution[0]))
         if panel.get('edge_segments'):
             ax.add_collection(LineCollection(panel['edge_segments'], colors='black',
                                              linewidths=1.4, alpha=.55, zorder=3))
@@ -1196,6 +1217,7 @@ class VisPa:
                 ax, x, y, color=color, size_um=size_um, label=label,
                 min_px=options.get('min_px', marker_min_px),
                 crosshair_px=options.get('crosshair_px'),
+                box_mode=options.get('box_mode'),
                 label_fontsize=options.get('label_fontsize'),
                 label_offset_px=options.get('label_offset_px'),
                 label_mode=options.get('label_mode'),
@@ -1370,7 +1392,7 @@ class VisPa:
                        ('patch', 'green', 'widefield green channel · 5 µm')]
         if segments:
             role_legend.append(('line', 'red', f'Trace from SWC (soma ±{half_um:g} µm)'))
-        role_legend.append(('marker', TARGET_MARKER_COLOR, 'soma location (box + cross, not to scale)'))
+        role_legend.append(('marker', TARGET_MARKER_COLOR, 'soma location (cross, not to scale)'))
         output_png = self._finalize_plot(
             fig, ax, sx, sy, resolution, neuron_id, suffix, volume_3d.shape[0],
             marker_color=TARGET_MARKER_COLOR, soma_region=soma_region,
@@ -1451,8 +1473,8 @@ class VisPa:
             os.makedirs(target_dir, exist_ok=True)
 
         marker_size_um = 20 if resolution[0] < 1.0 else 200
-        # Same target marker as the panel path: cyan/turquoise open box plus a cross
-        # through the exact point, so the single PNG and the review figure agree.
+        # Same target marker as the panel path: a cyan cross through the exact
+        # point, so the single PNG and the review figure agree.
         self._draw_target_marker(ax, sx, sy, color=marker_color or TARGET_MARKER_COLOR,
                                  size_um=marker_size_um, label='Target Soma',
                                  resolution_um=resolution)
@@ -1485,7 +1507,7 @@ class VisPa:
             self._draw_role_legend(fig, ax, legend_entries or [
                 ('patch', 'gray', 'soma grayscale MIP'),
                 ('marker', marker_color or TARGET_MARKER_COLOR,
-                 'soma location (box + cross, not to scale)')])
+                 'soma location (cross, not to scale)')])
 
         # Build filename with soma region (coordinates NOT in filename)
         # Sanitize region name to prevent path issues
@@ -1567,11 +1589,18 @@ class VisPa:
             os.makedirs(target_dir, exist_ok=True)
         fig = plt.figure(figsize=self.TRIO_FIGSIZE, facecolor='black',
                          dpi=dpi or self.TRIO_DPI)
+        # Allocate columns by each view's physical width-to-height ratio. A
+        # full sagittal plane is wider than the square close-up crops; equal
+        # columns otherwise make its displayed height needlessly smaller.
+        width_ratios = [float(panel['fov_um'][0]) / float(panel['fov_um'][1])
+                        for panel in panels]
         if legend:
             grid = fig.add_gridspec(2, len(panels), height_ratios=(9.2, 1.5),
+                                    width_ratios=width_ratios,
                                     hspace=0.02, wspace=0.05)
         else:
-            grid = fig.add_gridspec(1, len(panels), wspace=0.05)
+            grid = fig.add_gridspec(1, len(panels), width_ratios=width_ratios,
+                                    wspace=0.05)
         for index, panel in enumerate(panels):
             ax = fig.add_subplot(grid[0, index])
             ax.set_facecolor('black')
@@ -2467,7 +2496,7 @@ def prepare_sagittal_panel(
                         f"NIfTI k | {spacing_k_mm:.2f} mm/voxel"),
         "legend": [("patch", "#9a9a9a", "DS00 N4 intensity (gray)")],
         "notes": [f"Whole-plane p1–p99.5 gray; {view_note}; {slab_thickness_mm:.2f} mm i slab; "
-                  "target square and crosshair mark the provisional soma position "
+                  "crosshair marks the provisional soma position "
                   "(drawn larger for visibility, not to scale); no raw-SWC trace is drawn."
                   + (f" Hemisphere label follows the volume i convention ({'large' if hemisphere == 'Left' else 'small'} i = "
                      f"{hemisphere}); workbook Soma_Side comparison is recorded in the manifest, "

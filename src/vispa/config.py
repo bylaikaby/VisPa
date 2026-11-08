@@ -1,8 +1,10 @@
 """Load explicit, portable VisPa dataset configuration.
 
-Version: 1.21.0 (local/unreleased)
+Version: 1.21.1 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../../CHANGELOG.md
+2026-11-08: Reduce review crosshair to 120 display pixels, expose actual
+crosshair length and optional centre box through validated settings.
 2026-11-03: Preserve and resolve an explicit top-level DS00 registry path.
 2026-11-02: Resolve an optional local NMT level-6 region OBJ map path for
 strict portal-region index/mesh preflight.
@@ -976,6 +978,7 @@ def _review_schema(config=None) -> dict[str, Any]:
         "marker.color": "hex RGB",
         "marker.min_px": "display pixels",
         "marker.crosshair_px": "display pixels",
+        "marker.box_mode": "off | on",
         "marker.label_fontsize": "points",
         "marker.label_mode": "none | short | numbered",
         "marker.label_offset_px": "display pixels",
@@ -1556,7 +1559,8 @@ REVIEW_SETTINGS = {
     'marker': {
         'color': '#00e5ee',
         'min_px': 8.0,          # smallest drawn box side, in display pixels
-        'crosshair_px': 320.0,  # cross arm length from the exact centre
+        'crosshair_px': 120.0,  # cross arm length from the exact centre
+        'box_mode': 'off',      # optional open square at the exact centre
         'label_fontsize': 12,
         'label_mode': 'none',
         'label_offset_px': 22.0,
@@ -1637,7 +1641,8 @@ _DEFAULT_REVIEW_SETTINGS = copy.deepcopy(REVIEW_SETTINGS)
 _SETTING_SPECS = {
     'marker.color': {'type':'color','effect':'Box and cross color in all review panels.'},
     'marker.min_px': {'type':'number','minimum':0,'minimum_exclusive':True,'maximum':None,'effect':'Nominal target-box minimum side in pixels; the renderer applies a 0.65 side scale.'},
-    'marker.crosshair_px': {'type':'number','minimum':0,'minimum_exclusive':True,'maximum':None,'effect':'Compatibility setting; review crosshair arms are drawn at a fixed 320 display pixels.'},
+    'marker.crosshair_px': {'type':'number','minimum':0,'minimum_exclusive':True,'maximum':None,'effect':'Crosshair arm length in display pixels.'},
+    'marker.box_mode': {'type':'enum','choices':['off','on'],'effect':'Show an open square at the soma locator centre.'},
     'marker.label_fontsize': {'type':'integer','minimum':0,'minimum_exclusive':True,'maximum':None,'effect':'Target label font size in points.'},
     'marker.label_mode': {'type':'enum','choices':['none','short','numbered'],'effect':'Inline soma label: none (legend only), short S, or numbered 1 callout; marker position is unchanged.'},
     'marker.label_offset_px': {'type':'number','minimum':0,'maximum':None,'effect':'Target label offset in display pixels.'},

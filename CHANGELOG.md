@@ -1,5 +1,28 @@
 # VisPa change log
 
+## 1.21.1 — 2026-11-08 (local/unreleased candidate)
+- Apply the selected Graphite surfaces while preserving semantic button colours,
+  plotting descriptions and the main panel arrangement. Remove empty-preview
+  instructions and put bulk source/job controls under Advanced.
+- Make the crosshair length setting effective and hide the centre box by default.
+  Preserve exact locator coordinates and clip the cross to the image axes.
+- Allocate trio widths from physical field proportions and honour anisotropic
+  image spacing, keeping the complete sagittal reference extent visible.
+- Give new bulk jobs readable, stable date/time run names. Preserve historical
+  hash-named folders and retain full checksums in receipts.
+- Keep bulk sources, shared cache and output paths bound to the active profile.
+  Add a dropdown with checkboxes for exact IONData atlas-region selection;
+  prepared jobs freeze that selection and validate it before rendering.
+- Preserve available region labels in bulk jobs and receipts. Prefer the explicit
+  checked_region value when supplied, then ion_atlas; the checked-region input is
+  not configured yet, so current IONData labels remain the available source.
+- Validation: 293 source tests and 33 batch tests pass. The isolated 1.21.1
+  wheel imports and reports the same version. A cached 252527/011.swc run with
+  the active DEB profile produced four verified PNGs and a Soma NIfTI; visual
+  review confirmed the region title, compact cross and complete sagittal extent.
+  Native Graphite main-window appearance and hidden Tk region-menu behavior
+  were checked. Scientific/anatomical acceptance remains pending.
+
 ## 1.21.0 — 2026-11-08 (local/unreleased candidate)
 - Add a Bulk review dialog backed by packaged preparation and rendering
   modules, preserving the repository batch compatibility entry points.

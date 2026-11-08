@@ -1,8 +1,10 @@
 """Focused regression checks for the standalone extraction seams.
 
-Version: 1.21.0 (local/unreleased)
+Version: 1.21.1 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../CHANGELOG.md
+2026-11-08: Check the optional locator box and configurable cross without
+assuming a square in every review panel.
 2026-11-02: Compare source identity across Windows long and 8.3 path aliases.
 2026-11-03: Mark the local cache precedence case as explicit cached-only mode.
 """
@@ -237,6 +239,7 @@ class ReviewSettingsTests(unittest.TestCase):
                 apply_setting_overrides({
                     "marker.color": "#ff00ff",
                     "marker.crosshair_px": 2,
+                    "marker.box_mode": "on",
                     "marker.label_offset_px": 0,
                     "figure.panel_figsize": [5, 3],
                     "figure.panel_dpi": 40,
@@ -305,7 +308,7 @@ class ReviewSettingsTests(unittest.TestCase):
                 panel["legend"] = [
                     ("patch", "gray", "local NPY input · grayscale ZYX MIP"),
                     ("marker", toolkit.TARGET_MARKER_COLOR,
-                     "target soma marker (box + cross, not to scale)"),
+                     "target soma locator (not to scale)"),
                 ]
                 real_figure = plt.figure
 
@@ -1250,7 +1253,7 @@ class MarkerLabelPresentationTests(unittest.TestCase):
                 self.assertEqual(result['label_text'], expected)
                 self.assertEqual([text.get_text() for text in ax.texts if text.get_text()],
                                  [expected] if expected else [])
-                self.assertEqual(tuple(ax.collections[0].get_offsets()[0]), (10, 20))
+                self.assertEqual(len(ax.collections), 0)
                 fig.canvas.draw()
                 center = ax.transData.transform((10, 20))
                 self.assertEqual(len(ax.patches), 0)

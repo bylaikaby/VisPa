@@ -1,11 +1,12 @@
 """Synthetic render-style regression checks.
 
-Version: 1.21.0 (local/unreleased)
+Version: 1.21.1 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../CHANGELOG.md
 2026-10-30: Cover the fixed 320-pixel crosshair, reduced legacy square,
 exact centre, and GUI receipt
 fingerprint with a legacy 60-pixel profile.
+2026-11-08: Cover configurable, smaller crosshair and optional centre box.
 """
 import unittest
 import sys
@@ -51,10 +52,18 @@ class OutputStyleTests(unittest.TestCase):
             "003.swc", "Context", "PrCO_49", (46139, 18014, 37393),
             (8000, 8000), 30)
         self.assertIn("Region: nmt_portal=PrCO_49", simple)
+        sourced = tool._title_text(
+            "011.swc", "Sagittal", "ion_atlas=M1_79", (1, 2, 3),
+            (57870, 49300), 100)
+        self.assertIn("Region: ion_atlas=M1_79", sourced)
+        self.assertNotIn("nmt_portal=", sourced)
+        checked = tool._title_text(
+            "011.swc", "Context", "checked_region=M1_79", (1, 2, 3),
+            (8000, 8000), 30)
+        self.assertIn("Region: checked_region=M1_79", checked)
 
     def test_gui_fingerprint_records_requested_and_effective_crosshair(self):
-        self.assertIn('fixed at 320 display pixels', FIXED_CROSSHAIR_NOTICE)
-        self.assertIn('does not change the drawn length', FIXED_CROSSHAIR_NOTICE)
+        self.assertIn('marker.crosshair_px', FIXED_CROSSHAIR_NOTICE)
         gui = object.__new__(NeuroVisGUI)
         values = {'x_coord': '7', 'y_coord': '11', 'z_coord': '13',
                   'soma_cubes': '1.5', 'width_um': '8000',
@@ -66,7 +75,8 @@ class OutputStyleTests(unittest.TestCase):
         with mock.patch.dict(REVIEW_SETTINGS['marker'], {'crosshair_px': 60.0}):
             fingerprint = gui._fingerprint()
         self.assertEqual(fingerprint['review_settings']['marker']['crosshair_px'], 60.0)
-        self.assertEqual(fingerprint['effective_marker']['crosshair_arm_px'], 320.0)
+        self.assertEqual(fingerprint['effective_marker']['crosshair_arm_px'], 60.0)
+        self.assertEqual(fingerprint['effective_marker']['box_mode'], 'off')
         self.assertEqual(fingerprint['effective_marker']['box_side_scale'], 0.65)
         legacy = dict(fingerprint)
         legacy.pop('effective_marker')
@@ -78,17 +88,20 @@ class OutputStyleTests(unittest.TestCase):
                              'key': gui._fingerprint_key(fingerprint), 'outputs': {}}
             self.assertEqual(gui._evaluate_cached(current_entry)[0], 'same')
 
-    def test_default_crosshair_is_large_and_centered_in_display_pixels(self):
-        self.assertEqual(review_settings_schema()['settings']['marker.crosshair_px']['default'], 320.0)
+    def test_default_crosshair_is_bounded_and_centered_in_display_pixels(self):
+        self.assertEqual(review_settings_schema()['settings']['marker.crosshair_px']['default'], 120.0)
+        self.assertEqual(review_settings_schema()['settings']['marker.box_mode']['default'], 'off')
         tool = object.__new__(VisPa)
         fig, ax = plt.subplots(figsize=(6, 4), dpi=123)
         try:
             with mock.patch.dict(REVIEW_SETTINGS['marker'], {'crosshair_px': 60.0}):
                 result = tool._draw_target_marker(ax, 7, 11, crosshair_px=60,
                                                   label_mode='none')
-            self.assertEqual(result['crosshair_px'], 320.0)
+            self.assertEqual(result['crosshair_px'], 60.0)
+            self.assertEqual(result['box_mode'], 'off')
+            self.assertEqual(len(ax.collections), 0)
             self.assertEqual([tuple(a.xyann) for a in ax.texts],
-                             [(320, 0), (-320, 0), (0, 320), (0, -320)])
+                             [(60, 0), (-60, 0), (0, 60), (0, -60)])
             self.assertTrue(all(tuple(a.xy) == (7, 11) for a in ax.texts))
             self.assertTrue(all(a.arrow_patch.get_linewidth() == 2.0
                                 for a in ax.texts))
@@ -105,7 +118,7 @@ class OutputStyleTests(unittest.TestCase):
             try:
                 tool._draw_target_marker(ax, 7, 11, size_um=None,
                                          min_px=12, crosshair_px=16,
-                                         label_mode='none')
+                                         label_mode='none', box_mode='on')
                 fig.canvas.draw()
                 self.assertEqual(tuple(fig.get_size_inches()), (6, 4))
                 self.assertEqual(fig.dpi, dpi)
@@ -114,10 +127,25 @@ class OutputStyleTests(unittest.TestCase):
                 self.assertEqual(ax.collections[0].get_edgecolors()[0][:3].tolist(),
                                  [0.0, 229 / 255, 238 / 255])
                 self.assertEqual([tuple(a.xyann) for a in ax.texts],
-                                 [(320, 0), (-320, 0), (0, 320), (0, -320)])
+                                 [(16, 0), (-16, 0), (0, 16), (0, -16)])
                 self.assertTrue(all(tuple(a.xy) == (7, 11) for a in ax.texts))
             finally:
                 plt.close(fig)
+
+    def test_marker_arms_are_clipped_to_panel(self):
+        tool = object.__new__(VisPa)
+        fig, ax = plt.subplots(figsize=(3, 3), dpi=100)
+        try:
+            ax.set_xlim(0, 10)
+            ax.set_ylim(0, 10)
+            tool._draw_target_marker(ax, 0.2, 9.8, crosshair_px=120)
+            self.assertTrue(all(arm.get_clip_on() and arm.arrow_patch.get_clip_on()
+                                for arm in ax.texts))
+            self.assertTrue(all(arm.get_clip_box() is not None and
+                                arm.arrow_patch.get_clip_box() is not None
+                                for arm in ax.texts))
+        finally:
+            plt.close(fig)
 
     def test_panel_trace_style_matches_standalone_context(self):
         tool = object.__new__(VisPa)
@@ -132,6 +160,20 @@ class OutputStyleTests(unittest.TestCase):
                              [1.4, 0.7])
             self.assertEqual([round(c.get_alpha(), 2) for c in ax.collections],
                              [0.55, 0.9])
+        finally:
+            plt.close(fig)
+
+    def test_anisotropic_panel_keeps_full_extent_and_physical_aspect(self):
+        tool = object.__new__(VisPa)
+        fig, ax = plt.subplots(figsize=(6, 4), dpi=100)
+        try:
+            panel = {'display': np.zeros((493, 643)), 'fov_um': (57870, 49300),
+                     'resolution_um': (90, 100), 'scale_bar_um': 0,
+                     'markers': []}
+            tool._draw_panel(ax, panel)
+            self.assertAlmostEqual(ax.get_aspect(), 100 / 90)
+            self.assertEqual(tuple(ax.get_xlim()), (-0.5, 642.5))
+            self.assertEqual(tuple(ax.get_ylim()), (492.5, -0.5))
         finally:
             plt.close(fig)
 
