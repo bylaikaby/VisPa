@@ -1,9 +1,10 @@
 """
 vispa_gui.py - GUI for NeuroVis Visual Toolkit
 
-Version: 1.21.4 (local/unreleased)
+Version: 1.21.5 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../../CHANGELOG.md
+2026-11-08: Include native soma coordinates and region in Soma volume export.
 Status: candidate (GUI layout reviewed; scientific review pending)
 2026-11-08: Resolve saved review and Brain View folders from the active profile and
 exact region/side; consolidate figure provenance in one animal process log.
@@ -4477,7 +4478,10 @@ class NeuroVisGUI:
         export_path = None
         if request.save_outputs and request.save_soma_nifti:
             export_path = toolkit.export_data(vol, origin, res, request.neuron_id,
-                                              suffix="SomaBlock", output_dir=request.output_dir)
+                                              suffix="SomaBlock", output_dir=request.output_dir,
+                                              soma_coords=request.soma_xyz,
+                                              soma_region=(getattr(self, '_plot_region_context', {})
+                                                           or {}).get('display_label'))
         panel = toolkit.plot_soma_block(vol, origin, res, request.soma_xyz,
                                         request.neuron_id, output_dir=target,
                                         soma_region=(getattr(self, '_plot_region_context', {})

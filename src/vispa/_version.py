@@ -1,7 +1,7 @@
 """Single package version source.
 
-Version: 1.21.4 (local/unreleased)
+Version: 1.21.5 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../../CHANGELOG.md
 """
-__version__ = "1.21.4"
+__version__ = "1.21.5"

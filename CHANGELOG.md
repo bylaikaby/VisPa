@@ -1,5 +1,20 @@
 # VisPa change log
 
+## 1.21.5 — 2026-11-08 (local/unreleased candidate)
+- Fix volume export when its optional region is absent: remove an undefined
+  plot-only variable exposed by PC2's real GUI Soma export. Bulk exports with
+  a region were unaffected because the old condition short-circuited.
+- Pass the native raw-SWC soma coordinates and resolved region from the GUI
+  into the volume export, preserving the distinction between crop origin and
+  neuron root in its scientific sidecar.
+- Isolate two synthetic batch source fixtures from the populated live shared
+  cache; source-conflict detection remains unchanged.
+- Validation: 318 source and 37 batch tests pass. A real 251637/004 Soma
+  acquisition/render through the GUI method exported a decoded PNG and native
+  NIfTI with complete acquisition metadata and the correct raw-root coordinates;
+  the figure was visually inspected. Primary installation waits until its active
+  whole-cohort worker finishes; PC2 receives the tested corrective artifact.
+
 ## 1.21.4 — 2026-11-08 (local/unreleased candidate)
 - Keep TrioPlot for samples 252383 and 252718 without a 5 µm source: an
   explicitly configured, labelled empty Context panel preserves the arrangement

@@ -1,9 +1,10 @@
 """
 vispa.py - Macaque Brain Hybrid-Resolution Visualization Toolkit
 
-Version: 1.21.4 (local/unreleased)
+Version: 1.21.5 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../../../CHANGELOG.md
+2026-11-08: Fix optional-region volume export without referencing plot-only state.
 2026-11-08: Add a config-authorized empty Context panel for declared missing
 5 µm sources; preserve three-panel review without synthetic image pixels.
 2026-11-08: Shorten CL_/CR_ atlas ID prefixes in displayed Region titles
@@ -980,7 +981,7 @@ class VisPa:
 
         # Build filename with region (coordinates NOT in filename)
         # Sanitize region name to prevent path issues
-        if soma_region or nmt_corrected:
+        if soma_region:
             safe_region = self._sanitize_filename(soma_region)
             filename = f"{self.sample_id}_{neuron_id}_{safe_region}_{_output_name(suffix)}"
         else:

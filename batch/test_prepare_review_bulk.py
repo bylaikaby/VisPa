@@ -1,9 +1,10 @@
 """Bounded job-preparation tests for exact animal identities and raw cache.
 
-Version: 1.21.4 (local/unreleased)
+Version: 1.21.5 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../CHANGELOG.md
 Status: candidate
+2026-11-08: Isolate synthetic raw-source fixtures from the live shared cache.
 """
 from __future__ import annotations
 
@@ -12,6 +13,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+import yaml
 from unittest import mock
 
 from batch.prepare_review_bulk import plan_jobs, prepare_jobs
@@ -26,6 +28,15 @@ from vispa.review_bulk_render import (
 
 
 class PrepareReviewBulkTests(unittest.TestCase):
+    def _local_config(self, root):
+        template = Path(__file__).parents[1] / "src/vispa/configs/config_deb.yaml"
+        config = yaml.safe_load(template.read_text(encoding="utf-8"))
+        config["defaults"]["cache_root"] = str(root / "declared_cache")
+        config["sources"]["legacy_raw_swc_root"] = None
+        path = root / "config.yaml"
+        path.write_text(yaml.safe_dump(config), encoding="utf-8")
+        return path
+
     def setUp(self):
         def sides(sample, neuron_ids, config):
             return {"status": "complete", "source": {"method": "fixture soma atlas"},
@@ -84,7 +95,7 @@ class PrepareReviewBulkTests(unittest.TestCase):
                     {"id": path.name, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
                     for path in (first, second)],
             }), encoding="utf-8")
-            config = Path(__file__).parents[1] / "src/vispa/configs/config_deb.yaml"
+            config = self._local_config(root)
             cache = root / "cache" / "swc_raw"
             jobs_path = root / "jobs" / "prepared.json"
             plan = plan_jobs(config, "251637", identities, False, [sources.parent], cache,
@@ -132,7 +143,7 @@ class PrepareReviewBulkTests(unittest.TestCase):
             (source / "001.swc").write_text("1 1 1 2 3 1 -1\n", encoding="utf-8")
             identities = root / "identities.csv"
             identities.write_text("sample,neuron_id\n251637,001.swc\n251637,002.swc\n")
-            config = Path(__file__).parents[1] / "src/vispa/configs/config_deb.yaml"
+            config = self._local_config(root)
             plan = plan_jobs(config, "251637", identities, False, [source.parent],
                              root / "cache", None, None, True)
             self.assertEqual(plan["missing_count"], 1)

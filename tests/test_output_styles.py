@@ -1,8 +1,9 @@
 """Synthetic render-style regression checks.
 
-Version: 1.21.4 (local/unreleased)
+Version: 1.21.5 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../CHANGELOG.md
+2026-11-08: Exercise real optional-region exports and GUI Soma export provenance.
 2026-11-08: Validate configured absent-source Context panel and TrioPlot.
 2026-11-08: Reject mutated renderer style under a saved strict profile.
 2026-10-30: Cover the fixed 320-pixel crosshair, reduced legacy square,
@@ -18,6 +19,8 @@ import sys
 from pathlib import Path
 import os
 import tempfile
+import json
+from types import SimpleNamespace
 from unittest import mock
 
 import matplotlib
@@ -35,6 +38,43 @@ from vispa.renderers.swc_brain_view import TRACE_LABEL, _legend_texture
 
 
 class OutputStyleTests(unittest.TestCase):
+    def test_native_volume_export_with_and_without_region(self):
+        import nibabel as nib
+        with tempfile.TemporaryDirectory(dir=os.environ.get('VISPA_TEST_ROOT')) as directory:
+            tool = object.__new__(VisPa)
+            tool.sample_id = '251637'
+            tool.output_dir = directory
+            volume = np.arange(24, dtype=np.uint16).reshape(2, 3, 4)
+            for region in (None, 'Right PrCO'):
+                with self.subTest(region=region):
+                    path = tool.export_data(volume, (10, 20, 30), (1, 2, 3),
+                                            '004.swc', soma_region=region)
+                    np.testing.assert_array_equal(nib.load(path).get_fdata(),
+                                                  volume.transpose(2, 1, 0))
+                    metadata = json.loads(Path(path + '.json').read_text())
+                    self.assertIsNone(metadata['center_xyz_um'])
+
+    def test_gui_soma_export_preserves_native_root_and_region(self):
+        with tempfile.TemporaryDirectory(dir=os.environ.get('VISPA_TEST_ROOT')) as directory:
+            tool = object.__new__(VisPa)
+            tool.sample_id = '251637'
+            tool.output_dir = directory
+            tool.get_high_res_soma_window = mock.Mock(return_value=(
+                np.ones((2, 3, 4), dtype=np.uint16), (10, 20, 30), (1, 2, 3)))
+            tool.plot_soma_block = mock.Mock(return_value={})
+            gui = object.__new__(NeuroVisGUI)
+            gui._plot_region_context = {'display_label': 'Right PrCO'}
+            gui._soma_window_px = mock.Mock(return_value=12)
+            request = SimpleNamespace(soma_xyz=(11, 22, 33), neuron_id='004.swc',
+                                      output_dir=directory, save_outputs=True,
+                                      save_soma_nifti=True)
+            panel = gui._render_soma(tool, request, directory)
+            path = panel['_soma_nifti']
+            self.assertIn('Right PrCO', Path(path).name)
+            metadata = json.loads(Path(path + '.json').read_text())
+            self.assertEqual(metadata['center_xyz_um'], [11, 22, 33])
+            self.assertEqual(metadata['origin_xyz_um'], [10, 20, 30])
+
     def test_declared_missing_context_renders_empty_panel_and_trio(self):
         from vispa.renderers import microscopy_panels as panels
         with tempfile.TemporaryDirectory(dir=os.environ.get('VISPA_TEST_ROOT')) as directory:
