@@ -1,6 +1,6 @@
 """Freeze one animal of exact raw-SWC review jobs with a managed byte cache.
 
-Version: 1.21.1 (local/unreleased)
+Version: 1.21.2 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../CHANGELOG.md
 Status: candidate
@@ -28,7 +28,7 @@ from vispa.data_input_adaptor import (
     list_neurons, read_swc,
 )
 
-from .review_bulk_render import _atomic_json, _sha256, validate_run_name
+from .review_bulk_render import _atomic_json, _sha256, neuron_folder_name, validate_run_name
 
 
 _SAMPLE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,80}\Z")
@@ -187,6 +187,7 @@ def plan_jobs(config_path: Path, sample: str, identities: Path | None, catalog: 
         if digest and expected and digest != expected[name]:
             raise ValueError(f"Raw source hash differs from receipt for {sample}/{name}")
         jobs.append({"sample_id": sample, "neuron_id": name,
+                     "neuron_folder": neuron_folder_name(sample, name, region),
                      "soma_region": region,
                      "soma_region_entries": region_entries,
                      "soma_region_source": ({**identity_source, "field": region_field} if region else None),
@@ -248,6 +249,7 @@ def prepare_jobs(plan: dict, output_jobs: Path, *, dry_run: bool, allow_download
                 raise ValueError("managed SWC differs from expected source receipt")
             tree = read_swc(target)
             jobs.append({"sample_id": item["sample_id"], "neuron_id": item["neuron_id"],
+                         "neuron_folder": item["neuron_folder"],
                          "render_ready": True, "soma_xyz": list(tree.root.xyz),
                          "soma_units": "raw SWC stored coordinates (nominal um)",
                          "soma_coordinate_source": str(target) + f"#root-node-{tree.root.id}",
@@ -259,6 +261,7 @@ def prepare_jobs(plan: dict, output_jobs: Path, *, dry_run: bool, allow_download
                          "fnt_marker": None, "fnt_cluster": None})
         except (OSError, RuntimeError, ValueError) as exc:
             jobs.append({"sample_id": item["sample_id"], "neuron_id": item["neuron_id"],
+                         "neuron_folder": item["neuron_folder"],
                          "render_ready": False, "soma_error": str(exc)})
     payload = {"schema": "vispa.review_bulk.v1", "sample_id": plan["sample_id"],
                "run_name": plan["run_name"],

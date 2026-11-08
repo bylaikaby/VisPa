@@ -1,8 +1,9 @@
 """Focused regression checks for the standalone extraction seams.
 
-Version: 1.21.1 (local/unreleased)
+Version: 1.21.2 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../CHANGELOG.md
+2026-11-08: Verify startup follows configured autoload and explicit opt-out.
 2026-11-08: Check the optional locator box and configurable cross without
 assuming a square in every review panel.
 2026-11-02: Compare source identity across Windows long and 8.3 path aliases.
@@ -239,6 +240,7 @@ class ReviewSettingsTests(unittest.TestCase):
                 apply_setting_overrides({
                     "marker.color": "#ff00ff",
                     "marker.crosshair_px": 2,
+                    "marker.linewidth": 0.8,
                     "marker.box_mode": "on",
                     "marker.label_offset_px": 0,
                     "figure.panel_figsize": [5, 3],
@@ -262,6 +264,8 @@ class ReviewSettingsTests(unittest.TestCase):
                     data_ax = review_figure.axes[0]
                     self.assertTrue(np.allclose(data_ax.collections[0].get_edgecolors()[0], (1, 0, 1, 1)))
                     self.assertTrue(np.allclose(data_ax.collections[0].get_offsets()[0], (2, 2)))
+                    self.assertTrue(all(arm.arrow_patch.get_linewidth() == 0.8
+                                        for arm in data_ax.texts[:4]))
                     marker_display = data_ax.transData.transform((2, 2))
                     tight = review_figure.get_tightbbox(review_figure.canvas.get_renderer())
                     marker_png_x = (marker_display[0] / review_figure.dpi - tight.x0 + 0.15) * 40
@@ -648,6 +652,16 @@ class ConfigTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "both be set"):
             resolve_gui_launch_defaults({"visual_toolkit": {
                 "default_sample": "", "default_neuron": "048.swc"}})
+
+    def test_gui_launch_uses_configured_autoload_unless_explicitly_disabled(self):
+        from vispa import reviewer
+        config = {"visual_toolkit": {"default_sample": "252527",
+                                      "default_neuron": "048.swc", "auto_load": True}}
+        with mock.patch("vispa.config.load", return_value=config):
+            parser, args = reviewer._parse_launch_args([])
+            self.assertTrue(reviewer._resolve_launch(parser, args)[2])
+            parser, args = reviewer._parse_launch_args(["--no-autoload"])
+            self.assertFalse(reviewer._resolve_launch(parser, args)[2])
 
     def test_null_visual_toolkit_section_keeps_legacy_empty_defaults(self):
         from vispa.dataset_config import load

@@ -1,7 +1,7 @@
 """Bounded batch planning tests with synthetic local mesh/SWC inputs.
 
-Version: 1.11.0.dev25 (local/unreleased)
-Last updated: 2026-10-27
+Version: 1.21.2 (local/unreleased)
+Last updated: 2026-11-08
 Change history: ../CHANGELOG.md
 Status: candidate
 """
@@ -29,18 +29,19 @@ class BatchPlanningTests(unittest.TestCase):
         self.region_root.mkdir()
         (self.region_root / "amygdala (Amy).obj").write_text(
             "v -1 -1 -1\nv 1 1 1\nf 1 2 1\n", encoding="ascii")
-        swc_root = self.root / "swc" / "251637"
+        swc_root = self.root / "cache" / "swc_processed" / "251637"
         swc_root.mkdir(parents=True)
         for name in ("002.swc", "001.swc"):
             (swc_root / name).write_text("1 1 0 0 0 200 -1\n2 3 0 1 0 1 1\n", encoding="ascii")
         self.config = self.root / "vispa.json"
         self.config.write_text(json.dumps({
             "version": 1, "base_dir": str(self.root),
+            "defaults": {"cache_root": str(self.root / "cache")},
             "visual_toolkit": {"worker_python": "C:/not-used/python.exe", "output_root": str(self.root / "session")},
             "sources": {"brain_view": {"mesh_path": str(self.mesh),
                                        "region_mesh_root": str(self.region_root),
                                        "region_color": [0.3, 0.7, 1.0],
-                                       "processed_swc_root": str(self.root / "swc"),
+                                       "processed_swc_root": str(self.root / "dependency_swc"),
                                        "coordinate_frame": "fixture-frame", "coordinate_units": "stored"}}}),
             encoding="utf-8")
         (self.root / "settings").mkdir()

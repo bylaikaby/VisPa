@@ -1,6 +1,6 @@
 """Focused lossless common-settings checks.
 
-Version: 1.21.0 (local/unreleased)
+Version: 1.21.2 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../CHANGELOG.md
 """
@@ -344,7 +344,7 @@ class SettingsWindowTests(unittest.TestCase):
                 buttons = {item.cget('text'): item for item in widgets
                            if isinstance(item, ttk.Button)}
                 self.assertEqual([tabs.tab(tab, 'text') for tab in tabs.tabs()],
-                                 ['Organized editor', 'Raw YAML', 'Frozen default YAML'])
+                                 ['Organized editor', 'Raw YAML', 'Factory default YAML'])
                 self.assertEqual(tabs.tab(tabs.select(), 'text'), 'Organized editor')
                 self.assertEqual(section_list.get(0, 'end'),
                                  ('Data folders', 'Sources', 'Brain view', 'FNT', 'Startup'))
@@ -481,7 +481,7 @@ class SettingsWindowTests(unittest.TestCase):
                 readonly = window._default_text
                 buttons = {item.cget('text'): item for item in widgets
                            if isinstance(item, ttk.Button)}
-                default_path = path.with_name('vispa_config.default.yaml')
+                default_path = path.with_name('vispa_config.factory-v1.0.8.yaml')
                 self.assertEqual(default_path.read_bytes(), original)
                 self.assertEqual(readonly.cget('state'), 'disabled')
                 folders = next(item for item in widgets if isinstance(item, ttk.LabelFrame)
@@ -519,7 +519,7 @@ class SettingsWindowTests(unittest.TestCase):
 
                 tabs.select(2)
                 root.update()
-                buttons['Reset to default'].invoke()
+                buttons['Restore factory'].invoke()
                 root.update()
                 self.assertEqual(path.read_bytes(), changed)
                 self.assertEqual(default_path.read_bytes(), original)
@@ -541,6 +541,10 @@ class SettingsWindowTests(unittest.TestCase):
                 self.assertIn(b'D:/raw_draft', path.read_bytes())
                 self.assertEqual(default_path.read_bytes(), original)
 
+                buttons['Save as my default'].invoke()
+                my_default_path = path.with_suffix('.user-default.yaml')
+                self.assertEqual(my_default_path.read_bytes(), path.read_bytes())
+
                 before_failed_save = path.read_bytes()
                 raw.insert('end', '\n# attempted edit')
                 with (mock.patch('vispa.config.Path.mkdir', side_effect=OSError('backup unavailable')),
@@ -548,6 +552,9 @@ class SettingsWindowTests(unittest.TestCase):
                     buttons['Save settings'].invoke()
                 self.assertEqual(path.read_bytes(), before_failed_save)
                 show_error.assert_called_once()
+                buttons['Restore my default'].invoke()
+                self.assertEqual(raw.get('1.0', 'end-1c').encode('utf-8'),
+                                 my_default_path.read_bytes())
 
                 window.destroy()
                 default_path.write_bytes(b'version: [\n')
@@ -560,7 +567,7 @@ class SettingsWindowTests(unittest.TestCase):
                 fallback_labels = [root.getvar(item.cget('textvariable'))
                                    for item in descendants(fallback_window)
                                    if isinstance(item, ttk.Label) and item.cget('textvariable')]
-                self.assertTrue(any('Local default copy could not be used' in value
+                self.assertTrue(any('Factory snapshot could not be used' in value
                                     for value in fallback_labels))
                 with mock.patch('vispa.gui.messagebox.showerror') as protected_error:
                     self.assertFalse(gui._save_config_text(default_path, 'version: 1\n'))

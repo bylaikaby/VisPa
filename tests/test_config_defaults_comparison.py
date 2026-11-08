@@ -1,6 +1,6 @@
 """Read-only active/installed/frozen configuration comparison.
 
-Version: 1.21.0 (local/unreleased)
+Version: 1.21.2 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../CHANGELOG.md
 """
@@ -16,6 +16,27 @@ from vispa.config import compare_config_defaults, config_version_report, load, p
 
 
 class ConfigDefaultsComparisonTests(unittest.TestCase):
+    def test_customized_uses_effective_settings_and_pinned_factory(self):
+        template = yaml.safe_load(packaged_config_path().read_text(encoding="utf-8"))
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            active_path = root / "active.yaml"
+            active = yaml.safe_load(yaml.safe_dump(template))
+            active["visual_toolkit"]["settings"]["review"].pop("marker.linewidth")
+            active["config_updated_at"] = "2026-11-08T17:00:00+08:00"
+            active_path.write_text(yaml.safe_dump(active), encoding="utf-8")
+            report = compare_config_defaults(active_path)
+            self.assertFalse(report["customized"])
+            factory_path = root / f"vispa_config.factory-v{template['config_version']}.yaml"
+            factory_path.write_text(yaml.safe_dump(template), encoding="utf-8")
+            active["visual_toolkit"]["settings"]["review"]["marker.linewidth"] = 0.5
+            active_path.write_text(yaml.safe_dump(active), encoding="utf-8")
+            report = compare_config_defaults(active_path)
+            self.assertTrue(report["customized"])
+            self.assertEqual(report["baseline_source"], str(factory_path))
+            self.assertIn("visual_toolkit.settings.review.marker.linewidth",
+                          report["customized_fields"])
+
     def test_version_metadata_is_first_class_and_legacy_files_remain_loadable(self):
         raw = yaml.safe_load(packaged_config_path().read_text(encoding="utf-8"))
         raw.update({

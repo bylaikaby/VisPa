@@ -1,7 +1,7 @@
 # VisPa — Visual Projectome Analysis tool
 
 VisPa reviews macaque neuron and microscopy data configured by the DEB lab.
-This checkout identifies as **1.21.1**. VisPa is a
+This checkout identifies as **1.21.2**. VisPa is a
 Python package inside a Conda environment. Launch the GUI directly from this
 checkout with `python run_vispa.py`.
 
@@ -292,7 +292,7 @@ Use the checkout's actual path if it is not `D:\vispa`.
 
 ### Adopt new lab defaults
 
-To adopt new lab defaults, use **Settings → Default YAML → Reset to default → Save settings**, or launch with the shared profile directly:
+To adopt new lab defaults, use **Settings → Factory default YAML → Restore factory → Save settings**, or launch with the shared profile directly:
 
 ```powershell
 python run_vispa.py gui --config '\\10.102.8.200\microscopy_data\fMOST\resources\config_deb.yaml'
@@ -329,7 +329,7 @@ It declares the shared sample, DS00,
 inputs. Cubes, SWCs and FNT work use
 `\\10.102.8.200\microscopy_data\fMOST\VisPa\cached_data`. That profile writes
 figures under `\\10.102.8.200\microscopy_data\fMOST\VisPa\outputs`. The
-packaged DEB 1.0.7 profile routes GUI Render figures to
+packaged DEB 1.0.8 profile routes GUI Render figures to
 `\\10.102.8.200\microscopy_data\fMOST\Vispa_outputs/<sample>/neurons/<neuron>/`.
 An existing profile can set `visual_toolkit.figure_output_root` to choose the
 same root without changing its general output directory.
@@ -539,7 +539,7 @@ The headless operator is `vispa render`. It accepts one local `.npy` array in ZY
 vispa render --input cube.npy --sample sample-01 --neuron 0007 --soma 120 240 30 --origin 0 0 0 --resolution 0.65 0.65 3 --coordinate-frame sample-native-XYZ --role soma --output-dir review --dry-run
 ```
 
-Use `--role context` for the 5 µm style. `--set PATH=VALUE` overrides review settings; scalar values and numeric sequences are supported, such as `--set figure.panel_dpi=400` or `--set soma_window.cubes_xy_steps=1.5,1.25,1`. Unknown keys, out-of-range values and invalid combinations fail before changing global settings. Run `vispa settings` to print each setting's default, current value, valid range and effect as JSON. Python callers can use `review_settings_schema()` and pass a mapping or a list of `PATH=VALUE` strings to `apply_setting_overrides()`. The single-panel review figure includes the image and target marker legend and labels the displayed plane as native X/Y. The cyan target box and cross mark the supplied coordinate; they do not validate anatomy, orientation, or laterality. The labeled single-panel CLI review reserves font-measured clearance between its axes and shared legend; multi-panel and unlabeled figures retain the legacy layout.
+Use `--role context` for the 5 µm style. `--set PATH=VALUE` overrides review settings; scalar values and numeric sequences are supported, such as `--set figure.panel_dpi=400` or `--set soma_window.cubes_xy_steps=1.5,1.25,1`. Unknown keys, out-of-range values and invalid combinations fail before changing global settings. Run `vispa settings` to print each setting's default, current value, valid range and effect as JSON. Python callers can use `review_settings_schema()` and pass a mapping or a list of `PATH=VALUE` strings to `apply_setting_overrides()`. The single-panel review figure includes the image and target marker legend and labels the displayed plane as native X/Y. The cyan cross marks the supplied coordinate; an optional centre box can be enabled with `marker.box_mode=on`. Neither validates anatomy, orientation, or laterality. The labeled single-panel CLI review reserves font-measured clearance between its axes and shared legend; multi-panel and unlabeled figures retain the legacy layout.
 
 `python run_vispa.py gui` starts the optional Tk interface. `python run_vispa.py --help` and `python run_vispa.py --version` do not load image libraries, open windows, or acquire data. Package import does not change `sys.path` or import `IONData`.
 
@@ -755,6 +755,23 @@ Resolution deep-copies input. `apply_settings` validates before updating a suppl
 mutable target; only the existing review scope may update renderer globals without
 a target.
 
+Review style keys include `marker.crosshair_px`, `marker.linewidth`,
+`marker.box_mode`, title, axis, tick and legend font sizes, scale-bar
+line and label sizes, and Context SWC trace widths under `figure.*`. The same resolved style reaches single
+panels, TrioPlot, the GUI and the bounded batch worker. A Python wrapper can
+configure sources first, inspect the schema, then apply review settings:
+
+```python
+from vispa import configure_data_sources, apply_settings, settings_schema
+configure_data_sources(path=r"C:\data\vispa_config.yaml")
+print(settings_schema("review"))
+apply_settings("review", {"marker.linewidth": 1.0,
+                          "figure.review_title_fontsize": 14})
+```
+
+The CLI equivalent is `vispa settings --scope review` for discovery and
+`vispa render ... --set marker.linewidth=1` for a bounded render.
+
 An optional existing JSON/YAML config can hold the shared settings block; no new
 config file is created by the package:
 
@@ -894,7 +911,7 @@ An explicit `Soma_Side` column is cross-checked when present. The verified side
 appears before the portal region, such as `Region: Right PrCO_49`. Missing,
 duplicate or conflicting identities remain `side unverified`.
 
-The optional **SWC Brain View interactive** action uses `sources.brain_view.mesh_path`, `processed_swc_root`, and the optional manifest-bound `region_mesh_root`, with declared `coordinate_frame` / `coordinate_units` and optional `settings`; `visual_toolkit.worker_python` selects its isolated worker when set. A generic config does not receive default anatomical frame or unit declarations: the worker preflight requires explicit values when 3D view is requested. The default projectome config points to the preserved root.obj, processed-SWC tree and copied legacy CHARM/SARM OBJ dependency folder and declares their current stored convention. The handoff passes the exact current sample and neuron ID plus the portal snapshot's soma region when available. A verified cortical canonical key may add one bilateral region overlay; no match or ambiguity remains root-only and is recorded rather than guessed. It never substitutes a raw SWC or downloads a model. The GUI starts the worker in a separate process, leaving the host Python imports isolated.
+The optional **SWC Brain View interactive** action uses `sources.brain_view.mesh_path`, the managed processed-SWC cache at `defaults.cache_root/swc_processed`, and the optional manifest-bound `region_mesh_root`, with declared `coordinate_frame` / `coordinate_units` and optional `settings`; `visual_toolkit.worker_python` selects its isolated worker when set. A dry-run checks cached inputs without fetching. An execution reuses the exact cached processed SWC or fetches a missing one through the shared IONData `getSWC` loader, recording its source receipt; the configured legacy `processed_swc_root` is not an implicit viewer fallback. A generic config does not receive default anatomical frame or unit declarations: the worker preflight requires explicit values when 3D view is requested. The default projectome config points to the preserved root.obj and copied legacy CHARM/SARM OBJ dependency folder and declares their current stored convention. The handoff passes the exact current sample and neuron ID plus the portal snapshot's soma region when available. A verified cortical canonical key may add one bilateral region overlay; no match or ambiguity remains root-only and is recorded rather than guessed. It never substitutes a raw SWC or downloads a model. The GUI starts the worker in a separate process, leaving the host Python imports isolated.
 
 `vispa.sources.IONData()` reads configured local raw SWCs when `refresh=False`. A project can register a raw provider implementing `getRawNeuronTreeByID(sample_id, neuron_id)` using `set_iondata_provider_factory(factory)`; its own freshness behavior is provider-defined. Without a registered factory, setting `sources.http_host` and `sources.raw_swc_base` enables the built-in portal fetch: it reads the sample's `project_id` from the portal and downloads `<project>/<sample>/swc_raw/<neuron>` into the managed cache. The returned tree protocol exposes `root.x/y/z`, `root.xyz`, `points`, and iterable `edges` whose `.data` contains points with `.x/y/z` attributes. The local parser rejects malformed, disconnected, cyclic, and missing-parent trees.
 
@@ -928,7 +945,7 @@ At **fnt-tracer** launch, an explicit manual project remains first choice. If it
 
 Run `python run_vispa.py config-check --config settings.yaml --sample 251637 --neuron 004.swc --dry-run` for a read-only JSON inventory (file hashes, source dates unknown as null, coordinate declarations, cache references and cube route/geometry). Add `--fnt` to require both a configured executable and an exact matching manual or native cached FNT project; this mode returns failure when either is unavailable and never starts the binary. The JSON also reports `project_ready` and `executable_ready` separately. Directory references are not recursively hashed; the inventory alone does not establish complete offline panel coverage or scientific acceptance.
 
-The active VisPa profile can fetch one exact native FNT with `python run_vispa.py fnt-fetch --config PATH --sample 251637 --neuron 004.swc --dry-run`; remove `--dry-run` to download and verify it into the VisPa cache. `visual_toolkit.fnt_tracer` exposes `auto_download` (boolean, default true), `cache_root` (optional path), `server_base_url` and `catalog_base_url` (plain HTTP(S) base URLs), `timeout_seconds` (positive integer, default 30), and `max_response_bytes` (positive integer, default 67108864). An explicit `project_root` keeps a matching annotated local project as first choice; otherwise the exact verified VisPa cache project is used. `config-check --fnt` stays read-only and reports project and executable readiness separately. The executable is required only to launch **fnt-tracer**. In the GUI, **Settings** opens the active config with five sections in **Organized editor**, complete editable **Raw YAML** (or **Raw JSON** for an explicit JSON config), and a read-only **Default YAML** reference. Choose Data folders, Sources, Brain view, FNT or Startup; use **Browse…** for paths. The public-neuron example is intentionally absent from the GUI. Raw mode includes sample-specific paths, geometry, provenance and display settings. Switching between the editing tabs transfers valid unsaved edits. No-op saves preserve exact bytes; changed form saves keep unknown keys but may reformat YAML comments and whitespace. Invalid active YAML opens in Raw for correction. On first open, VisPa copies its installed default profile to `vispa_config.default.yaml` beside the active config; an existing copy is never replaced. If that copy is unavailable or invalid, Default YAML shows the installed profile with a warning. **Reset to default** stages the frozen local profile; **Restore backup…** stages a selected historical YAML/JSON. Neither writes the active file until **Save settings**. Save validates the complete file, backs up its previous bytes under `config_backups/` with a unique timestamp, and refuses an externally changed file or failed backup. Frozen default YAML cannot be edited or saved directly. It is a one-time local copy and may differ from the current installed template; use `config-check --compare-defaults` to inspect that drift without a write. **Reload** discards unsaved edits. Restart VisPa after changing source folders. The cache and FNT paths do not change scientific rendering parameters.
+The active VisPa profile can fetch one exact native FNT with `python run_vispa.py fnt-fetch --config PATH --sample 251637 --neuron 004.swc --dry-run`; remove `--dry-run` to download and verify it into the VisPa cache. `visual_toolkit.fnt_tracer` exposes `auto_download` (boolean, default true), `cache_root` (optional path), `server_base_url` and `catalog_base_url` (plain HTTP(S) base URLs), `timeout_seconds` (positive integer, default 30), and `max_response_bytes` (positive integer, default 67108864). An explicit `project_root` keeps a matching annotated local project as first choice; otherwise the exact verified VisPa cache project is used. `config-check --fnt` stays read-only and reports project and executable readiness separately. The executable is required only to launch **fnt-tracer**. In the GUI, **Settings** opens the active config with five sections in **Organized editor**, complete editable **Raw YAML** (or **Raw JSON** for an explicit JSON config), and a read-only **Factory default YAML** reference. Choose Data folders, Sources, Brain view, FNT or Startup; use **Browse…** for paths. The public-neuron example is intentionally absent from the GUI. Raw mode includes sample-specific paths, geometry, provenance and display settings. Switching between the editing tabs transfers valid unsaved edits. No-op saves preserve exact bytes; changed form saves keep unknown keys but may reformat YAML comments and whitespace. Invalid active YAML opens in Raw for correction. On opening Settings, VisPa pins its installed factory profile to a versioned snapshot such as `vispa_config.factory-v1.0.8.yaml`; existing snapshots and historical `vispa_config.default.yaml` files are preserved. Startup and Settings show the baseline version and whether the effective profile is customized. **Restore factory** stages the displayed factory profile. **Save as my default** saves the validated active profile to its `.user-default.yaml` snapshot; **Restore my default** stages that personal snapshot. **Restore backup…** stages a historical YAML/JSON. Restoring a profile writes the active file only after **Save settings**. Save validates the complete file, backs up its previous bytes under `config_backups/` with a unique timestamp, and refuses an externally changed file or failed backup. Frozen default YAML cannot be edited or saved directly. It is a one-time local copy and may differ from the current installed template; use `config-check --compare-defaults` to inspect that drift without a write. **Reload** discards unsaved edits. Restart VisPa after changing source folders. The cache and FNT paths do not change scientific rendering parameters.
 
 Combined review figures derive text wrapping, legend/footer height and labeled-axis separation from the selected font metrics and available axes width; panels retain full image extents and original aspect ratios, anchored at the top. These are automatic layout constraints rather than separate scientific parameters. Tune `figure.review_figsize` and `figure.review_dpi` through the existing settings interface.
 

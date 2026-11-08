@@ -1,5 +1,31 @@
 # VisPa change log
 
+## 1.21.2 — 2026-11-08 (local/unreleased candidate)
+- Enable configured startup neuron loading by default and retain explicit
+  no-autoload overrides. Use light blue coordinate panels with readable dark text.
+- Expose cross thickness, figure typography, scale-bar styling and Context trace
+  widths through the shared validated settings API, config and CLI. The cross
+  defaults to 1 point; single plots and bulk reuse the same style.
+- Route Brain View through the shared managed processed-SWC acquisition/cache,
+  preserving cache-only dry runs and source receipts. The legacy dependency
+  folder no longer supplies its configured SWC.
+- Freeze descriptive neuron folders for new batches, such as
+  251637_004_PrCO. Keep complete atlas labels in metadata and retain historical
+  job paths unchanged.
+- Add versioned factory snapshots and personal-default save/restore controls.
+  Startup and Settings show the baseline version and effective customization
+  status. Restores are staged before saving the validated active profile.
+- Use muted blue coordinate panels and a taller, screen-bounded resource check.
+  Its processed-SWC status now describes the managed cache used by Brain View.
+- Adopt source-first local validation before one packaging/install stage.
+- Validation: 299 source and 33 batch tests pass. A bounded local render produced
+  four decoded, hash-matched PNGs and a Soma NIfTI with the shared 1-point cross.
+  Startup autoload and config status were observed in the source GUI; hidden Tk
+  checks cover the final coordinate colours, window bounds and restore controls.
+  A real processed-SWC acquisition matches all 42,343 parsed nodes of the previous
+  source. A fresh 99-neuron batch is prepared; a full revised batch render and
+  scientific/anatomical acceptance remain pending.
+
 ## 1.21.1 — 2026-11-08 (local/unreleased candidate)
 - Apply the selected Graphite surfaces while preserving semantic button colours,
   plotting descriptions and the main panel arrangement. Remove empty-preview
@@ -205,6 +231,11 @@
   chosen existing files are not overwritten.
 
 ## Configuration history
+
+- **1.0.8** — `2026-11-08T16:03:59+08:00` — VisPa `1.21.2` candidate —
+  Enable configured startup neuron loading and record the 1-point marker stroke;
+  preserve source/cache/output declarations. Personal profiles remain separate
+  from the factory profile and support explicit default restoration.
 
 - **1.0.7** — `2026-11-04T18:42:48+08:00` — VisPa `1.20.1` — Add a GUI
   figure root at `fMOST\Vispa_outputs` and increase the display-only processed

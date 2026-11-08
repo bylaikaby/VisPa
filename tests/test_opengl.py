@@ -1,6 +1,6 @@
 """Contract tests for the lazy original-engine OpenGL worker.
 
-Version: 1.21.0 (local/unreleased)
+Version: 1.21.2 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../CHANGELOG.md
 Status: candidate
@@ -36,7 +36,7 @@ class LegacyOpenGLPlanningTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.mesh = self.root / "brain.obj"
         self.mesh.write_text("v -2 -3 -4\nv 2 3 4\nf 1 2 1\n", encoding="ascii")
-        self.swc_root = self.root / "swc"
+        self.swc_root = self.root / "cache" / "swc_processed"
         self.swc = self.swc_root / "251637" / "001.swc"
         self.swc.parent.mkdir(parents=True)
         self.swc.write_text("1 1 0 0 0 200 -1\n2 3 0 1 0 1 1\n", encoding="ascii")
@@ -46,8 +46,30 @@ class LegacyOpenGLPlanningTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
+    def test_managed_cache_fetch_once_and_offline_plan(self):
+        payload = self.swc.read_bytes()
+        self.swc.unlink()
+        config = json.loads(self.config.read_text())
+        config["sources"]["http_host"] = "http://example.test"
+        self.config.write_text(json.dumps(config))
+        with mock.patch("vispa.data_input_adaptor._read_bounded_swc", return_value=payload) as read:
+            with self.assertRaises(FileNotFoundError):
+                opengl.plan_configured_view("251637", "001.swc", config_path=self.config)
+            read.assert_not_called()
+            first = opengl.plan_configured_view("251637", "001.swc", config_path=self.config,
+                                                allow_download=True)
+            second = opengl.plan_configured_view("251637", "001.swc", config_path=self.config,
+                                                 allow_download=True)
+            self.assertEqual(read.call_count, 1)
+            self.assertEqual(Path(first["processed_swc"]["path"]), self.swc)
+            self.assertEqual(first["processed_swc"]["sha256"], second["processed_swc"]["sha256"])
+            self.assertTrue(self.swc.with_name("001.swc.source.json").exists())
+            self.assertEqual(first["processed_swc"]["source_receipt"]["role"], "processed")
+            self.assertEqual(first["processed_swc"]["source_receipt"]["path"],
+                             str(self.swc.with_name("001.swc.source.json")))
+
     def _write_config(self, *, frame=None, units=None, settings=None, scoped_settings=None):
-        brain_view = {"mesh_path": str(self.mesh), "processed_swc_root": str(self.swc_root)}
+        brain_view = {"mesh_path": str(self.mesh), "processed_swc_root": str(self.root / "dependencies")}
         if frame is not None:
             brain_view["coordinate_frame"] = frame
         if units is not None:
@@ -55,6 +77,7 @@ class LegacyOpenGLPlanningTests(unittest.TestCase):
         if settings is not None:
             brain_view["settings"] = settings
         payload = {"version": 1, "base_dir": str(self.root),
+                   "defaults": {"cache_root": str(self.root / "cache")},
                    "visual_toolkit": {"worker_python": sys.executable, "output_root": str(self.root / "out"),
                                       "settings": scoped_settings or {}},
                    "sources": {"brain_view": brain_view}}

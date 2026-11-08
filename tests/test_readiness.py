@@ -1,6 +1,6 @@
 """Checks for the public data-check API, CLI and GUI progress plumbing.
 
-Version: 1.21.0 (local/unreleased)
+Version: 1.21.2 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../CHANGELOG.md
 Status: candidate
@@ -30,7 +30,7 @@ class DataCheckTests(unittest.TestCase):
             "ds00.nii": b"ds00",
             "raw/0007/001.swc": b"1 1 0 0 0 1 -1\n",
             "mesh.obj": b"v 0 0 0\n",
-            "processed/0007/001.swc": b"1 1 0 0 0 1 -1\n",
+            "cache/swc_processed/0007/001.swc": b"1 1 0 0 0 1 -1\n",
             "fnt.exe": b"exe",
             "fnt-from-swc.exe": b"converter fixture",
             "projects/0007_001.fnt": b"fnt",
@@ -96,6 +96,9 @@ class DataCheckTests(unittest.TestCase):
                 for line in report["checklist"]))
             self.assertTrue(any(item["role"] == "download_cache" and
                                 item["status"] == "ready" for item in report["checks"]))
+            processed = next(item for item in report["checks"] if item["role"] == "processed_swc")
+            self.assertEqual(processed["path"], str(root / "cache/swc_processed/0007/001.swc"))
+            self.assertEqual(processed["detail"], "Managed cache found; source receipt absent")
             self.assertTrue(any(item["role"] == "fnt_native" and
                                 item["status"] == "configured" and
                                 "can be prepared" in item["detail"] for item in report["checks"]))
@@ -103,7 +106,8 @@ class DataCheckTests(unittest.TestCase):
                           if item["role"] == "update_status")
             self.assertFalse(update["required"])
             self.assertEqual(update["status"], "ready")
-            self.assertFalse((root / "cache").exists())
+            self.assertEqual((root / "cache/swc_processed/0007/001.swc").read_bytes(),
+                             b"1 1 0 0 0 1 -1\n")
 
     def test_manual_project_alone_does_not_satisfy_native_readiness(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -115,6 +119,25 @@ class DataCheckTests(unittest.TestCase):
             self.assertTrue((root / "projects" / "0007_001.fnt").is_file())
             self.assertTrue(any(item["role"] == "fnt_native" and item["status"] == "missing"
                                 for item in report["checks"]))
+
+    def test_processed_cache_receipt_role_and_absent_fetch_are_reported(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            config = self._config(root)
+            swc = root / "cache/swc_processed/0007/001.swc"
+            receipt = swc.with_name(swc.name + ".source.json")
+            receipt.write_text(json.dumps({"role": "processed", "sample_id": "0007",
+                                           "neuron_id": "001.swc"}), encoding="utf-8")
+            item = next(row for row in data_check(config)["checks"]
+                        if row["role"] == "processed_swc")
+            self.assertEqual(item["source_receipt_path"], str(receipt))
+            self.assertEqual(item["source_receipt_role"], "processed")
+            self.assertTrue(item["source_receipt_identity_matches"])
+            swc.unlink()
+            item = next(row for row in data_check(config)["checks"]
+                        if row["role"] == "processed_swc")
+            self.assertEqual(item["status"], "missing")
+            self.assertIn("fetch on Brain View execution", item["detail"])
 
     def test_optional_region_dependencies_are_checked_as_directory_and_manifest(self):
         with tempfile.TemporaryDirectory() as folder:

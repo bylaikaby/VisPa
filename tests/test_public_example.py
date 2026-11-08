@@ -1,8 +1,9 @@
 """Focused checks for the bounded, public morphology-only example.
 
-Version: 1.21.0 (local/unreleased)
+Version: 1.21.2 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../CHANGELOG.md
+2026-11-08: Expect the configured default neuron to autoload at launch.
 Status: candidate
 """
 from __future__ import annotations
@@ -177,7 +178,7 @@ class PublicExampleTests(unittest.TestCase):
         self.assertEqual(config["visual_toolkit"]["startup_mode"], "configured")
         self.assertEqual(config["visual_toolkit"]["default_sample"], "251637")
         self.assertEqual(config["visual_toolkit"]["default_neuron"], "004.swc")
-        self.assertFalse(config["visual_toolkit"]["auto_load"])
+        self.assertTrue(config["visual_toolkit"]["auto_load"])
         catalog = config["sources"]["neuron_catalog"]
         self.assertEqual(catalog["mode"], "live-iondata")
         self.assertEqual(catalog["host"], "http://10.10.48.110")

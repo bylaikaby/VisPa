@@ -1,9 +1,11 @@
 """
 vispa.py - Macaque Brain Hybrid-Resolution Visualization Toolkit
 
-Version: 1.21.1 (local/unreleased)
+Version: 1.21.2 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../../../CHANGELOG.md
+2026-11-08: Make cross stroke thinner and route shared/standalone figure
+typography and scale bars through validated review settings.
 2026-11-08: Size trio columns to panel aspect; honor configurable crosshair
 length and make the centre square optional (off by default).
 2026-11-04: Collapse portal and atlas provenance into one Region title
@@ -1163,7 +1165,7 @@ class VisPa:
                 arm = ax.annotate('', xy=(x, y), xytext=(dx, dy),
                                   textcoords='offset pixels',
                                   arrowprops={'arrowstyle': '-', 'color': color,
-                                              'linewidth': 2.0, 'alpha': 0.9,
+                                              'linewidth': float(style['linewidth']), 'alpha': 0.9,
                                               'shrinkA': 0, 'shrinkB': 0}, zorder=11)
                 arm.set_clip_on(True)
                 arm.set_clip_path(ax.patch)
@@ -1199,9 +1201,11 @@ class VisPa:
         ax.set_aspect(float(resolution[1]) / float(resolution[0]))
         if panel.get('edge_segments'):
             ax.add_collection(LineCollection(panel['edge_segments'], colors='black',
-                                             linewidths=1.4, alpha=.55, zorder=3))
+                                             linewidths=REVIEW_SETTINGS['figure']['swc_outline_linewidth'],
+                                             alpha=.55, zorder=3))
             ax.add_collection(LineCollection(panel['edge_segments'], colors='red',
-                                             linewidths=.7, alpha=.9, zorder=4))
+                                             linewidths=REVIEW_SETTINGS['figure']['swc_trace_linewidth'],
+                                             alpha=.9, zorder=4))
         for points, color, linestyle, linewidth, alpha in panel.get('traces') or []:
             ax.plot(points[:, 0], points[:, 1], color=color, linestyle=linestyle,
                     linewidth=linewidth, alpha=alpha, solid_capstyle='round')
@@ -1232,14 +1236,18 @@ class VisPa:
         if bar_um > 0:
             bar_px = bar_um / res_x
             bx, by = w - bar_px - 50, h - 50
-            ax.plot([bx, bx + bar_px], [by, by], color='white', linewidth=3)
+            ax.plot([bx, bx + bar_px], [by, by], color='white',
+                    linewidth=REVIEW_SETTINGS['figure']['scale_bar_linewidth'])
             bar_label = f"{bar_um:.0f} µm" if bar_um < 1000 else f"{bar_um / 1000:g} mm"
             ax.text(bx + bar_px / 2, by - 20, bar_label, color='white', ha='center',
-                    fontweight='bold')
+                    fontweight='bold',
+                    fontsize=REVIEW_SETTINGS['figure']['scale_bar_fontsize'])
         if panel.get('axis_labels'):
-            ax.set_xlabel(panel['axis_labels'][0], color='white', fontsize=12)
-            ax.set_ylabel(panel['axis_labels'][1], color='white', fontsize=12)
-            ax.tick_params(colors='white', labelsize=10)
+            ax.set_xlabel(panel['axis_labels'][0], color='white',
+                          fontsize=REVIEW_SETTINGS['figure']['axis_label_fontsize'])
+            ax.set_ylabel(panel['axis_labels'][1], color='white',
+                          fontsize=REVIEW_SETTINGS['figure']['axis_label_fontsize'])
+            ax.tick_params(colors='white', labelsize=REVIEW_SETTINGS['figure']['tick_fontsize'])
             for spine in ax.spines.values():
                 spine.set_color('white')
                 spine.set_visible(False)
@@ -1259,7 +1267,8 @@ class VisPa:
         fig, ax = plt.subplots(figsize=self.PANEL_FIGSIZE, facecolor='black', dpi=self.PANEL_DPI)
         ax.set_facecolor('black')
         self._draw_panel(ax, panel)
-        ax.set_title(title, color='white', fontsize=15)
+        ax.set_title(title, color='white',
+                     fontsize=REVIEW_SETTINGS['figure']['panel_title_fontsize'])
         self._draw_role_legend(fig, ax, panel.get('legend') or [])
         safe_region = self._sanitize_filename(soma_region) if soma_region else ""
         region_part = f"_{safe_region}" if safe_region else ""
@@ -1443,9 +1452,13 @@ class VisPa:
             # Legacy review used red at 0.6/0.8. Keep that identity but add a
             # dark underlay so the trace stays legible over bright green tissue.
             ax.add_collection(LineCollection(
-                segments, colors='black', linewidths=1.4, alpha=0.55, zorder=3))
+                segments, colors='black',
+                linewidths=REVIEW_SETTINGS['figure']['swc_outline_linewidth'],
+                alpha=0.55, zorder=3))
             ax.add_collection(LineCollection(
-                segments, colors='red', linewidths=0.7, alpha=0.9, zorder=4))
+                segments, colors='red',
+                linewidths=REVIEW_SETTINGS['figure']['swc_trace_linewidth'],
+                alpha=0.9, zorder=4))
         return segments
 
     def _save_plot(self, img_data, sx, sy, resolution, neuron_id, suffix, z_slices,
@@ -1479,10 +1492,13 @@ class VisPa:
                                  size_um=marker_size_um, label='Target Soma',
                                  resolution_um=resolution)
 
+        figure_style = REVIEW_SETTINGS['figure']
         bar_px = scale_bar_um / resolution[0]
         bx = w - bar_px - 50; by = h - 50
-        ax.plot([bx, bx+bar_px], [by, by], color='white', linewidth=3)
-        ax.text(bx+bar_px/2, by-20, f"{scale_bar_um} µm", color='white', ha='center', fontweight='bold')
+        ax.plot([bx, bx+bar_px], [by, by], color='white',
+                linewidth=figure_style['scale_bar_linewidth'])
+        ax.text(bx+bar_px/2, by-20, f"{scale_bar_um} µm", color='white', ha='center',
+                fontweight='bold', fontsize=figure_style['scale_bar_fontsize'])
 
         # Build title with soma region and coordinates (shared with the panel style)
         title = self._title_text(neuron_id, suffix, soma_region, soma_coords,
@@ -1492,13 +1508,13 @@ class VisPa:
         if extra_title:
             title = f"{title} | {extra_title}"
 
-        ax.set_title(title, color='white', fontsize=12)
+        ax.set_title(title, color='white', fontsize=figure_style['panel_title_fontsize'])
         if show_axes:
             ax.set_xlabel('Source X (crop pixel index; axis unvalidated)',
-                          color='white', fontsize=9)
+                          color='white', fontsize=figure_style['axis_label_fontsize'])
             ax.set_ylabel('Source Y (crop pixel index; axis unvalidated)',
-                          color='white', fontsize=9)
-            ax.tick_params(colors='white', labelsize=8)
+                          color='white', fontsize=figure_style['axis_label_fontsize'])
+            ax.tick_params(colors='white', labelsize=figure_style['tick_fontsize'])
             for spine in ax.spines.values():
                 spine.set_visible(False)
         else:
@@ -1549,26 +1565,27 @@ class VisPa:
         from matplotlib.font_manager import FontProperties
         if not entries:
             return
+        legend_size = REVIEW_SETTINGS['figure']['legend_fontsize']
         handles, labels = [], []
         for entry in entries:
             kind, color, label = entry[:3]
             handles.append(Rectangle((0, 0), 1, 1, facecolor=color) if kind == 'patch' else
                            Line2D([0], [0], color=color, linewidth=2,
                                   linestyle=(entry[3] if len(entry) > 3 else '-') if kind == 'line' else 'none',
-                                  marker=None if kind == 'line' else 's', markerfacecolor='none'))
+                                  marker=None if kind == 'line' else '+', markerfacecolor='none'))
             labels.append(label)
         fig.canvas.draw()
         renderer = fig.canvas.get_renderer()
         position = ax.get_position()
         width = position.width * fig.bbox.width
         columns = min(len(entries), 3)
-        widths = [renderer.get_text_width_height_descent(label, FontProperties(size=11), False)[0] + 50 for label in labels]
+        widths = [renderer.get_text_width_height_descent(label, FontProperties(size=legend_size), False)[0] + 50 for label in labels]
         while columns > 1 and sum(sorted(widths, reverse=True)[:columns]) > width:
             columns -= 1
         top = (ax.get_tightbbox(renderer).y0 - 8.0) / fig.bbox.height
         fig.legend(handles, labels, loc='upper left', bbox_to_anchor=(position.x0, top),
                    bbox_transform=fig.transFigure, ncol=columns, frameon=False,
-                   labelcolor='white', fontsize=11, borderaxespad=0, handlelength=1.4)
+                   labelcolor='white', fontsize=legend_size, borderaxespad=0, handlelength=1.4)
 
     def plot_tri_plot(self, panels, neuron_id, output_dir=None, suffix="TriPlot",
                       soma_region=None, soma_coords=None, dpi=None, header=None,
@@ -1612,7 +1629,8 @@ class VisPa:
                     neuron_id, panel.get('suffix', suffix), soma_region, soma_coords,
                     panel['fov_um'], panel['depth_um'],
                     nmt_corrected=panel_corrected)
-            ax.set_title(title, color='white', fontsize=14)
+            ax.set_title(title, color='white',
+                         fontsize=REVIEW_SETTINGS['figure']['review_title_fontsize'])
             ax.set_anchor('N')
         if legend:
             legend_ax = fig.add_subplot(grid[1, :])
@@ -1676,6 +1694,10 @@ class VisPa:
         """One compact legend for the whole review figure (AGENTS QC style rule)."""
         from matplotlib.lines import Line2D
         from matplotlib.font_manager import FontProperties
+        style = REVIEW_SETTINGS['figure']
+        heading_size = style['legend_heading_fontsize']
+        legend_size = style['legend_fontsize']
+        note_size = style['legend_note_fontsize']
 
         entries = []
         for panel in panels:
@@ -1705,9 +1727,9 @@ class VisPa:
                     line = candidate
             return '\n'.join(lines + ([line] if line else []))
         heading = wrapped(header or f"{self.sample_id} | {neuron_id} | review panels: "
-                + " · ".join(f"{i + 1} {role}" for i, role in enumerate(roles)), 15, 'bold')
+                + " · ".join(f"{i + 1} {role}" for i, role in enumerate(roles)), heading_size, 'bold')
         heading_artist = ax.text(0.0, 1.0, heading,
-                color='white', fontsize=15, fontweight='bold', va='top', ha='left',
+                color='white', fontsize=heading_size, fontweight='bold', va='top', ha='left',
                 transform=ax.transAxes)
         heading_height = heading_artist.get_window_extent(renderer).height
         legend_top = 1.0 - (heading_height + 6.0) / height
@@ -1721,24 +1743,25 @@ class VisPa:
                 handles.append(Line2D([0], [0], color=style, linewidth=2.5,
                                       linestyle=linestyle))
             else:
-                handles.append(Line2D([0], [0], color=style, marker='s', linestyle='none',
+                handles.append(Line2D([0], [0], color=style, marker='+', linestyle='none',
                                       markerfacecolor='none', markersize=9,
-                                      markeredgewidth=1.0))
+                                      markeredgewidth=REVIEW_SETTINGS['marker']['linewidth']))
             labels.append(label)
         if handles:
             columns = min(len(labels), 5)
-            widths = [renderer.get_text_width_height_descent(label, FontProperties(size=12), False)[0] + 64 for label in labels]
+            widths = [renderer.get_text_width_height_descent(label, FontProperties(size=legend_size), False)[0] + 64 for label in labels]
             while columns > 1 and sum(sorted(widths, reverse=True)[:columns]) > width:
                 columns -= 1
             legend = ax.legend(handles, labels, loc='upper left', frameon=False,
-                               ncol=columns, fontsize=12, labelcolor='white',
+                               ncol=columns, fontsize=legend_size, labelcolor='white',
                                handlelength=1.4, columnspacing=1.8, handletextpad=0.6,
                                bbox_to_anchor=(0.0, legend_top), borderaxespad=0.0)
             for text in legend.get_texts():
                 text.set_color('white')
         legend_height = legend.get_window_extent(renderer).height if handles else 0.0
         notes_top = 1.0 - (heading_height + legend_height + 12.0) / height
-        notes_artist = ax.text(0.0, notes_top, wrapped("  ".join(notes), 11), color='#dddddd', fontsize=11, va='top',
+        notes_artist = ax.text(0.0, notes_top, wrapped("  ".join(notes), note_size),
+                color='#dddddd', fontsize=note_size, va='top',
                 ha='left', transform=ax.transAxes)
         return heading_height + legend_height + notes_artist.get_window_extent(renderer).height + 24.0
 

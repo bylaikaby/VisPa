@@ -1,6 +1,6 @@
 """Bounded job-preparation tests for exact animal identities and raw cache.
 
-Version: 1.21.1 (local/unreleased)
+Version: 1.21.2 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../CHANGELOG.md
 Status: candidate
@@ -19,7 +19,7 @@ from vispa.review_bulk_prepare import _region_entries, _selected_region
 from vispa.review_bulk_dialog import BulkReviewDialog
 from vispa.config import load as load_config
 from vispa.review_bulk_render import (
-    _region_display_value, load_review_jobs, run_folder_name, run_review_bulk,
+    _region_display_value, load_review_jobs, neuron_folder_name, run_folder_name, run_review_bulk,
     validate_run_name,
 )
 
@@ -60,11 +60,16 @@ class PrepareReviewBulkTests(unittest.TestCase):
             self.assertEqual(jobs["jobs"][0]["soma_region"], "Right INS")
             self.assertEqual(jobs["jobs"][0]["soma_region_source"]["field"], "checked_region")
             self.assertEqual(jobs["jobs"][1]["soma_region"], "M1_79")
+            self.assertEqual(jobs["jobs"][0]["neuron_folder"], "251637_001_Right_INS_" +
+                             hashlib.sha256("251637_001_Right INS".encode()).hexdigest()[:8])
+            self.assertEqual(jobs["jobs"][1]["neuron_folder"], "251637_002_M1")
             self.assertEqual(jobs["output_layout"], "sample_neurons")
             self.assertRegex(jobs["run_name"], r"^review_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$")
             self.assertEqual(jobs["run_name"], plan["run_name"])
             render_plan = load_review_jobs(jobs_path, root / "figures", 1, False)
             self.assertEqual(Path(render_plan["jobs"][0]["output_dir"]).name, plan["run_name"])
+            self.assertEqual(Path(render_plan["jobs"][0]["output_dir"]).parent.name,
+                             jobs["jobs"][0]["neuron_folder"])
             self.assertEqual(render_plan["jobs"][0]["soma_region"], "Right INS")
             self.assertEqual(render_plan["jobs"][0]["soma_region_entries"]["ion_atlas"], "M1_79")
             self.assertEqual(_region_display_value(render_plan["jobs"][0]),
@@ -163,6 +168,11 @@ class PrepareReviewBulkTests(unittest.TestCase):
         for name in ("../escape", "a/b", "a\\b", "", ".", "bad name", "CON", "com1", "LPT9"):
             with self.subTest(name=name), self.assertRaises(ValueError):
                 validate_run_name(name)
+        self.assertEqual(neuron_folder_name("252527", "011.swc", "M1_79"), "252527_011_M1")
+        self.assertEqual(neuron_folder_name("252527", "011.swc", "PMdc_82"), "252527_011_PMdc")
+        self.assertEqual(neuron_folder_name("252527", "011.swc", "area_7a_122"), "252527_011_area_7a")
+        self.assertEqual(neuron_folder_name("252527", "011.swc", None), "252527_011_Unassigned")
+        self.assertNotIn("/", neuron_folder_name("252527", "011.swc", "../../region"))
 
     def test_canonical_gui_cache_and_figure_root_round_trip(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -212,6 +222,7 @@ class PrepareReviewBulkTests(unittest.TestCase):
             }), encoding="utf-8")
             plan = load_review_jobs(jobs_path, root / "figures", 1, False)
             folder = Path(plan["jobs"][0]["output_dir"])
+            self.assertEqual(folder.parent.name, "001")
             folder.mkdir(parents=True)
             (folder / "review_receipt.json").write_text('{"job_sha256":"unrelated"}', encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "different job"):

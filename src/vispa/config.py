@@ -1,8 +1,12 @@
 """Load explicit, portable VisPa dataset configuration.
 
-Version: 1.21.1 (local/unreleased)
+Version: 1.21.2 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../../CHANGELOG.md
+2026-11-08: Compare resolved profile behavior with a pinned factory version;
+protect versioned factory snapshots from active-profile saves.
+2026-11-08: Expose cross stroke and common figure typography/scale-bar style;
+default missing auto_load to true for packaged startup.
 2026-11-08: Reduce review crosshair to 120 display pixels, expose actual
 crosshair length and optional centre box through validated settings.
 2026-11-03: Preserve and resolve an explicit top-level DS00 registry path.
@@ -90,11 +94,24 @@ def compare_config_defaults(path: str | Path | None = None) -> dict:
     selected = Path(path).expanduser().resolve() if path is not None else config_path().resolve()
     if not selected.is_file():
         raise FileNotFoundError(f"active config does not exist: {selected}")
-    load(selected)
+    active_effective = load(selected)
     active_bytes = selected.read_bytes()
     active = _parse_config_bytes(active_bytes, selected)
     installed_bytes = _template_bytes()
     installed = _parse_config_bytes(installed_bytes, Path("config_deb.yaml"))
+    installed_effective = load(packaged_config_path())
+    active_version = str(active.get("config_version") or "")
+    safe_version = bool(re.fullmatch(r"[A-Za-z0-9._-]+", active_version))
+    pinned_path = (selected.with_name(f"vispa_config.factory-v{active_version}.yaml")
+                   if safe_version else None)
+    if pinned_path is not None and pinned_path.is_file():
+        baseline = _parse_config_bytes(pinned_path.read_bytes(), pinned_path)
+        baseline_effective = load(pinned_path)
+        baseline_source = str(pinned_path)
+    else:
+        baseline = installed
+        baseline_effective = installed_effective
+        baseline_source = str(packaged_config_path())
     frozen_path = selected.with_name("vispa_config.default.yaml")
     frozen = None
     frozen_sha = None
@@ -116,6 +133,22 @@ def compare_config_defaults(path: str | Path | None = None) -> dict:
     absent = sorted(installed_fields.keys() - active_fields.keys())
     changed = sorted(key for key in active_fields.keys() & installed_fields.keys()
                      if active_fields[key] != installed_fields[key])
+    # Compare resolved behavior. A missing YAML field can still inherit the
+    # installed default, while identity/version metadata changes no behavior.
+    relevant = ("base_dir", "defaults", "samples", "sources", "visual_toolkit")
+    def behavior(config):
+        values = copy.deepcopy({key: config.get(key) for key in relevant})
+        values["visual_toolkit"]["settings"] = _materialized_settings(config)
+        brain = (values["sources"] or {}).get("brain_view")
+        if brain:
+            brain.pop("settings", None)  # included by the resolved scope above
+        return dict(leaves(values))
+
+    active_behavior = behavior(active_effective)
+    installed_behavior = behavior(baseline_effective)
+    customized_fields = sorted(
+        key for key in active_behavior.keys() | installed_behavior.keys()
+        if active_behavior.get(key) != installed_behavior.get(key))
     introduced = (sorted(installed_fields.keys() - frozen_fields.keys())
                   if frozen_fields is not None else None)
     return {
@@ -131,6 +164,11 @@ def compare_config_defaults(path: str | Path | None = None) -> dict:
         "frozen_sha256": frozen_sha,
         "missing_from_active": absent,
         "different_from_installed": changed,
+        "based_on_config_name": baseline.get("config_name") or "unversioned",
+        "based_on_config_version": baseline.get("config_version") or "unversioned",
+        "baseline_source": baseline_source,
+        "customized": bool(customized_fields),
+        "customized_fields": customized_fields,
         "only_in_active": sorted(active_fields.keys() - installed_fields.keys()),
         "introduced_since_frozen": introduced,
         "note": "Field paths only; no configuration was changed. Missing fields are not necessarily required."
@@ -502,7 +540,7 @@ def load(path: str | Path | None = None, base_dir: str | Path | None = None) -> 
                       "worker_python": _resolve(ui.get("worker_python"), configured_base),
                       "default_sample": ui.get("default_sample", ""),
                       "default_neuron": ui.get("default_neuron", ""),
-                      "auto_load": ui.get("auto_load", False),
+                      "auto_load": ui.get("auto_load", True),
                       "startup_mode": ui.get("startup_mode", "configured"),
                       "settings": copy.deepcopy(scoped_settings)}
     # Optional external tracing tool. Both paths are resolved here so the GUI
@@ -978,6 +1016,7 @@ def _review_schema(config=None) -> dict[str, Any]:
         "marker.color": "hex RGB",
         "marker.min_px": "display pixels",
         "marker.crosshair_px": "display pixels",
+        "marker.linewidth": "points",
         "marker.box_mode": "off | on",
         "marker.label_fontsize": "points",
         "marker.label_mode": "none | short | numbered",
@@ -999,7 +1038,15 @@ def _review_schema(config=None) -> dict[str, Any]:
         "figure.panel_dpi": "dots per inch",
         "figure.review_figsize": "inches (width, height)",
         "figure.review_dpi": "dots per inch",
+        "figure.scale_bar_linewidth": "points",
+        "figure.swc_outline_linewidth": "points",
+        "figure.swc_trace_linewidth": "points",
     }
+    for key in ("panel_title_fontsize", "review_title_fontsize",
+                "axis_label_fontsize", "tick_fontsize", "legend_fontsize",
+                "legend_heading_fontsize", "legend_note_fontsize",
+                "scale_bar_fontsize"):
+        unit_by_key[f"figure.{key}"] = "points"
     for key, spec in result["settings"].items():
         spec["unit"] = unit_by_key[key]
     if config is not None:
@@ -1560,6 +1607,7 @@ REVIEW_SETTINGS = {
         'color': '#00e5ee',
         'min_px': 8.0,          # smallest drawn box side, in display pixels
         'crosshair_px': 120.0,  # cross arm length from the exact centre
+        'linewidth': 1.0,      # cross stroke width in points
         'box_mode': 'off',      # optional open square at the exact centre
         'label_fontsize': 12,
         'label_mode': 'none',
@@ -1584,7 +1632,14 @@ REVIEW_SETTINGS = {
     'scale_bar_candidates_um': (100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0,
                                 10000.0, 20000.0, 50000.0),
     'figure': {'panel_figsize': (12, 12), 'panel_dpi': 600,
-               'review_figsize': (30, 11.6), 'review_dpi': 200},
+               'review_figsize': (30, 11.6), 'review_dpi': 200,
+               'panel_title_fontsize': 15, 'review_title_fontsize': 14,
+               'axis_label_fontsize': 12, 'tick_fontsize': 10,
+               'legend_fontsize': 12, 'legend_heading_fontsize': 15,
+               'legend_note_fontsize': 11,
+               'scale_bar_linewidth': 3.0, 'scale_bar_fontsize': 10,
+               'swc_outline_linewidth': 1.4,
+               'swc_trace_linewidth': 0.7},
 }
 
 TARGET_MARKER_COLOR = REVIEW_SETTINGS['marker']['color']
@@ -1642,6 +1697,7 @@ _SETTING_SPECS = {
     'marker.color': {'type':'color','effect':'Box and cross color in all review panels.'},
     'marker.min_px': {'type':'number','minimum':0,'minimum_exclusive':True,'maximum':None,'effect':'Nominal target-box minimum side in pixels; the renderer applies a 0.65 side scale.'},
     'marker.crosshair_px': {'type':'number','minimum':0,'minimum_exclusive':True,'maximum':None,'effect':'Crosshair arm length in display pixels.'},
+    'marker.linewidth': {'type':'number','minimum':0,'minimum_exclusive':True,'maximum':None,'effect':'Crosshair stroke width in points.'},
     'marker.box_mode': {'type':'enum','choices':['off','on'],'effect':'Show an open square at the soma locator centre.'},
     'marker.label_fontsize': {'type':'integer','minimum':0,'minimum_exclusive':True,'maximum':None,'effect':'Target label font size in points.'},
     'marker.label_mode': {'type':'enum','choices':['none','short','numbered'],'effect':'Inline soma label: none (legend only), short S, or numbered 1 callout; marker position is unchanged.'},
@@ -1663,6 +1719,20 @@ _SETTING_SPECS = {
     'figure.panel_dpi': {'type':'integer','minimum':0,'minimum_exclusive':True,'maximum':None,'effect':'Single-panel PNG resolution in dots per inch.'},
     'figure.review_figsize': {'type':'number_sequence','minimum':0,'minimum_exclusive':True,'maximum':None,'exact_items':2,'effect':'Three-panel review figure size in inches (width, height).'},
     'figure.review_dpi': {'type':'integer','minimum':0,'minimum_exclusive':True,'maximum':None,'effect':'Three-panel review PNG resolution in dots per inch.'},
+    **{f'figure.{key}': {'type':'number','minimum':0,'minimum_exclusive':True,'maximum':None,'effect':effect}
+       for key, effect in {
+           'panel_title_fontsize': 'Single-panel title size in points.',
+           'review_title_fontsize': 'Review panel title size in points.',
+           'axis_label_fontsize': 'Axis label size in points.',
+           'tick_fontsize': 'Axis tick label size in points.',
+           'legend_fontsize': 'Shared legend label size in points.',
+           'legend_heading_fontsize': 'Shared legend heading size in points.',
+           'legend_note_fontsize': 'Shared legend note size in points.',
+           'scale_bar_linewidth': 'Scale bar stroke width in points.',
+           'scale_bar_fontsize': 'Scale bar label size in points.',
+           'swc_outline_linewidth': 'Dark underlay stroke width for Context SWC edges.',
+           'swc_trace_linewidth': 'Red Context SWC trace stroke width.',
+       }.items()},
 }
 
 
@@ -2119,8 +2189,11 @@ def save_config(path: str | Path, content: str, expected_sha256: str | None = No
     from datetime import datetime
     target = Path(path).expanduser().resolve()
     packaged = Path(str(packaged_config_path())).resolve()
-    if target.name.casefold() == "vispa_config.default.yaml" or target == packaged:
-        raise ValueError("Default YAML is read-only; select an active configuration to save.")
+    if (target.name.casefold() == "vispa_config.default.yaml"
+            or re.fullmatch(r"vispa_config\.factory-v[A-Za-z0-9._-]+\.yaml",
+                            target.name, re.IGNORECASE)
+            or target == packaged):
+        raise ValueError("Factory YAML is read-only; select an active configuration to save.")
     if target.suffix.lower() not in CONFIG_SUFFIXES:
         raise ValueError("Configuration filename must end with .json, .yaml or .yml")
     if not isinstance(content, str):

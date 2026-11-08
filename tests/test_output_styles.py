@@ -1,12 +1,13 @@
 """Synthetic render-style regression checks.
 
-Version: 1.21.1 (local/unreleased)
+Version: 1.21.2 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../CHANGELOG.md
 2026-10-30: Cover the fixed 320-pixel crosshair, reduced legacy square,
 exact centre, and GUI receipt
 fingerprint with a legacy 60-pixel profile.
 2026-11-08: Cover configurable, smaller crosshair and optional centre box.
+2026-11-08: Check thinner shared cross stroke and exposed figure style.
 """
 import unittest
 import sys
@@ -103,7 +104,7 @@ class OutputStyleTests(unittest.TestCase):
             self.assertEqual([tuple(a.xyann) for a in ax.texts],
                              [(60, 0), (-60, 0), (0, 60), (0, -60)])
             self.assertTrue(all(tuple(a.xy) == (7, 11) for a in ax.texts))
-            self.assertTrue(all(a.arrow_patch.get_linewidth() == 2.0
+            self.assertTrue(all(a.arrow_patch.get_linewidth() == 1.0
                                 for a in ax.texts))
         finally:
             plt.close(fig)
@@ -144,6 +145,31 @@ class OutputStyleTests(unittest.TestCase):
             self.assertTrue(all(arm.get_clip_box() is not None and
                                 arm.arrow_patch.get_clip_box() is not None
                                 for arm in ax.texts))
+        finally:
+            plt.close(fig)
+
+    def test_style_settings_apply_to_shared_panel_artists(self):
+        tool = object.__new__(VisPa)
+        fig, ax = plt.subplots(figsize=(4, 4), dpi=100)
+        panel = {'display': np.zeros((20, 20)), 'fov_um': (20, 20),
+                 'depth_um': 1, 'resolution_um': (1, 1), 'scale_bar_um': 5,
+                 'axis_labels': ('X', 'Y'), 'markers': [(10, 10, '#00e5ee', None, 'Target')]}
+        try:
+            with mock.patch.dict(REVIEW_SETTINGS['marker'], {'linewidth': 0.7}), \
+                 mock.patch.dict(REVIEW_SETTINGS['figure'],
+                                 {'axis_label_fontsize': 8, 'tick_fontsize': 7,
+                                  'scale_bar_linewidth': 1.5, 'scale_bar_fontsize': 9}):
+                tool._draw_panel(ax, panel)
+            self.assertEqual(ax.lines[-1].get_linewidth(), 1.5)
+            self.assertEqual(ax.xaxis.label.get_fontsize(), 8)
+            self.assertEqual(ax.get_xticklabels()[0].get_fontsize(), 7)
+            self.assertEqual(ax.texts[-1].get_fontsize(), 9)
+            self.assertTrue(all(arm.arrow_patch.get_linewidth() == 0.7
+                                for arm in ax.texts[:4]))
+            schema = review_settings_schema()['settings']
+            for key in ('marker.linewidth', 'figure.panel_title_fontsize',
+                        'figure.review_title_fontsize', 'figure.scale_bar_linewidth'):
+                self.assertIn(key, schema)
         finally:
             plt.close(fig)
 

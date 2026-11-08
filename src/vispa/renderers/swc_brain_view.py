@@ -1,6 +1,6 @@
 """Explicit local-input launcher for the isolated legacy OpenGL viewer.
 
-Version: 1.21.0 (local/unreleased)
+Version: 1.21.2 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../../../CHANGELOG.md
 Status: candidate
@@ -361,7 +361,7 @@ def plan_configured_view(sample_id: str, neuron_id: str, portal_region: str = ""
                          *, overrides: dict | None = None, snapshot: str | os.PathLike | None = None,
                          mesh_path: str | os.PathLike | None = None,
                          mesh_label: str | None = None,
-                         region: str | None = None) -> dict:
+                         region: str | None = None, allow_download: bool = False) -> dict:
     """Resolve one configured local mesh/SWC pair without importing GL libraries."""
     if not isinstance(sample_id, str) or not _IDENT.fullmatch(sample_id):
         raise ValueError("sample_id must contain only letters, digits, underscore or hyphen")
@@ -393,8 +393,21 @@ def plan_configured_view(sample_id: str, neuron_id: str, portal_region: str = ""
     mesh = Path(mesh_path if mesh_path is not None else source["mesh_path"]).expanduser().resolve()
     if mesh.suffix.lower() != ".obj":
         raise ValueError("brain-view mesh must be an OBJ file")
-    swc_root = Path(source["processed_swc_root"]).expanduser().resolve()
-    swc = (swc_root / sample_id / neuron_id).resolve()
+    from ..data_input_adaptor import load_processed_neuron, processed_neuron_plan
+    managed_root = config.get("defaults", {}).get("cache_root")
+    cache_root = Path(managed_root) / "swc_processed" if managed_root else None
+    # Viewer input is the managed processed cache; no legacy source fallback.
+    cache_config = {**config, "sources": {**config.get("sources", {}),
+                    "brain_view": {**source, "processed_swc_root": None}}}
+    if allow_download:
+        load_processed_neuron(cache_config, sample_id, neuron_id,
+                              cache_root=cache_root, allow_download=True, refresh=False)
+    source_plan = processed_neuron_plan(cache_config, sample_id, neuron_id,
+                                        cache_root=cache_root)
+    if not source_plan["local_path"]:
+        raise FileNotFoundError(
+            f"processed SWC absent from managed processed cache: {sample_id}/{neuron_id}")
+    swc = Path(source_plan["local_path"]).resolve()
     if not mesh.is_file():
         raise FileNotFoundError(f"configured local brain mesh does not exist: {mesh}")
     if not swc.is_file():
@@ -407,6 +420,19 @@ def plan_configured_view(sample_id: str, neuron_id: str, portal_region: str = ""
         raise ValueError("SWC exceeds 64 MiB local-view limit")
     mesh_before = (mesh_stat, _sha256(mesh))
     swc_before = (swc_stat, _sha256(swc))
+    source_receipt_path = swc.with_name(swc.name + ".source.json")
+    source_receipt = None
+    if source_receipt_path.is_file():
+        frozen_source = json.loads(source_receipt_path.read_text(encoding="utf-8"))
+        if (not isinstance(frozen_source, dict) or
+                frozen_source.get("sample_id") != sample_id or
+                frozen_source.get("neuron_id") != neuron_id or
+                frozen_source.get("sha256") != swc_before[1]):
+            raise ValueError("processed SWC source receipt differs from cached file or identity")
+        source_receipt = {"path": str(source_receipt_path),
+                          "sha256": _sha256(source_receipt_path),
+                          "role": frozen_source.get("role"),
+                          "freshness": frozen_source.get("freshness")}
     soma_root = _swc_root_coordinate(swc)
     region_mesh, region_resolution, region_manifest = _plan_region(source, region, portal_region)
     # The portal numeric suffix may collapse laterality (e.g. PrCO_49 for a
@@ -473,7 +499,8 @@ def plan_configured_view(sample_id: str, neuron_id: str, portal_region: str = ""
                  "bounds_source_xyz": {"center": center, "min": bounds_min, "max": bounds_max,
                                        "diagonal": diagonal}},
         "processed_swc": {"path": str(swc), "sha256": swc_before[1], "stat": swc_before[0],
-                          "soma_root_stored_xyz": soma_root},
+                          "soma_root_stored_xyz": soma_root,
+                          "source_receipt": source_receipt},
         "region_mesh": region_mesh, "region_resolution": region_resolution,
         "region_manifest": region_manifest,
         "coordinate_frame": frame.strip(), "coordinate_units": units.strip(),
@@ -528,7 +555,8 @@ def launch_configured_view(sample_id: str, neuron_id: str, portal_region: str = 
                            region: str | None = None) -> subprocess.Popen:
     """Start the isolated legacy viewer for one configured local sample/neuron."""
     plan = plan_configured_view(sample_id, neuron_id, portal_region, config_path,
-                                mesh_path=mesh_path, mesh_label=mesh_label, region=region)
+                                mesh_path=mesh_path, mesh_label=mesh_label, region=region,
+                                allow_download=True)
     command = plan["worker_entry"] + ["brain-view",
                "--sample", sample_id, "--neuron", neuron_id]
     if portal_region:
@@ -569,7 +597,8 @@ def render_configured_snapshot(sample_id: str, neuron_id: str,
     """Render one static SWC Brain View through the isolated worker."""
     plan = plan_configured_view(
         sample_id, neuron_id, portal_region, config_path, snapshot=snapshot,
-        mesh_path=mesh_path, mesh_label=mesh_label, region=region, overrides=overrides)
+        mesh_path=mesh_path, mesh_label=mesh_label, region=region, overrides=overrides,
+        allow_download=True)
     command = plan["worker_entry"] + ["brain-view",
                "--sample", sample_id, "--neuron", neuron_id,
                "--snapshot", plan["snapshot_png"]]
@@ -663,7 +692,7 @@ def main(argv=None) -> int:
         plan = plan_configured_view(args.sample, args.neuron, args.portal_region,
                                     args.config, overrides=overrides, snapshot=args.snapshot,
                                     mesh_path=args.mesh_path, mesh_label=args.mesh_label,
-                                    region=args.region)
+                                    region=args.region, allow_download=not args.dry_run)
         if args.dry_run:
             print(json.dumps(plan, indent=2, sort_keys=True))
             return 0

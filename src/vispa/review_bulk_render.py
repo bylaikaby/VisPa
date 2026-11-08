@@ -1,6 +1,6 @@
 """Render one VisPa review set per published region/FNT job.
 
-Version: 1.21.1 (local/unreleased)
+Version: 1.21.2 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../CHANGELOG.md
 Status: candidate
@@ -41,6 +41,25 @@ def run_folder_name(payload: dict, jobs_sha256: str) -> str:
     """Keep historical hash-named jobs in their original locations."""
     name = payload.get("run_name")
     return validate_run_name(name) if name is not None else f"bulk_{jobs_sha256[:12]}"
+
+
+def neuron_folder_name(sample_id: str, neuron_id: str, region: str | None) -> str:
+    """Freeze one short, portable neuron/region folder for new jobs."""
+    if not isinstance(sample_id, str) or not _TOKEN.fullmatch(sample_id):
+        raise ValueError("sample_id must be a short path-safe name")
+    if not isinstance(neuron_id, str) or not _NEURON.fullmatch(neuron_id):
+        raise ValueError("neuron_id must be a simple SWC filename")
+    label = region.strip() if isinstance(region, str) and region.strip() else "Unassigned"
+    # Atlas labels commonly append a numeric atlas ID; keep intrinsic digits.
+    label = re.sub(r"_[0-9]+\Z", "", label)
+    label = label or "Unassigned"
+    original = f"{sample_id}_{neuron_id[:-4]}_{label}"
+    if _RUN_NAME.fullmatch(original):
+        return original
+    stem = re.sub(r"[^A-Za-z0-9_-]+", "_", neuron_id[:-4]).strip("_")[:20] or "neuron"
+    safe_label = re.sub(r"[^A-Za-z0-9_-]+", "_", label).strip("_")[:24] or "region"
+    suffix = hashlib.sha256(original.encode("utf-8")).hexdigest()[:8]
+    return f"{sample_id[:20]}_{stem}_{safe_label}_{suffix}"
 
 
 def _sha256(path: Path) -> str:
@@ -149,6 +168,8 @@ def load_review_jobs(jobs_path: Path, output_root: Path, limit: int | None, all_
                 ready_job["soma_region_source"] = entry["soma_region_source"]
             if "soma_region_entries" in entry:
                 ready_job["soma_region_entries"] = entry["soma_region_entries"]
+            if "neuron_folder" in entry:
+                ready_job["neuron_folder"] = entry["neuron_folder"]
             ready.append(ready_job)
         else:
             skipped.append({"sample_id": sample, "neuron_id": neuron,
@@ -170,7 +191,10 @@ def load_review_jobs(jobs_path: Path, output_root: Path, limit: int | None, all_
     run_name = run_folder_name(payload, jobs_hash)
     for entry in selected:
         if layout == "sample_neurons":
-            folder = output_root / sample / "neurons" / entry["neuron_id"][:-4] / run_name
+            neuron_folder = entry.get("neuron_folder", entry["neuron_id"][:-4])
+            if not isinstance(neuron_folder, str) or not _RUN_NAME.fullmatch(neuron_folder):
+                raise ValueError("neuron_folder must be one short path-safe name")
+            folder = output_root / sample / "neurons" / neuron_folder / run_name
         else:
             folder = output_root / sample / entry["neuron_id"][:-4]
         entry["output_dir"] = str(folder)

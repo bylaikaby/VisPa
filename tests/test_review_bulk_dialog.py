@@ -1,6 +1,6 @@
 """Bounded GUI bulk command and receipt-path contracts.
 
-Version: 1.21.1 (local/unreleased)
+Version: 1.21.2 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../CHANGELOG.md
 """
@@ -76,6 +76,17 @@ class BulkReviewDialogContractTests(unittest.TestCase):
             payload.pop("cache_root")
             jobs.write_text(json.dumps(payload), encoding="utf-8")
             BulkReviewDialog._validate_jobs(jobs, values, view_only=True)
+
+    def test_default_jobs_path_tracks_config_revision_and_region_filter(self):
+        dialog = BulkReviewDialog.__new__(BulkReviewDialog)
+        dialog._jobs_root = Path("review_jobs")
+        dialog._config_sha = "a1b2c3d4"
+        all_path = dialog._default_jobs_path("252527", ())
+        filtered_path = dialog._default_jobs_path("252527", ("Iai_41",))
+        self.assertNotEqual(all_path, filtered_path)
+        self.assertIn("a1b2c3d4", all_path.name)
+        dialog._config_sha = "e5f6a7b8"
+        self.assertNotEqual(all_path, dialog._default_jobs_path("252527", ()))
 
 
 if __name__ == "__main__":

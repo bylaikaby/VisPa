@@ -1,7 +1,7 @@
 """
 vispa_gui.py - GUI for NeuroVis Visual Toolkit
 
-Version: 1.21.1 (local/unreleased)
+Version: 1.21.2 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../../CHANGELOG.md
 Status: candidate (GUI layout reviewed; scientific review pending)
@@ -911,52 +911,52 @@ class NeuroVisGUI:
                 row=0, column=1, sticky='ew', padx=(P(3), 0))
         body = self._card(inner, "Target soma coordinates")
         physical = tk.Frame(
-            body, bg=C['accent_soft'], highlightthickness=1,
-            highlightbackground=C['border'])
+            body, bg='#8fa6b3', highlightthickness=1,
+            highlightbackground='#607c8d')
         physical.grid(row=0, column=0, sticky='ew', pady=(P(2), P(5)))
         tk.Label(
-            physical, text='Physical coordinate (µm)', bg=C['accent_soft'],
-            fg=C['header_text'], font=('Segoe UI', 9, 'bold')).grid(
+            physical, text='Physical coordinate (µm)', bg='#8fa6b3',
+            fg='#132b3b', font=('Segoe UI', 9, 'bold')).grid(
                 row=0, column=0, columnspan=6, sticky='w',
                 padx=P(7), pady=(P(5), P(2)))
         for column, (label, variable) in enumerate((
                 ("X", self.x_coord), ("Y", self.y_coord), ("Z", self.z_coord))):
-            tk.Label(physical, text=label, bg=C['accent_soft'], fg=C['muted'],
+            tk.Label(physical, text=label, bg='#8fa6b3', fg='#18394c',
                      font=('Segoe UI', 9)).grid(
                          row=1, column=column * 2, sticky='w',
                          padx=(P(7) if column == 0 else P(6), 0),
                          pady=(0, P(5)))
             entry = tk.Entry(
                 physical, textvariable=variable, width=7, relief='flat',
-                bg=C['field'], fg=C['text'], highlightthickness=1,
-                highlightbackground=C['field_border'],
+                bg='#bac9d3', fg='#132b3b', highlightthickness=1,
+                highlightbackground='#607c8d',
                 highlightcolor=C['accent'],
-                font=('Segoe UI', 9), insertbackground=C['text'])
+                font=('Segoe UI', 9), insertbackground='#132b3b')
             entry.grid(row=1, column=column * 2 + 1, sticky='ew',
                        padx=(P(6), P(8) if column < 2 else P(7)),
                        pady=(0, P(5)), ipady=P(3))
             physical.grid_columnconfigure(column * 2 + 1, weight=1)
 
         template = tk.Frame(
-            body, bg=C['strip'], highlightthickness=1,
-            highlightbackground=C['border'])
+            body, bg='#99a8b8', highlightthickness=1,
+            highlightbackground='#687f98')
         template.grid(row=1, column=0, sticky='ew', pady=(0, P(3)))
         tk.Label(
-            template, text='NMT template coordinate (voxel)', bg=C['strip'],
-            fg=C['header_text'], font=('Segoe UI', 9, 'bold')).grid(
+            template, text='NMT template coordinate (voxel)', bg='#99a8b8',
+            fg='#132b3b', font=('Segoe UI', 9, 'bold')).grid(
                 row=0, column=0, columnspan=6, sticky='w',
                 padx=P(7), pady=(P(5), P(2)))
         for column, (label, variable) in enumerate((
                 ("X", self.nmt_x), ("Y", self.nmt_y), ("Z", self.nmt_z))):
-            tk.Label(template, text=label, bg=C['strip'], fg=C['muted'],
+            tk.Label(template, text=label, bg='#99a8b8', fg='#18394c',
                      font=('Segoe UI', 9)).grid(
                          row=1, column=column * 2, sticky='w',
                          padx=(P(7) if column == 0 else P(6), 0),
                          pady=(0, P(5)))
             entry = tk.Entry(
                 template, textvariable=variable, width=7, relief='flat',
-                bg=C['field'], fg=C['text'], readonlybackground=C['field'],
-                highlightthickness=1, highlightbackground=C['field_border'],
+                bg='#b9c6d3', fg='#132b3b', readonlybackground='#b9c6d3',
+                highlightthickness=1, highlightbackground='#687f98',
                 font=('Segoe UI', 9, 'bold'), state='readonly')
             entry.grid(row=1, column=column * 2 + 1, sticky='ew',
                        padx=(P(6), P(8) if column < 2 else P(7)),
@@ -1289,6 +1289,21 @@ class NeuroVisGUI:
             f"Cache: {report['resolved_cache_root']}\n"
             f"SHA-256: {report['config_sha256']}")
         return detail
+
+    def _config_customization_label(self):
+        """Describe the active profile against its pinned or installed baseline."""
+        try:
+            from .config import compare_config_defaults
+            report = compare_config_defaults(self.config_path)
+            if report['active_config_version'] != report['based_on_config_version']:
+                return (f"Active profile v{report['active_config_version']} · "
+                        f"installed baseline v{report['based_on_config_version']} · "
+                        "original baseline unavailable")
+            return (f"Based on {report['based_on_config_name']} "
+                    f"v{report['based_on_config_version']} · "
+                    f"Customized: {'Yes' if report['customized'] else 'No'}")
+        except Exception:
+            return "Configuration comparison unavailable; open Settings to repair the active file."
 
     @staticmethod
     def _version_display_rows(report):
@@ -3192,7 +3207,13 @@ class NeuroVisGUI:
                 section=section or "current")
             return
         packaged_default = packaged_config_path().read_bytes()
-        default_path = Path(path).with_name('vispa_config.default.yaml')
+        packaged_raw = parse_text(packaged_default.decode('utf-8'), packaged_config_path())
+        package_config_version = str(packaged_raw.get('config_version') or 'unversioned')
+        if not re.fullmatch(r'[A-Za-z0-9._-]+', package_config_version):
+            raise ValueError('Installed profile has an invalid version for a factory snapshot')
+        default_path = Path(path).with_name(
+            f'vispa_config.factory-v{package_config_version}.yaml')
+        my_default_path = Path(path).with_suffix('.user-default.yaml')
         default_warning = ''
         try:
             with default_path.open('xb') as stream:
@@ -3200,7 +3221,7 @@ class NeuroVisGUI:
         except FileExistsError:
             pass
         except OSError as exc:
-            default_warning = f'Local default copy unavailable ({exc}); showing installed profile.'
+            default_warning = f'Factory snapshot unavailable ({exc}); showing installed profile.'
         try:
             default_content = default_path.read_text(encoding='utf-8')
             parse_text(default_content, default_path)
@@ -3208,7 +3229,7 @@ class NeuroVisGUI:
         except Exception as exc:
             default_content = packaged_default.decode('utf-8')
             default_source = 'Installed VisPa profile (local copy unavailable)'
-            default_warning = f'Local default copy could not be used ({exc}); showing installed profile.'
+            default_warning = f'Factory snapshot could not be used ({exc}); showing installed profile.'
         window = tk.Toplevel(self.root)
         self._config_window = window
         window.title(f"VisPa {__version__} settings — {Path(path).name}")
@@ -3221,6 +3242,10 @@ class NeuroVisGUI:
         tk.Label(header, text=path, bg=self.COLORS['header'],
                  fg=self.COLORS['header_text'], font=('Consolas', 9),
                  wraplength=880, justify='left').pack(anchor='w', padx=12, pady=(0, 8))
+        customization = tk.StringVar(value=self._config_customization_label())
+        tk.Label(header, textvariable=customization, bg=self.COLORS['header'],
+                 fg=self.COLORS['header_muted'], font=('Segoe UI', 9, 'bold')).pack(
+                     anchor='w', padx=12, pady=(0, 8))
         tabs = ttk.Notebook(window)
         window._settings_tabs = tabs
         tabs.pack(fill='both', expand=True, padx=8, pady=8)
@@ -3273,10 +3298,10 @@ class NeuroVisGUI:
         scroll_y.grid(row=0, column=1, sticky='ns')
         scroll_x.grid(row=1, column=0, sticky='ew')
         default_tab = ttk.Frame(tabs)
-        tabs.add(default_tab, text='Frozen default YAML')
+        tabs.add(default_tab, text='Factory default YAML')
         ttk.Label(default_tab, text=f'Read-only reference · {default_source}',
                   wraplength=850).pack(anchor='w', padx=8, pady=(8, 2))
-        ttk.Label(default_tab, text='Reset to default stages this profile in the editor; Save settings writes only the active configuration.',
+        ttk.Label(default_tab, text='Restore factory default stages this profile in the editor; Save settings writes only the active configuration.',
                   wraplength=850).pack(anchor='w', padx=8, pady=(0, 6))
         default_frame = ttk.Frame(default_tab)
         default_frame.pack(fill='both', expand=True, padx=8, pady=4)
@@ -3388,6 +3413,7 @@ class NeuroVisGUI:
             if tabs.select() != str(default_tab):
                 state['tab'] = 'raw' if tabs.select() == str(advanced) else 'form'
             error.set(default_warning)
+            customization.set(self._config_customization_label())
 
         def on_tab_changed(_event):
             if state['switching'] or tabs.select() == str(default_tab):
@@ -3438,7 +3464,30 @@ class NeuroVisGUI:
             error.set(f'{label} staged in {raw_label}; Save settings to write the active file.')
 
         def reset_to_default():
-            stage_content(default_content, default_path, 'Default profile')
+            stage_content(default_content, default_path, 'Factory default profile')
+
+        def save_my_default():
+            if not save():
+                return
+            try:
+                from .config import save_config
+                current = Path(path).read_text(encoding='utf-8')
+                before = (hashlib.sha256(my_default_path.read_bytes()).hexdigest()
+                          if my_default_path.is_file() else None)
+                save_config(my_default_path, current, expected_sha256=before)
+                error.set(f'My default saved: {my_default_path}')
+            except Exception as exc:
+                error.set(f'Could not save my default: {exc}')
+
+        def restore_my_default():
+            if not my_default_path.is_file():
+                error.set('No saved personal default yet. Use Save as my default first.')
+                return
+            try:
+                stage_content(my_default_path.read_text(encoding='utf-8'),
+                              my_default_path, 'My saved default')
+            except OSError as exc:
+                error.set(f'Could not read my default: {exc}')
 
         def restore_backup():
             selected = filedialog.askopenfilename(
@@ -3472,21 +3521,25 @@ class NeuroVisGUI:
                 if (raw == state['saved_raw'] and
                         content.replace('\r\n', '\n') == state['saved_text'].replace('\r\n', '\n')):
                     error.set('No changes to save.')
-                    return
+                    return True
             except Exception as exc:
                 error.set(str(exc))
-                return
+                return False
             if self._save_config_text(path, content, expected_sha256=state['hash']):
                 load()
                 self._refresh_dataset_sources()
                 self.update_status('Configuration saved; restart VisPa to apply changed source folders')
+                return True
+            return False
 
         load()
         buttons = tk.Frame(window)
         buttons.pack(pady=(0, 8))
         ttk.Button(buttons, text="Save settings", command=save).pack(side='left', padx=4)
         ttk.Button(buttons, text="Reload", command=load).pack(side='left', padx=4)
-        ttk.Button(buttons, text="Reset to default", command=reset_to_default).pack(side='left', padx=4)
+        ttk.Button(buttons, text="Restore factory", command=reset_to_default).pack(side='left', padx=4)
+        ttk.Button(buttons, text="Save as my default", command=save_my_default).pack(side='left', padx=4)
+        ttk.Button(buttons, text="Restore my default", command=restore_my_default).pack(side='left', padx=4)
         ttk.Button(buttons, text="Restore backup…", command=restore_backup).pack(side='left', padx=4)
         tk.Label(window, text="Saving validates the complete configuration. Restart VisPa after changing source folders.",
                  bg=self.COLORS['page'], fg=self.COLORS['muted'],
@@ -3571,7 +3624,8 @@ class NeuroVisGUI:
             self.update_status("Resource check discarded for a stale identity")
             return
         if error is not None:
-            message = f"Resource check failed: {error}"
+            message = (f"{self._config_customization_label()}\n\n"
+                       f"Resource check failed: {error}")
             self._log_operation("Resource check", "failed", error=error)
             messagebox.showwarning("VisPa data check", message)
             return
@@ -3617,12 +3671,10 @@ class NeuroVisGUI:
         window.title("VisPa resource check")
         window.configure(bg=C['page'])
         window.transient(self.root)
-        width = min(self._px(660), self.root.winfo_screenwidth() - self._px(48))
-        height = min(self._px(560), self.root.winfo_screenheight() - self._px(72))
-        x = self.root.winfo_rootx() + max(0, (self.root.winfo_width() - width) // 2)
-        y = self.root.winfo_rooty() + max(0, (self.root.winfo_height() - height) // 2)
-        window.geometry(f"{width}x{height}+{x}+{y}")
-        window.minsize(self._px(560), self._px(430))
+        width, height, x, y = self._catalog_geometry(
+            self._px(660), self._px(760))
+        window.geometry(f"{width}x{height}{x:+d}{y:+d}")
+        window.minsize(min(self._px(560), width), min(self._px(430), height))
         window.columnconfigure(0, weight=1)
         window.rowconfigure(3, weight=1)
 
@@ -3670,6 +3722,11 @@ class NeuroVisGUI:
                  bg=C['header'], fg=C['header_text'],
                  font=('Segoe UI', 9, 'bold')).grid(
                      row=0, column=1, rowspan=3, sticky='e')
+        tk.Label(header, text=self._config_customization_label(),
+                 bg=C['header'], fg=C['header_muted'],
+                 font=('Segoe UI', 9, 'bold'), anchor='w').grid(
+                     row=3, column=0, columnspan=2, sticky='ew',
+                     pady=(self._px(7), 0))
 
         summary = tk.Frame(window, bg=status_color, padx=self._px(20),
                            pady=self._px(10))
@@ -4578,7 +4635,7 @@ def main(argv=None):
                       review_session=session_event,
                       watch_session=args.watch_session,
                       config_path=args.config,
-                      auto_fill_on_identity=not args.no_autoload,
+                      auto_fill_on_identity=effective_auto_load,
                       test_mode=args.test)
     app.identity_source = identity_source
     root.mainloop()

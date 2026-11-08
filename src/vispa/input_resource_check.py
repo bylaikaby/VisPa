@@ -1,6 +1,6 @@
 """Check whether one VisPa review identity has its configured resources.
 
-Version: 1.21.0 (local/unreleased)
+Version: 1.21.2 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../../CHANGELOG.md
 Status: candidate
@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import importlib.util
+import json
 import os
 from pathlib import Path
 import tempfile
@@ -233,9 +234,34 @@ def data_check(config=None, sample_id=None, neuron_id=None,
     if brain.get("region_manifest") is not None:
         add(_path_item("region_manifest", "Brain-view region manifest",
                        brain.get("region_manifest")))
-    swc_root = brain.get("processed_swc_root")
-    processed_swc = Path(swc_root) / sample / neuron if swc_root and sample and neuron else None
-    add(_path_item("processed_swc", "Brain-view processed SWC", processed_swc))
+    processed_swc = (Path(cache_root) / "swc_processed" / sample / neuron
+                     if cache_root and sample and neuron else None)
+    processed_item = _path_item("processed_swc", "Brain-view managed processed SWC", processed_swc)
+    if processed_item["status"] == "ready":
+        receipt = processed_swc.with_name(processed_swc.name + ".source.json")
+        processed_item["source_receipt_path"] = str(receipt) if receipt.is_file() else None
+        if receipt.is_file():
+            try:
+                source = json.loads(receipt.read_text(encoding="utf-8"))
+                role = source.get("role") if isinstance(source, dict) else None
+                identity_matches = (isinstance(source, dict) and
+                                    source.get("sample_id") == sample and
+                                    source.get("neuron_id") == neuron)
+                processed_item["source_receipt_role"] = role
+                processed_item["source_receipt_identity_matches"] = identity_matches
+                processed_item["detail"] = (
+                    "Managed cache found; source receipt metadata " +
+                    (f"role={role}, identity matches" if role == "processed" and identity_matches
+                     else "requires review") + "; SWC bytes not rehashed")
+            except (OSError, ValueError):
+                processed_item["detail"] = "Managed cache found; source receipt unreadable"
+        else:
+            processed_item["detail"] = "Managed cache found; source receipt absent"
+    elif processed_item["status"] == "missing":
+        processed_item["detail"] = (
+            "Managed processed SWC absent; portal fetch on Brain View execution if configured"
+            if sources.get("http_host") else "Managed processed SWC absent")
+    add(processed_item)
     add(_path_item("fnt_executable", "FNT executable", fnt.get("executable")))
     from .fnt_tracer_launcher import swc_fnt_tracer
     try:

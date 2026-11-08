@@ -1,6 +1,6 @@
 """Tk controls for packaged, receipt-backed whole-animal review rendering.
 
-Version: 1.21.1 (local/unreleased)
+Version: 1.21.2 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../../CHANGELOG.md
 Status: candidate
@@ -131,8 +131,11 @@ class BulkReviewDialog:
         if not resolved:
             raise ValueError("Bulk review needs a saved VisPa profile")
         self.config_path = str(Path(resolved).resolve(strict=True))
+        self._config_sha = hashlib.sha256(Path(self.config_path).read_bytes()).hexdigest()[:8]
+        self._jobs_manual = False
         cache = Path(config["defaults"]["cache_root"]) / "swc_raw"
-        jobs = Path(config["defaults"]["cache_root"]) / "review_jobs" / f"{sample or 'sample'}_review_jobs.json"
+        jobs = (Path(config["defaults"]["cache_root"]) / "review_jobs" /
+                f"{sample or 'sample'}_review_{self._config_sha}_jobs.json")
         defaults = {"sample": sample, "config": str(resolved), "csv": "",
                     "raw_roots": "", "source_receipt": "", "cache": str(cache),
                     "jobs": str(jobs),
@@ -256,6 +259,7 @@ class BulkReviewDialog:
                 self._validate_jobs(Path(selected), self._snapshot(), require_exists=True,
                                     view_only=True)
                 self.values["jobs"].set(selected)
+                self._jobs_manual = True
             except (OSError, ValueError, KeyError, TypeError) as exc:
                 messagebox.showerror("Bulk review", f"Could not use jobs: {exc}", parent=self.window)
 
@@ -265,6 +269,7 @@ class BulkReviewDialog:
         self._region_generation += 1
         self._regions_loading = True
         self.selected_regions.clear()
+        self._jobs_manual = False
         self.region_button.configure(text="Loading atlas regions…")
         self._region_after = self.window.after(300, self._load_regions)
 
@@ -335,6 +340,7 @@ class BulkReviewDialog:
 
     def _region_summary(self):
         selected = sorted(self.selected_regions)
+        self._jobs_manual = False
         self.values["jobs"].set(str(self._default_jobs_path(
             self.values["sample"].get().strip(), selected)))
         self.region_button.configure(text=("All regions ▾" if not selected else
@@ -344,7 +350,7 @@ class BulkReviewDialog:
     def _default_jobs_path(self, sample, regions):
         suffix = ("" if not regions else "_" + hashlib.sha256(
             json.dumps(sorted(regions), ensure_ascii=False).encode("utf-8")).hexdigest()[:8])
-        return self._jobs_root / f"{sample or 'sample'}_review{suffix}_jobs.json"
+        return self._jobs_root / f"{sample or 'sample'}_review_{self._config_sha}{suffix}_jobs.json"
 
     @staticmethod
     def _validate_jobs(jobs: Path, values: dict, *, require_exists=False,
@@ -384,6 +390,13 @@ class BulkReviewDialog:
 
     def _snapshot(self):
         config = load(self.config_path)
+        current_sha = hashlib.sha256(Path(self.config_path).read_bytes()).hexdigest()[:8]
+        if current_sha != self._config_sha:
+            self._config_sha = current_sha
+            self._jobs_root = Path(config["defaults"]["cache_root"]) / "review_jobs"
+            if not self._jobs_manual:
+                self.values["jobs"].set(str(self._default_jobs_path(
+                    self.values["sample"].get().strip(), self.selected_regions)))
         if Path(config.get("path") or self.config_path).resolve() != Path(self.config_path):
             raise ValueError("Active VisPa profile changed while bulk review was open")
         values = {key: value.get() for key, value in self.values.items()}

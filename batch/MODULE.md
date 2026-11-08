@@ -1,6 +1,6 @@
 # VisPa batch review
 
-Version 1.21.1. The Bulk review dialog and the packaged commands share one implementation. The ReMAP/FNT bridge and the whole-animal workflow both produce
+Version 1.21.2. The Bulk review dialog and the packaged commands share one implementation. The ReMAP/FNT bridge and the whole-animal workflow both produce
 a frozen review jobs file.
 
 The chart shows calls and data flow. The IONData catalog and declared raw
@@ -107,7 +107,7 @@ anatomical acceptance.
 4. For an animal run, prepare a new jobs file with `--all` and explicitly render with `--all`. Review the intended root before selecting a server destination. A run-specific subfolder separates the batch figures from existing GUI output.
 5. Use `--resume` with the same jobs file and destination after an interruption. Inspect the batch receipt for reused, rendered and unready neurons. Resume reuses a result only if the input identity and four verified PNGs match.
 
-New prepared jobs use a readable run name such as `review_2026-11-08_15-45-00` (Asia/Shanghai creation time). The dry run and frozen jobs file show the resolved name; `--run-name` can set a path-safe name explicitly. Per-neuron figures use `<root>/<sample>/neurons/<SWC ID>/<run_name>/`, and batch receipts use `<root>/<sample>/bulk_runs/<run_name>/`. Existing jobs without `run_name` keep their original `bulk_<jobs hash prefix>` paths when resumed. The full jobs-file SHA-256 remains in the batch receipt. Reusing a name for unrelated jobs is rejected. Use a fresh jobs file and output root if a microscopy dataset was replaced in place. Resume checks the frozen SWC, profile, settings and PNG bytes.
+New prepared jobs use a readable run name such as `review_2026-11-08_15-45-00` (Asia/Shanghai creation time). The dry run and frozen jobs file show the resolved name; `--run-name` can set a path-safe name explicitly. Per-neuron figures use `<root>/<sample>/neurons/<sample>_<SWC ID>_<region-name>/<run_name>/` (for example `252527_011_M1`), and batch receipts use `<root>/<sample>/bulk_runs/<run_name>/`. Only a final underscore plus numeric atlas ID is removed from the folder label (`M1_79` → `M1`); the full source label remains in jobs and receipts. The neuron folder name is frozen in the jobs file; missing region uses `Unassigned`, and unsafe or long labels receive a short hash suffix. Existing jobs without `neuron_folder` and `run_name` keep their original numeric neuron and `bulk_<jobs hash prefix>` paths when resumed. The full jobs-file SHA-256 remains in the batch receipt. Reusing a name for unrelated jobs is rejected. Use a fresh jobs file and output root if a microscopy dataset was replaced in place. Resume checks the frozen SWC, profile, settings and PNG bytes.
 
 The DEB GUI figure root is `X:/fMOST/Vispa_outputs`. Choose a local stage for
 the first run. Inspect PNG roles, axes, scale bars, and sagittal extent before
