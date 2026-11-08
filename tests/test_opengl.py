@@ -1,7 +1,7 @@
 """Contract tests for the lazy original-engine OpenGL worker.
 
-Version: 1.20.2 (local/unreleased)
-Last updated: 2026-11-07
+Version: 1.21.0 (local/unreleased)
+Last updated: 2026-11-08
 Change history: ../CHANGELOG.md
 Status: candidate
 2026-11-02: Cover portal numeric key refusal without a verified hierarchy map.

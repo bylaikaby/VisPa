@@ -1,7 +1,7 @@
 # VisPa — Visual Projectome Analysis tool
 
 VisPa reviews macaque neuron and microscopy data configured by the DEB lab.
-This checkout identifies as **1.20.2**. VisPa is a
+This checkout identifies as **1.21.0**. VisPa is a
 Python package inside a Conda environment. Launch the GUI directly from this
 checkout with `python run_vispa.py`.
 
@@ -9,7 +9,7 @@ checkout with `python run_vispa.py`.
 
 ## Batch review
 
-The checkout-only `batch.remap_stepwise` and `batch.render_review_bulk` operators connect explicit ReMAP inputs and saved FNT scores to VisPa review panels. Start with a dry run and one case; see the [batch bridge guide](batch/MODULE.md) for inputs, output contracts and limits. These modules are not installed wheel commands. Their outputs are technical candidates requiring separate anatomical review. The checkout also prepares an exact animal catalog, caches raw SWCs, and resumes verified per-neuron renders with `batch.prepare_review_bulk` and `batch.render_review_bulk`.
+Use **Bulk review…** beside Render for one-animal preparation, raw SWC caching, four-role rendering and receipt-verified resume. The dialog launches the packaged `vispa.review_bulk_prepare` and `vispa.review_bulk_render` modules, which also run with `python -m` from an installed wheel. Start with a dry run and one neuron; see the [batch guide](batch/MODULE.md) for source, output and review controls. Existing `batch.prepare_review_bulk` and `batch.render_review_bulk` imports remain compatibility entry points. The checkout-only `batch.remap_stepwise` bridge supplies ReMAP inputs and saved FNT scores to the same jobs contract. Figure completion and anatomical acceptance have separate review records.
 
 ## Code layout and responsibilities
 
@@ -22,6 +22,9 @@ src/vispa/
 ├── configs/config_deb.yaml           the single packaged profile
 ├── data_input_adaptor.py             dataset, SWC, IONData soma/side and ReMAP-table inputs
 ├── reviewer.py                       interactive review and preview orchestration
+├── review_bulk_dialog.py             Bulk review dialog and background job control
+├── review_bulk_prepare.py            whole-animal identities and managed raw cache
+├── review_bulk_render.py             four-role rendering and verified resume
 ├── commands.py                       command routing; installed vispa command
 ├── input_resource_check.py           availability checks, not image/anatomy acceptance
 ├── fnt_tracer_launcher.py            native raw-SWC session preparation and tracer launch
@@ -88,8 +91,20 @@ flowchart TD
   M --> Q[Montage and provenance receipt]
   D -. optional API .-> T[swc_terminal_candidates.py]
   R[Repository batch.remap_stepwise: explicit case] --> S[ReMAP population and saved FNT candidate]
-  S --> W[Repository batch.render_review_bulk]
-  BC[/Exact animal catalog or identity CSV/] -->|data| BP[Repository batch.prepare_review_bulk]
+  S -->|jobs| W
+  subgraph BD["review_bulk_dialog.py"]
+    BG([BulkReviewDialog])
+  end
+  subgraph BPREP["review_bulk_prepare.py"]
+    BP([main])
+  end
+  subgraph BRENDER["review_bulk_render.py"]
+    W([main])
+  end
+  G -->|opens| BG
+  BG -->|launches worker| BP
+  BG -->|launches worker| W
+  BC[/Exact animal catalog or identity CSV/] -->|data| BP
   BP -->|frozen jobs| W
   K --> W
   W --> O

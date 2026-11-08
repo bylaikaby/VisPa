@@ -1,7 +1,7 @@
 """Download and render one explicitly public SWC morphology example.
 
-Version: 1.20.2 (local/unreleased)
-Last updated: 2026-11-07
+Version: 1.21.0 (local/unreleased)
+Last updated: 2026-11-08
 Change history: ../../CHANGELOG.md
 Status: candidate (public source frame and units are unspecified)
 """

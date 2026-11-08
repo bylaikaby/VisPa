@@ -1,7 +1,7 @@
 """Compatibility alias for :mod:`vispa.data_input_adaptor`.
 
-Version: 1.20.2 (local/unreleased)
-Last updated: 2026-11-07
+Version: 1.21.0 (local/unreleased)
+Last updated: 2026-11-08
 Change history: ../../CHANGELOG.md
 """
 import sys

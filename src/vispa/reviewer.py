@@ -1,8 +1,8 @@
 """
 vispa_gui.py - GUI for NeuroVis Visual Toolkit
 
-Version: 1.20.2 (local/unreleased)
-Last updated: 2026-11-07
+Version: 1.21.0 (local/unreleased)
+Last updated: 2026-11-08
 Change history: ../../CHANGELOG.md
 Status: candidate (GUI layout reviewed; scientific review pending)
 2026-10-30: Record effective fixed crosshair and smaller legacy square separately from legacy
@@ -1151,6 +1151,8 @@ class NeuroVisGUI:
             side='left', padx=(P(6), 0))
         self._flat_button(action_row, "Check data", self._start_resource_check).pack(
             side='left', padx=(P(6), 0))
+        self._flat_button(action_row, "Bulk review…", self._on_bulk_review).pack(
+            side='left', padx=(P(6), 0))
         # Status strip
         strip = tk.Frame(self.root, bg=C['strip'], highlightbackground=C['border'],
                          highlightthickness=1)
@@ -2191,6 +2193,16 @@ class NeuroVisGUI:
         """Open the FNT section for the optional fnt-tracer program."""
         self._open_config_yaml(section='FNT')
 
+    def _on_bulk_review(self):
+        """Open the receipt-backed whole-animal review operator."""
+        try:
+            from .review_bulk_dialog import BulkReviewDialog
+            BulkReviewDialog(self.root, sample=self.sample_id.get().strip(),
+                             config_path=self.config_path, log=self._log_operation)
+        except (OSError, ValueError, KeyError) as exc:
+            self._log_operation("Bulk review", "failed", error=exc)
+            messagebox.showerror("Bulk review", str(exc), parent=self.root)
+
     def launch_template_brain_view(self, sample_id: str, neuron_id: str,
                                    portal_region: str = ""):
         """Start the independently configured original OpenGL viewer process."""
@@ -2287,10 +2299,15 @@ class NeuroVisGUI:
         if not selected:
             self.update_status("Select a portal neuron row to load")
             return
-        values = table.item(selected[0], "values")
-        if not values:
+        row = self._catalog_rows_by_iid.get(selected[0])
+        if row is None or self._catalog_snapshot is None:
             return
-        self.neuron_id.set(str(values[0]))
+        selected_id = IT.catalog_selection_id(
+            self._catalog_sample_id, self.sample_id.get(), self._catalog_snapshot, row)
+        if selected_id is None:
+            self.update_status("Catalog selection is stale; refresh the neuron list")
+            return
+        self.neuron_id.set(selected_id)
         if self.sample_id.get().strip():
             self.load_and_autofill()
 

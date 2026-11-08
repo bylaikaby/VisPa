@@ -1,7 +1,7 @@
 """Explicit data-input adaptor for local SWCs and source-tree providers.
 
-Version: 1.20.2 (local/unreleased)
-Last updated: 2026-11-07
+Version: 1.21.0 (local/unreleased)
+Last updated: 2026-11-08
 Change history: ../../CHANGELOG.md
 """
 from __future__ import annotations

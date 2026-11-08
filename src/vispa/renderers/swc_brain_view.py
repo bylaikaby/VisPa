@@ -1,7 +1,7 @@
 """Explicit local-input launcher for the isolated legacy OpenGL viewer.
 
-Version: 1.20.2 (local/unreleased)
-Last updated: 2026-11-07
+Version: 1.21.0 (local/unreleased)
+Last updated: 2026-11-08
 Change history: ../../../CHANGELOG.md
 Status: candidate
 2026-11-02: Resolve side-collapsed cortical portal keys to bilateral OBJs;

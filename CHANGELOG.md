@@ -1,5 +1,19 @@
 # VisPa change log
 
+## 1.21.0 — 2026-11-08 (local/unreleased candidate)
+- Add a Bulk review dialog backed by packaged preparation and rendering
+  modules, preserving the repository batch compatibility entry points.
+  Background workers keep the dialog responsive while receipts report progress.
+- Validate the selected jobs against the displayed sample and profile, retain
+  operation errors separately from receipt status, and reuse verified results
+  when continuing from a one-neuron pilot to the full animal.
+- Fix Load selected reading the Side column as a neuron ID. Resolve the exact
+  selected catalog identity before loading coordinates; stale rows fail closed.
+- Validation: 290 source tests and 28 batch tests pass. Isolated wheel imports
+  and packaged operator commands pass. Native Bulk review opening was observed,
+  followed by a valid 007.swc load in the corrected candidate window. Classic
+  styling and minimal controls remain previews for user review.
+
 ## 1.20.2 — 2026-11-07 (local/unreleased)
 - Add checkout-only whole-animal review preparation from the configured
   catalog or an exact identity CSV. Freeze source identities and checksums,

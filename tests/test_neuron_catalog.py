@@ -1,7 +1,7 @@
 """Exact-source catalog and stale GUI selection checks.
 
-Version: 1.20.2 (local/unreleased)
-Last updated: 2026-11-07
+Version: 1.21.0 (local/unreleased)
+Last updated: 2026-11-08
 Change history: ../CHANGELOG.md
 2026-11-02: Cover manual-identity portal-region handoff and underscore acronyms.
 """
@@ -169,6 +169,43 @@ class NeuronCatalogTests(unittest.TestCase):
         self.assertEqual(gui.neuron_id.get(), "001.swc")
         gui.load_and_autofill.assert_not_called()
         gui.run_selected.assert_not_called()
+
+    def test_load_selected_uses_catalog_identity_not_side_column(self):
+        from vispa.gui import NeuroVisGUI
+
+        class Variable:
+            def __init__(self, value):
+                self.value = value
+            def get(self):
+                return self.value
+            def set(self, value):
+                self.value = value
+
+        class Table:
+            def selection(self):
+                return ("row-0",)
+            def item(self, _iid, _option):
+                return ("Right", "001.swc", "M1_79")
+
+        with tempfile.TemporaryDirectory() as temp:
+            config_path, _ = self.write_config(temp, [
+                {"sample": "252527", "neuron_id": "001.swc", "portal_region": "M1_79",
+                 "registry_animal": "945"},
+            ])
+            snapshot = list_neurons("252527", load(config_path))
+        gui = NeuroVisGUI.__new__(NeuroVisGUI)
+        gui.sample_id = Variable("252527")
+        gui.neuron_id = Variable("999.swc")
+        gui._catalog_sample_id = "252527"
+        gui._catalog_snapshot = snapshot
+        gui._catalog_rows_by_iid = {"row-0": snapshot["rows"][0]}
+        gui.neuron_catalog_table = Table()
+        gui.load_and_autofill = mock.Mock()
+        gui.update_status = mock.Mock()
+        with mock.patch("vispa.sources.catalog_snapshot_unchanged", return_value=True):
+            gui.load_selected_catalog_row()
+        self.assertEqual(gui.neuron_id.get(), "001.swc")
+        gui.load_and_autofill.assert_called_once_with()
 
     def test_gui_legacy_csv_profile_offers_explicit_live_source(self):
         from vispa.gui import NeuroVisGUI
