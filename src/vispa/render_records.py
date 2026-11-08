@@ -1,6 +1,6 @@
 """One animal-level history and verified figure cache for GUI and bulk review.
 
-Version: 1.21.3 (local/unreleased)
+Version: 1.21.4 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../../CHANGELOG.md
 Status: candidate
@@ -19,6 +19,17 @@ from .batch_run_lock import exclusive_batch
 
 _TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,80}\Z")
 SCHEMA = "vispa.review.animal.v1"
+
+
+def separate_plot_output_dir(neuron_root, config: dict) -> Path:
+    """Route individual review PNGs using the saved profile setting."""
+    if not isinstance(config, dict):
+        raise TypeError("config must be a loaded mapping")
+    from .config import validate_plot_subfolder
+    folder = validate_plot_subfolder(
+        (config.get("visual_toolkit") or {}).get("separate_plot_subfolder", ""))
+    root = Path(neuron_root)
+    return root / folder if folder else root
 
 
 def animal_receipt_path(output_root, sample: str) -> Path:

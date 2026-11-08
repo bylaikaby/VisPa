@@ -1,6 +1,6 @@
 # VisPa batch review
 
-Version 1.21.3. The Bulk review dialog and the packaged commands share one implementation. The ReMAP/FNT bridge and the whole-animal workflow both produce
+Version 1.21.4. The Bulk review dialog and the packaged commands share one implementation. The ReMAP/FNT bridge and the whole-animal workflow both produce
 a frozen review jobs file.
 
 The chart shows calls and data flow. The IONData catalog and declared raw
@@ -115,15 +115,20 @@ anatomical acceptance.
 
 1. Run `python -m vispa.review_bulk_prepare --config <profile> --sample <sample> --catalog --cache-root <cache> --output-jobs <jobs.json> --limit 1 --dry-run`. Review the resolved IDs and input paths.
 2. Repeat without `--dry-run` to prepare the jobs file. Use the profile's shared `defaults.cache_root/swc_raw` cache, or a separate managed staging cache. Arbitrary overlap with scientific source roots is rejected. `--allow-download` explicitly allows fetching missing raw SWCs. Check the jobs file for unready IDs and reasons.
-3. Run `python -m vispa.review_bulk_render --jobs <jobs.json> --output-root <local-stage> --limit 1 --dry-run`, then repeat without `--dry-run`. Use a stage separate from the jobs directory. Inspect the four plots and receipt.
-4. For an animal run, prepare a new jobs file with `--all` and explicitly render with `--all`. Review the intended root before selecting a server destination. A run-specific subfolder separates the batch figures from existing GUI output.
-5. Use `--resume` with the same jobs file and destination after an interruption. Inspect the batch receipt for reused, rendered and unready neurons. Resume reuses a result only if the input identity and four verified PNGs match.
+3. Run `python -m vispa.review_bulk_render --jobs <jobs.json> --output-root <configured-root> --limit 1 --dry-run`, then repeat without `--dry-run`. The destination must match the saved profile for flat jobs. Inspect the four plots and process log.
+4. For an animal run, prepare a new jobs file with `--all` and explicitly render with `--all`. GUI and bulk use the same configured sample/neuron folders without an extra run directory.
+5. Use `--resume` with the same jobs file and destination after an interruption. Inspect the process log for reused, rendered and unready neurons. Resume reuses a result only if the input identity and four verified PNGs match.
 
 New prepared jobs use a readable run name such as `review_2026-11-08_15-45-00` (Asia/Shanghai creation time). The dry run and frozen jobs file show the resolved name; `--run-name` can set a path-safe name explicitly. Figures go directly in `<root>/<sample>/neurons/<SWC ID>_<verified side>_<region name>/` (for example `252527/neurons/001_R_M1/`); unknown side is omitted. Only a final underscore plus numeric atlas ID is removed from the folder label (`M1_79` → `M1`); full source labels and side provenance remain in the jobs and the sole per-animal `<root>/<sample>/process_log.json`. That log records source identities, checksums, config/settings, figure paths/hashes, and prior render history. Unknown acquisition dates remain explicitly unknown; retrieval and filesystem times have separate provenance labels. The neuron folder name is frozen in the jobs file; missing region uses `Unassigned`, and unsafe or long labels receive a short hash suffix. Existing jobs keep their original numeric neuron and `bulk_<jobs hash prefix>` paths and receipts when resumed. Resume checks the frozen SWC, profile, settings and PNG bytes.
 
-The DEB GUI figure root is `X:/fMOST/Vispa_outputs`. Choose a local stage for
-the first run. Inspect PNG roles, axes, scale bars, and sagittal extent before
-using the configured server root.
+The DEB GUI figure root is `X:/fMOST/Vispa_outputs`. Individual Soma, Context
+and Sagittal PNGs go in the configured `separate_plot_subfolder` (`plots/`);
+TrioPlot and Soma volumes stay at the neuron level. An explicitly saved
+`missing_context_samples` policy permits a labelled empty Context box for
+252383 and 252718 while retaining all three TrioPlot panels. Other acquisition
+errors still fail. Inspect PNG roles, axes, scale bars and full sagittal extent
+after a bounded first run. To use a local staging destination, first save a
+separate validated profile with that destination; do not override a frozen job.
 
 ## Existing ReMAP and saved FNT jobs
 

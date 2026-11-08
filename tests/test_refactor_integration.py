@@ -1,6 +1,6 @@
 """Read-only operator and native FNT integration checks.
 
-Version: 1.21.3 (local/unreleased)
+Version: 1.21.4 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../CHANGELOG.md
 """
@@ -17,6 +17,46 @@ from vispa import cli
 
 
 class RefactorIntegrationTests(unittest.TestCase):
+    def test_gui_context_placeholder_requires_saved_missing_source_policy(self):
+        from vispa.reviewer import NeuroVisGUI
+        gui = NeuroVisGUI.__new__(NeuroVisGUI)
+        gui._plot_region_context = {'display_label': 'Portal: M1_79 | Atlas: unavailable'}
+        request = SimpleNamespace(sample_id='252383', neuron_id='001.swc',
+                                  soma_xyz=(1, 2, 3), width_um=8000,
+                                  height_um=8000, depth_um=30)
+        config = {'visual_toolkit': {'missing_context_samples': ['252383']},
+                  'samples': {'252383': {'resample_5um': None}}}
+        toolkit, ion = mock.Mock(), mock.Mock()
+        toolkit.plot_unavailable_context.return_value = {
+            'unavailable': True, 'context_source_status': 'missing_declared_5um_source',
+            'unavailable_reason': '5 µm source missing', 'output_png': 'context.png'}
+        panel = gui._render_context(toolkit, ion, request, 'output', config=config)
+        self.assertTrue(panel['unavailable'])
+        toolkit.plot_unavailable_context.assert_called_once()
+        ion.getRawNeuronTreeByID.assert_not_called()
+        configured_source = {'visual_toolkit': config['visual_toolkit'],
+                             'samples': {'252383': {'resample_5um': 'declared/source'}}}
+        ion.getRawNeuronTreeByID.return_value = None
+        with self.assertRaisesRegex(ValueError, 'Raw neuron'):
+            gui._render_context(toolkit, ion, request, 'output', config=configured_source)
+        toolkit.plot_unavailable_context.assert_called_once()
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder) / '252383' / 'neurons' / '001_Unassigned'
+            output.mkdir(parents=True)
+            png = output / '252383_001_Context_Plot.png'
+            png.write_bytes(b'bounded placeholder fixture')
+            gui._write_receipt(str(output),
+                               {'sample': '252383', 'neuron': '001.swc',
+                                'review_settings': {}},
+                               {'Context': str(png)},
+                               specs={'Context': gui._panel_spec(panel)})
+            current = json.loads((Path(folder) / '252383' / 'process_log.json')
+                                 .read_text(encoding='utf-8'))['neurons']['001.swc']['current']
+            self.assertEqual(current['omissions'][0]['source_status'],
+                             'missing_declared_5um_source')
+            self.assertEqual(current['outputs']['Context']['availability']['reason'],
+                             '5 µm source missing')
+
     def test_gui_folder_uses_verified_side_and_shared_animal_process_log(self):
         from vispa.reviewer import NeuroVisGUI, _figure_folder
         with tempfile.TemporaryDirectory() as folder:
@@ -25,8 +65,15 @@ class RefactorIntegrationTests(unittest.TestCase):
             self.assertEqual(right.name, '001_R_M1')
             self.assertEqual(unknown.name, '003_M1')
             right.mkdir(parents=True)
-            png = right / '252527_001_Soma_Plot.png'
+            plots = right / 'plots'
+            plots.mkdir()
+            png = plots / '252527_001_Soma_Plot.png'
             gui = NeuroVisGUI.__new__(NeuroVisGUI)
+            gui._active_render_config = {
+                'visual_toolkit': {'separate_plot_subfolder': 'plots'}}
+            target = gui._target_for(SimpleNamespace(save_outputs=True,
+                                                     output_dir=str(right)), True)
+            self.assertEqual(target, str(plots))
             fingerprint = {'sample': '252527', 'neuron': '001.swc',
                            'config_sha256': 'config', 'review_settings': {}}
             png.write_bytes(b'first image')
@@ -37,6 +84,11 @@ class RefactorIntegrationTests(unittest.TestCase):
             animal = json.loads(process_log.read_text(encoding='utf-8'))
             self.assertEqual(len(animal['neurons']['001.swc']['history']), 1)
             self.assertEqual(gui._read_receipt(str(right), '001')['output_dir'], str(right))
+            gui.figure_output_root = folder
+            gui.output_root = folder
+            _folders, found, _entry = gui._find_cached_figures(
+                '252527', '001', current_folder=str(right))
+            self.assertEqual(found['Soma'], str(png))
             self.assertFalse((right / 'visual_gui_receipt.json').exists())
 
     def test_gui_worker_reloads_saved_profile_before_request_and_fingerprint(self):

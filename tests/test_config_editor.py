@@ -1,6 +1,6 @@
 """Focused lossless common-settings checks.
 
-Version: 1.21.2 (local/unreleased)
+Version: 1.21.4 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../CHANGELOG.md
 """
@@ -247,7 +247,7 @@ class ConfigEditorTests(unittest.TestCase):
         gui._fingerprint = lambda: None
         gui._target_for = lambda *args: 'unused'
         gui._render_soma = lambda *args: {'png_path': 'soma.png'}
-        gui._render_context = lambda *args: {'png_path': 'context.png'}
+        gui._render_context = lambda *args, **kwargs: {'png_path': 'context.png'}
         gui._render_sagittal = lambda *args: (_ for _ in ()).throw(FileNotFoundError(
             'Live manifest-selected preprocessed DS volume is unavailable: selected.nii'))
         gui._panel_png = lambda panel: panel['png_path']

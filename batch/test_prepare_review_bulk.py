@@ -1,6 +1,6 @@
 """Bounded job-preparation tests for exact animal identities and raw cache.
 
-Version: 1.21.3 (local/unreleased)
+Version: 1.21.4 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../CHANGELOG.md
 Status: candidate
@@ -35,6 +35,34 @@ class PrepareReviewBulkTests(unittest.TestCase):
         patcher = mock.patch("batch.prepare_review_bulk.acquire_neuron_sides", side_effect=sides)
         self.side_mock = patcher.start()
         self.addCleanup(patcher.stop)
+
+    def test_two_configured_missing_context_samples_freeze_intent(self):
+        config = Path(__file__).parents[1] / "src/vispa/configs/config_deb.yaml"
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            loaded = load_config(config)
+            loaded["path"] = None
+            loaded["defaults"]["cache_root"] = root / "cache_root"
+            loaded["sources"]["legacy_raw_swc_root"] = root / "cache_root" / "swc_raw"
+            for sample in ("252383", "252718"):
+                source = root / "sources" / sample
+                source.mkdir(parents=True)
+                (source / "001.swc").write_text("1 1 1 2 3 1 -1\n", encoding="utf-8")
+                identities = root / f"{sample}.csv"
+                identities.write_text(f"sample,neuron_id,portal_region\n{sample},001.swc,M1_79\n",
+                                      encoding="utf-8")
+                with mock.patch("batch.prepare_review_bulk.load", return_value=loaded):
+                    plan = plan_jobs(config, sample, identities, False, [root / "sources"],
+                                     root / "cache_root" / "swc_raw", None, 1, False)
+                self.assertEqual(plan["jobs"][0]["context_source_status"],
+                                 "missing_declared_5um_source")
+                jobs_path = root / f"{sample}_jobs.json"
+                with mock.patch("batch.prepare_review_bulk.load", return_value=loaded):
+                    prepared = prepare_jobs(plan, jobs_path, dry_run=False, allow_download=False)
+                self.assertEqual(prepared["status"], "prepared")
+                frozen = json.loads(jobs_path.read_text(encoding="utf-8"))
+                self.assertEqual(frozen["jobs"][0]["context_source_status"],
+                                 "missing_declared_5um_source")
 
     def test_exact_sources_are_cached_and_frozen(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -285,6 +313,7 @@ class PrepareReviewBulkTests(unittest.TestCase):
             }), encoding="utf-8")
             configured = load_config(config)
             configured["visual_toolkit"]["figure_output_root"] = root / "figures"
+            configured["visual_toolkit"]["separate_plot_subfolder"] = "plots"
             output_root = root / "figures"
             with mock.patch("vispa.config.load", return_value=configured):
                 plan = load_review_jobs(jobs_path, output_root, 1, False)
@@ -295,7 +324,10 @@ class PrepareReviewBulkTests(unittest.TestCase):
                     Image.new("RGB", (2, 2), "red").save(path)
                     paths[role] = str(path)
                 (folder / "SomaBlock.nii.gz").write_bytes(b"fixture derivative")
-                return {"outputs": paths, "errors": []}
+                return {"outputs": paths, "errors": [],
+                        "role_availability": {"Context": {
+                            "status": "intentionally_unavailable",
+                            "source_status": "missing_declared_5um_source"}}}
             with mock.patch("vispa.config.load", return_value=configured), mock.patch(
                     "vispa.review_bulk_render._verified_raw_path", return_value=None):
                 first = run_review_bulk(plan, dry_run=False, renderer=render)
@@ -304,9 +336,14 @@ class PrepareReviewBulkTests(unittest.TestCase):
                 record = json.loads(log_path.read_text(encoding="utf-8"))
                 self.assertEqual(record["current_batch"]["source_jobs"][0]["neuron_id"], "001.swc")
                 self.assertEqual(len(record["neurons"]["001.swc"]["current"]["outputs"]), 4)
+                self.assertEqual(record["neurons"]["001.swc"]["current"]["role_availability"]
+                                 ["Context"]["status"], "intentionally_unavailable")
                 folder = Path(plan["jobs"][0]["output_dir"])
                 self.assertEqual(folder.name, "001_R_M1")
                 self.assertTrue((folder / "SomaBlock.nii.gz").is_file())
+                self.assertTrue((folder / "TrioPlot.png").is_file())
+                for role in ("Soma", "Context", "Sagittal"):
+                    self.assertTrue((folder / "plots" / f"{role}.png").is_file())
                 self.assertFalse((folder / "review_receipt.json").exists())
                 self.assertFalse((output_root / "251637" / "bulk_runs").exists())
                 with mock.patch("vispa.review_bulk_render.render_review_neuron", side_effect=AssertionError("rerendered")):
@@ -319,7 +356,14 @@ class PrepareReviewBulkTests(unittest.TestCase):
                 self.assertGreaterEqual(len(record["batches"]), 2)
 
     def test_animal_log_preserves_brain_view_across_review_rerender(self):
-        from vispa.render_records import record_neuron_output, record_neuron_product
+        from vispa.render_records import (record_neuron_output, record_neuron_product,
+                                          separate_plot_output_dir)
+        self.assertEqual(separate_plot_output_dir(Path("neuron"),
+                         {"visual_toolkit": {"separate_plot_subfolder": "plots"}}),
+                         Path("neuron/plots"))
+        with self.assertRaisesRegex(ValueError, "path-safe"):
+            separate_plot_output_dir(Path("neuron"),
+                                     {"visual_toolkit": {"separate_plot_subfolder": "../escape"}})
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "251637" / "process_log.json"
             record_neuron_output(path, "251637", "001.swc", {
@@ -334,43 +378,6 @@ class PrepareReviewBulkTests(unittest.TestCase):
             self.assertEqual(slot["current"]["products"]["SWC3D"]["path"], "brain-view.png")
             self.assertEqual(slot["current"]["outputs"]["Soma"]["path"], "new-fixture")
             self.assertEqual(len(slot["history"]), 2)
-
-    def test_cache_control_requires_complete_reviewed_classification(self):
-        from work.ins_cohort_20261108.cache_control import (
-            classifications, reverify_candidate, select_cache_candidates, source_cubes)
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            labels = root / "labels.csv"
-            labels.write_text("neuron_id,classification\n001.swc,non_insular\n", encoding="utf-8")
-            self.assertEqual(classifications(labels, {"001.swc"}),
-                             {"001.swc": "non_insular"})
-            with self.assertRaisesRegex(ValueError, "cover every"):
-                classifications(labels, {"001.swc", "002.swc"})
-            sidecar = root / "Soma.nii.gz.json"
-            sidecar.write_text(json.dumps({"sample_id": "251637", "complete": True,
-                "source_paths": ["http://host/monkeydata/251637/cube/95/66_47_95.tif"]}),
-                encoding="utf-8")
-            self.assertEqual(source_cubes(sidecar, hashlib.sha256(sidecar.read_bytes()).hexdigest(),
-                                          "251637"), {"95/66_47_95.tif"})
-            cache = root / "cache"
-            depth = cache / "95"
-            depth.mkdir(parents=True)
-            for name in ("1_1_95.tif", "2_2_95.tif", "3_3_95.tif"):
-                (depth / name).write_bytes(name.encode())
-            owners = {"95/1_1_95.tif": {"001.swc"},
-                      "95/2_2_95.tif": {"001.swc", "002.swc"}}
-            selected, protected = select_cache_candidates(
-                cache, owners, {"001.swc": "non_insular", "002.swc": "insular"})
-            self.assertEqual(([Path(item["path"]).name for item in selected], protected),
-                             (["1_1_95.tif"], 2))
-            reverify_candidate(depth / "1_1_95.tif", selected[0]["sha256"], cache)
-            (root / "outside.tif").write_bytes((depth / "1_1_95.tif").read_bytes())
-            with self.assertRaisesRegex(ValueError, "changed"):
-                reverify_candidate(root / "outside.tif", selected[0]["sha256"], cache)
-            (depth / "1_1_95.tif").write_bytes(b"changed")
-            with self.assertRaisesRegex(ValueError, "changed"):
-                reverify_candidate(depth / "1_1_95.tif", selected[0]["sha256"], cache)
-
 
 if __name__ == "__main__":
     unittest.main()

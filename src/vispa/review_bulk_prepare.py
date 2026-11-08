@@ -1,6 +1,6 @@
 """Freeze one animal of exact raw-SWC review jobs with a managed byte cache.
 
-Version: 1.21.3 (local/unreleased)
+Version: 1.21.4 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../CHANGELOG.md
 Status: candidate
@@ -141,6 +141,12 @@ def plan_jobs(config_path: Path, sample: str, identities: Path | None, catalog: 
         raise ValueError("sample must be one path-safe animal sample ID")
     config_path = config_path.resolve(strict=True)
     config = load(config_path)
+    from .config import context_unavailable_authorized
+    context_source_status = ("missing_declared_5um_source" if
+                             context_unavailable_authorized(config, sample) else
+                             "configured_5um_source" if
+                             (config.get("samples", {}).get(sample) or {}).get("resample_5um") else
+                             "missing_unapproved_5um_source")
     if bool(identities) == catalog:
         raise ValueError("Choose exactly one of --identities and --catalog")
     if all_jobs == (limit is not None) or (limit is not None and limit < 1):
@@ -227,6 +233,7 @@ def plan_jobs(config_path: Path, sample: str, identities: Path | None, catalog: 
         verified_side = (vispa_region.get("side") if vispa_region.get("status") == "verified"
                          and vispa_region.get("side") in {"Left", "Right"} else None)
         jobs.append({"sample_id": sample, "neuron_id": name,
+                     "context_source_status": context_source_status,
                      "vispa_region": vispa_region,
                      "neuron_folder": neuron_folder_name(sample, name, region, side=verified_side),
                      "soma_region": region,
@@ -299,6 +306,7 @@ def prepare_jobs(plan: dict, output_jobs: Path, *, dry_run: bool, allow_download
                 raise ValueError("managed SWC differs from expected source receipt")
             tree = read_swc(target)
             jobs.append({"sample_id": item["sample_id"], "neuron_id": item["neuron_id"],
+                         "context_source_status": item["context_source_status"],
                          "neuron_folder": item["neuron_folder"],
                          "render_ready": True, "soma_xyz": list(tree.root.xyz),
                          "soma_units": "raw SWC stored coordinates (nominal um)",
@@ -318,6 +326,7 @@ def prepare_jobs(plan: dict, output_jobs: Path, *, dry_run: bool, allow_download
                          "fnt_marker": None, "fnt_cluster": None})
         except (OSError, RuntimeError, ValueError) as exc:
             jobs.append({"sample_id": item["sample_id"], "neuron_id": item["neuron_id"],
+                         "context_source_status": item["context_source_status"],
                          "neuron_folder": item["neuron_folder"],
                          "render_ready": False, "soma_error": str(exc)})
     payload = {"schema": "vispa.review_bulk.v1", "sample_id": plan["sample_id"],

@@ -1,9 +1,11 @@
 """
 vispa.py - Macaque Brain Hybrid-Resolution Visualization Toolkit
 
-Version: 1.21.3 (local/unreleased)
+Version: 1.21.4 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../../../CHANGELOG.md
+2026-11-08: Add a config-authorized empty Context panel for declared missing
+5 µm sources; preserve three-panel review without synthetic image pixels.
 2026-11-08: Shorten CL_/CR_ atlas ID prefixes in displayed Region titles
 while retaining source identifiers and side metadata.
 2026-11-08: Reload selected saved config at source activation and guard public
@@ -1226,6 +1228,22 @@ class VisPa:
     def _draw_panel(self, ax, panel, marker_min_px=None):
         """Draw one styled panel; single plots and the tri-plot share this path."""
         display = panel.get('display')
+        if panel.get('unavailable'):
+            if display is not None:
+                raise ValueError('Unavailable Context panel cannot carry image pixels')
+            ax.set_xlim(0, 1)
+            ax.set_ylim(0, 1)
+            fov_width, fov_height = panel['fov_um']
+            ax.set_aspect(float(fov_height) / float(fov_width), adjustable='box')
+            ax.axis('off')
+            ax.add_patch(Rectangle((0, 0), 1, 1, transform=ax.transAxes,
+                                   facecolor='black', edgecolor='#999999',
+                                   linewidth=1.0, zorder=1))
+            ax.text(0.5, 0.5, 'Unavailable — 5 µm source missing',
+                    transform=ax.transAxes, ha='center', va='center',
+                    color='white', fontsize=REVIEW_SETTINGS['figure']['review_title_fontsize'],
+                    zorder=2)
+            return
         if display is None:
             raise ValueError("panel display is missing")
         h, w = display.shape[:2]
@@ -1299,7 +1317,8 @@ class VisPa:
         target_dir = output_dir if output_dir else self.output_dir
         if not os.path.exists(target_dir):
             os.makedirs(target_dir, exist_ok=True)
-        title = self._title_text(neuron_id, suffix, soma_region, soma_coords,
+        title = panel.get('title') if panel.get('unavailable') else None
+        title = title or self._title_text(neuron_id, suffix, soma_region, soma_coords,
                                  panel['fov_um'], panel['depth_um'],
                                  hemisphere=panel.get('hemisphere'),
                                  nmt_corrected=nmt_corrected)
@@ -1470,6 +1489,35 @@ class VisPa:
                 nmt_corrected=nmt_corrected) + f" | {overlay_note}",
             'nmt_corrected': nmt_corrected or "",
         }
+
+    def plot_unavailable_context(self, neuron_id, soma_region=None, soma_coords=None,
+                                 output_dir=None, reason='5 µm source missing'):
+        """Write an explicit empty Context panel for a configured absent source."""
+        from ..config import context_unavailable_authorized
+        if not context_unavailable_authorized(ACTIVE_CONFIG or {}, self.sample_id):
+            raise ValueError(f'{self.sample_id} is not authorized for an unavailable Context panel')
+        if reason != '5 µm source missing':
+            raise ValueError('Unavailable Context reason must identify the missing 5 µm source')
+        context = REVIEW_SETTINGS['context']
+        title = f'{self.sample_id} | {neuron_id} | Context unavailable'
+        if soma_region:
+            title += f'\nRegion: {self._region_title_value(soma_region)}'
+        title += '\n5 µm source missing (declared in config)'
+        panel = {
+            'display': None, 'unavailable': True,
+            'unavailable_reason': reason,
+            'context_source_status': 'missing_declared_5um_source',
+            'fov_um': (float(context['width_um']), float(context['height_um'])),
+            'depth_um': float(context['depth_um']),
+            'requested_fov_um': (float(context['width_um']), float(context['height_um'])),
+            'requested_depth_um': float(context['depth_um']),
+            'scale_bar_um': 0.0, 'markers': [], 'traces': [], 'legend': [],
+            'notes': ['No 5 µm source is declared for this sample; no image pixels were rendered.'],
+            'role': 'Context unavailable', 'suffix': 'Context', 'title': title,
+        }
+        return self._save_panel_plot(panel, neuron_id, 'Context',
+                                     soma_region=soma_region, soma_coords=soma_coords,
+                                     output_dir=output_dir)
 
     def _overlay_swc(self, ax, swc_tree, origin, resolution, h, w, z_bounds=None):
         if swc_tree:

@@ -1,5 +1,23 @@
 # VisPa change log
 
+## 1.21.4 — 2026-11-08 (local/unreleased candidate)
+- Keep TrioPlot for samples 252383 and 252718 without a 5 µm source: an
+  explicitly configured, labelled empty Context panel preserves the arrangement
+  and requested physical aspect while retaining missing-data provenance.
+  Prepared jobs freeze the source status; process logs record intentional
+  unavailability. Ordinary acquisition errors remain errors, not placeholders.
+- Add saved `separate_plot_subfolder` control. New GUI/bulk single-panel PNGs
+  go in each neuron's `plots/`; TrioPlot, Soma NIfTI and Brain View stay at the
+  neuron-folder level. Existing outputs remain at their recorded paths.
+- Keep temporary cache-control fixture tests beside the temporary script;
+  the installed package and clean-checkout tests do not depend on `work/`.
+- Remove the workstation-specific DS00 registry pointer from the packaged
+  template; explicit personal profiles retain their own selection registry.
+- Validation: 316 source tests and 37 batch tests pass. Real 252383/001 and
+  252718/001 runs each produced four decoded, hash-matched PNGs with the final
+  single-plot paths, square Context omission box and full sagittal extent.
+  Empty Context is declared missing data; anatomical acceptance remains open.
+
 ## 1.21.3 — 2026-11-08 (local/unreleased candidate)
 - Restore missing GUI region arguments and freeze VisPa-parsed atlas region and
   side for new bulk jobs. Use one source-aware region label across all panels;

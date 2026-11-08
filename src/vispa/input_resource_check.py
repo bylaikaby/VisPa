@@ -1,6 +1,6 @@
 """Check whether one VisPa review identity has its configured resources.
 
-Version: 1.21.2 (local/unreleased)
+Version: 1.21.4 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../../CHANGELOG.md
 Status: candidate
@@ -193,8 +193,15 @@ def data_check(config=None, sample_id=None, neuron_id=None,
         add(ds00_item)
     else:
         add(_path_item("ds00", "DS00 image", sample_row.get("ds00_processed")))
-    add(_path_item(
-        "resample_5um", "5 um Context sections", sample_row.get("resample_5um"), kind="dir"))
+    from .config import context_unavailable_authorized
+    context_unavailable = context_unavailable_authorized(config, sample)
+    if context_unavailable:
+        add({"role": "resample_5um", "label": "5 um Context sections",
+             "path": None, "required": False, "status": "intentionally_unavailable",
+             "detail": "No 5 µm source is declared for this animal; an empty labeled Context panel is configured"})
+    else:
+        add(_path_item(
+            "resample_5um", "5 um Context sections", sample_row.get("resample_5um"), kind="dir"))
 
     highres_cache = Path(defaults.get("cache_root") or "") / sample / "high_res_http" if defaults.get("cache_root") else None
     highres_cache_ready = bool(highres_cache and highres_cache.is_dir())
@@ -301,7 +308,8 @@ def data_check(config=None, sample_id=None, neuron_id=None,
         "checks": items,
         "checklist": lines,
         "summary": (
-            f"All configured resources ready ({total}/{total})\n"
+            ("Required resources ready; Context intentionally unavailable for this animal.\n"
+             if context_unavailable else f"All configured resources ready ({total}/{total})\n") +
             "Remote services are verified when their data is first requested."
             if ready else
             f"{len(issues)} required resource(s) need attention"

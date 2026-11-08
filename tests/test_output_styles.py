@@ -1,8 +1,9 @@
 """Synthetic render-style regression checks.
 
-Version: 1.21.3 (local/unreleased)
+Version: 1.21.4 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../CHANGELOG.md
+2026-11-08: Validate configured absent-source Context panel and TrioPlot.
 2026-11-08: Reject mutated renderer style under a saved strict profile.
 2026-10-30: Cover the fixed 320-pixel crosshair, reduced legacy square,
 exact centre, and GUI receipt
@@ -34,6 +35,45 @@ from vispa.renderers.swc_brain_view import TRACE_LABEL, _legend_texture
 
 
 class OutputStyleTests(unittest.TestCase):
+    def test_declared_missing_context_renders_empty_panel_and_trio(self):
+        from vispa.renderers import microscopy_panels as panels
+        with tempfile.TemporaryDirectory(dir=os.environ.get('VISPA_TEST_ROOT')) as directory:
+            tool = object.__new__(VisPa)
+            tool.sample_id = '252383'
+            tool.output_dir = directory
+            declared = {'samples': {'252383': {'resample_5um': None}},
+                        'visual_toolkit': {'missing_context_samples': ['252383']}}
+            with mock.patch.object(panels, 'ACTIVE_CONFIG', declared):
+                context = tool.plot_unavailable_context('001.swc', output_dir=directory)
+                self.assertTrue(context['unavailable'])
+                self.assertIsNone(context['display'])
+                self.assertEqual(context['context_source_status'],
+                                 'missing_declared_5um_source')
+                self.assertEqual(context['markers'], [])
+                with Image.open(context['output_png']) as png:
+                    png.verify()
+                fig, ax = plt.subplots(figsize=(6, 4), dpi=100)
+                try:
+                    tool._draw_panel(ax, context)
+                    fig.canvas.draw()
+                    bounds = ax.get_window_extent(fig.canvas.get_renderer())
+                    self.assertAlmostEqual(bounds.width / bounds.height, 1.0,
+                                           places=6)
+                    self.assertEqual(len(ax.images), 0)
+                finally:
+                    plt.close(fig)
+                ordinary = {'display': np.ones((12, 12)), 'fov_um': (12, 12),
+                            'depth_um': 1, 'resolution_um': (1, 1),
+                            'scale_bar_um': 0, 'markers': []}
+                trio = tool.plot_tri_plot([ordinary, context, ordinary], '001.swc',
+                                          output_dir=directory)
+                with Image.open(trio) as png:
+                    png.verify()
+            tool.sample_id = '252527'
+            with mock.patch.object(panels, 'ACTIVE_CONFIG', declared):
+                with self.assertRaisesRegex(ValueError, 'not authorized'):
+                    tool.plot_unavailable_context('001.swc', output_dir=directory)
+
     def test_display_region_name_strips_only_hemisphere_id_prefix(self):
         native = {'status': 'verified', 'side': 'Right',
                   'source': {'atlas_region': 'CR_M1'}}

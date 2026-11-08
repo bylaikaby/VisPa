@@ -1,12 +1,14 @@
 """
 vispa_gui.py - GUI for NeuroVis Visual Toolkit
 
-Version: 1.21.3 (local/unreleased)
+Version: 1.21.4 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../../CHANGELOG.md
 Status: candidate (GUI layout reviewed; scientific review pending)
 2026-11-08: Resolve saved review and Brain View folders from the active profile and
 exact region/side; consolidate figure provenance in one animal process log.
+2026-11-08: Show configured missing 5 µm Context sources as labeled empty panels
+and record that omission in the animal process log.
 2026-10-30: Record effective fixed crosshair and smaller legacy square separately from legacy
 profile settings in figure fingerprints and cache receipts.
 2026-11-02: Pass a validated current-sample portal region to brain-view after manual identity entry.
@@ -2612,7 +2614,10 @@ class NeuroVisGUI:
         if not isinstance(panel, dict):
             return {}
         return {'fov_um': list(panel.get('fov_um') or []),
-                'resolution_um': list(panel.get('resolution_um') or [])}
+                'resolution_um': list(panel.get('resolution_um') or []),
+                'unavailable': bool(panel.get('unavailable')),
+                'unavailable_reason': panel.get('unavailable_reason'),
+                'context_source_status': panel.get('context_source_status')}
 
     @staticmethod
     def _soma_window_px(request):
@@ -3079,6 +3084,10 @@ class NeuroVisGUI:
                     item['fov_um'] = spec['fov_um']
                 if spec.get('resolution_um'):
                     item['resolution_um'] = spec['resolution_um']
+                if spec.get('unavailable'):
+                    item['availability'] = {
+                        'status': spec.get('context_source_status') or 'unavailable',
+                        'reason': spec.get('unavailable_reason')}
                 files[role] = item
         if (trio_path and os.path.isfile(trio_path)
                 and os.path.abspath(trio_path).startswith(folder_abs + os.sep)):
@@ -3115,6 +3124,11 @@ class NeuroVisGUI:
             'roles': sorted(files),
             'outputs': files,
             'exports': exported,
+            'omissions': [
+                {'role': role,
+                 'source_status': spec.get('context_source_status') or 'unavailable',
+                 'reason': spec.get('unavailable_reason')}
+                for role, spec in specs.items() if spec.get('unavailable')],
             'anatomical_acceptance': 'not established',
         }
         if region_resolution:
@@ -3220,23 +3234,35 @@ class NeuroVisGUI:
                 continue
             entry = self._read_receipt(folder, neuron)
             candidate = {}
-            for name in os.listdir(folder):
-                if not (name.startswith(f"{sample}_{neuron}")
-                        and name.lower().endswith('.png')):
+            for scan_folder in (os.path.join(folder, 'plots'), folder):
+                if not os.path.isdir(scan_folder):
                     continue
-                if name.endswith('_Soma_Plot.png'):
-                    role = 'Soma'
-                elif name.endswith('_Context_Plot.png'):
-                    role = 'Context'
-                elif name.endswith('_Sagittal_Plot.png'):
-                    role = 'Sagittal'
-                elif 'TriPlot' in name or 'PairPlot' in name:
-                    role = 'TrioPlot'
-                else:
-                    continue
-                path = os.path.join(folder, name)
-                if role not in candidate or os.path.getmtime(path) > os.path.getmtime(candidate[role]):
-                    candidate[role] = path
+                for name in os.listdir(scan_folder):
+                    if not (name.startswith(f"{sample}_{neuron}")
+                            and name.lower().endswith('.png')):
+                        continue
+                    if name.endswith('_Soma_Plot.png'):
+                        role = 'Soma'
+                    elif name.endswith('_Context_Plot.png'):
+                        role = 'Context'
+                    elif name.endswith('_Sagittal_Plot.png'):
+                        role = 'Sagittal'
+                    elif 'TriPlot' in name or 'PairPlot' in name:
+                        role = 'TrioPlot'
+                    else:
+                        continue
+                    path = os.path.join(scan_folder, name)
+                    if role not in candidate or os.path.getmtime(path) > os.path.getmtime(candidate[role]):
+                        candidate[role] = path
+            if entry:
+                recorded = {}
+                for role, item in (entry.get('outputs') or {}).items():
+                    path = item.get('path') if isinstance(item, dict) else None
+                    if path and Path(path).resolve().is_relative_to(Path(folder).resolve()) \
+                            and os.path.isfile(path):
+                        recorded[role] = path
+                if recorded:
+                    candidate = recorded
             if entry and candidate:
                 found, receipt_entry = candidate, entry
                 break
@@ -3560,9 +3586,16 @@ class NeuroVisGUI:
                 if kind == 'positive_int' and value is not None and (
                         isinstance(value, bool) or not isinstance(value, int) or value <= 0):
                     raise ValueError(f'{dotted}: use a positive YAML whole number')
+                if kind == 'sample_ids' and value is not None and (
+                        not isinstance(value, list) or
+                        any(not isinstance(item, str) for item in value)):
+                    raise ValueError(f'{dotted}: use a YAML list of sample IDs')
             for _, dotted, _, kind in FIELDS:
                 value = field_value(raw, dotted)
-                variables[dotted].set(bool(value) if kind == 'bool' else '' if value is None else str(value))
+                variables[dotted].set(
+                    bool(value) if kind == 'bool' else
+                    ', '.join(value) if kind == 'sample_ids' and value is not None else
+                    '' if value is None else str(value))
 
         def load():
             try:
@@ -4431,9 +4464,11 @@ class NeuroVisGUI:
 
     # ---------- render helpers (shared by the lane runner and the direct actions) ----------
     def _target_for(self, request, save_flag):
-        """Write into the chosen folder only when that artifact's save tick is on."""
+        """Route saved single-panel PNGs through the active profile."""
         if request.save_outputs and save_flag:
-            return request.output_dir
+            from .render_records import separate_plot_output_dir
+            return str(separate_plot_output_dir(
+                request.output_dir, getattr(self, '_active_render_config', None) or {}))
         return self._preview_target_dir(request)
 
     def _render_soma(self, toolkit, request, target):
@@ -4451,7 +4486,14 @@ class NeuroVisGUI:
             panel['_soma_nifti'] = export_path
         return panel
 
-    def _render_context(self, toolkit, ion, request, target):
+    def _render_context(self, toolkit, ion, request, target, config=None):
+        from .config import context_unavailable_authorized
+        if config is not None and context_unavailable_authorized(config, request.sample_id):
+            return toolkit.plot_unavailable_context(
+                request.neuron_id, output_dir=target,
+                soma_region=(getattr(self, '_plot_region_context', {})
+                             or {}).get('display_label'),
+                soma_coords=request.soma_xyz)
         tree = ion.getRawNeuronTreeByID(request.sample_id, request.neuron_id)
         if tree is None:
             raise ValueError(f"Raw neuron {request.sample_id}/{request.neuron_id} was not found")
@@ -4593,6 +4635,7 @@ class NeuroVisGUI:
                     force_reprocess=force_reprocess)
                 toolkit = VisPa(
                     active_request.sample_id, force_reprocess=force_reprocess)
+                self._active_render_config = config
                 self._ui_call(self._store_render_region, active_request.sample_id,
                               active_request.neuron_id, self._plot_region_context)
                 fingerprint = self._fingerprint_for_request(
@@ -4625,6 +4668,7 @@ class NeuroVisGUI:
                     error=e)
                 self._ui_call(messagebox.showerror, "Processing Error", f"Error: {str(e)}")
             finally:
+                self._active_render_config = None
                 self._plot_region_context = None
                 self._fetch_fnt(request.sample_id, request.neuron_id.removesuffix('.swc'))
                 self._ui_call(self._hide_progress)
@@ -4674,7 +4718,12 @@ class NeuroVisGUI:
                         self._ui_call(self._append_log,
                                       'Cached figures match current profile and region; reused.')
                         return [found[role] for role in needed], []
-            ion = IT.IONData() if "Context" in roles else None
+            from .config import context_unavailable_authorized
+            render_config = getattr(self, '_active_render_config', None)
+            unavailable_context = ("Context" in roles and render_config is not None and
+                                   context_unavailable_authorized(render_config,
+                                                                  request.sample_id))
+            ion = IT.IONData() if "Context" in roles and not unavailable_context else None
             panels, paths, errors = {}, [], []
             for role in roles:
                 self.update_status(f"{role} Plot · rendering…")
@@ -4686,7 +4735,8 @@ class NeuroVisGUI:
                     elif role == "Context":
                         panel = self._render_context(
                             toolkit, ion, request,
-                            self._target_for(request, request.save_context_png))
+                            self._target_for(request, request.save_context_png),
+                            config=render_config)
                     else:
                         panel = self._render_sagittal(
                             toolkit, request,

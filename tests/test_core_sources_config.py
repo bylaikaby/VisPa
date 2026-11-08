@@ -1,8 +1,9 @@
 """Focused regression checks for the standalone extraction seams.
 
-Version: 1.21.3 (local/unreleased)
+Version: 1.21.4 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../CHANGELOG.md
+2026-11-08: Verify exact missing Context sample policy and Settings list edits.
 2026-11-08: Cover strict saved-config render resolution and flat review fields.
 2026-11-08: Verify startup follows configured autoload and explicit opt-out.
 2026-11-08: Check the optional locator box and configurable cross without
@@ -120,6 +121,47 @@ assert Path(toolkit.ACTIVE_CONFIG['path']).name == 'visual_toolkit_config.yaml'
 
 
 class ReviewSettingsTests(unittest.TestCase):
+    def test_plot_subfolder_is_one_safe_component_and_blank_is_lossless(self):
+        from vispa.config import apply_fields, load, validate_plot_subfolder
+        self.assertEqual(validate_plot_subfolder('plots'), 'plots')
+        self.assertEqual(validate_plot_subfolder(None), '')
+        for unsafe in ('../plots', 'a/b', 'C:\\plots', 'CON', 'plots ', '.hidden'):
+            with self.assertRaisesRegex(ValueError, 'path-safe'):
+                validate_plot_subfolder(unsafe)
+        self.assertEqual(apply_fields({'version': 1},
+                         {'visual_toolkit.separate_plot_subfolder': ''}), {'version': 1})
+        edited = apply_fields({'version': 1},
+                              {'visual_toolkit.separate_plot_subfolder': 'plots'})
+        self.assertEqual(edited['visual_toolkit']['separate_plot_subfolder'], 'plots')
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'config.json'
+            path.write_text(json.dumps({'version': 1}), encoding='utf-8')
+            self.assertEqual(load(path)['visual_toolkit']['separate_plot_subfolder'], '')
+
+    def test_missing_context_policy_requires_exact_declared_absence(self):
+        from vispa.config import apply_fields, context_unavailable_authorized, load
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'context.json'
+            raw = {'version': 1, 'samples': {
+                '252383': {}, '252718': {}, '252527': {'resample_5um': 'exists'}},
+                'visual_toolkit': {'missing_context_samples': ['252383', '252718', '252527']}}
+            path.write_text(json.dumps(raw), encoding='utf-8')
+            loaded = load(path)
+            self.assertTrue(context_unavailable_authorized(loaded, '252383'))
+            self.assertTrue(context_unavailable_authorized(loaded, '252718'))
+            self.assertFalse(context_unavailable_authorized(loaded, '252527'))
+            self.assertFalse(context_unavailable_authorized(loaded, 'unknown'))
+            changed = apply_fields(raw, {'visual_toolkit.missing_context_samples':
+                                         '252383, 252718'})
+            self.assertEqual(changed['visual_toolkit']['missing_context_samples'],
+                             ['252383', '252718'])
+            blank = apply_fields({'version': 1},
+                                 {'visual_toolkit.missing_context_samples': ''})
+            self.assertEqual(blank, {'version': 1})
+            with self.assertRaisesRegex(ValueError, 'unique exact'):
+                apply_fields(raw, {'visual_toolkit.missing_context_samples':
+                                   '252383,252383'})
+
     def test_strict_render_settings_use_saved_file_not_mutated_mapping(self):
         from vispa.config import load, resolve_render_settings
         with tempfile.TemporaryDirectory() as directory:

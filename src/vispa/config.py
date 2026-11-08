@@ -1,8 +1,12 @@
 """Load explicit, portable VisPa dataset configuration.
 
-Version: 1.21.3 (local/unreleased)
+Version: 1.21.4 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../../CHANGELOG.md
+2026-11-08: Validate one safe optional plot subfolder; absent key preserves
+legacy root-level single-plot paths.
+2026-11-08: Validate an exact sample allowlist for explicitly unavailable
+5 µm Context panels; no missing source is inferred from a render error.
 2026-11-08: Validate saved-profile render authority, reject strict conflicts,
 and expose plot dimensions in flat-key Settings fields.
 2026-11-08: Compare resolved profile behavior with a pinned factory version;
@@ -261,6 +265,7 @@ def _empty_config(source: Path, base_dir: Path | None = None, *, origin: str) ->
     defaults = {"cache_root": user_data / "cache", "output_root": user_data / "output"}
     return {"path": source, "base_dir": base, "defaults": defaults, "samples": {},
             "visual_toolkit": {"output_root": defaults["output_root"], "settings": {},
+                               "separate_plot_subfolder": "",
                                "startup_mode": "configured"},
             "sources": {}, "config_origin": origin}
 
@@ -275,6 +280,22 @@ def _resolve(value, base: Path):
     # Path.resolve can probe a UNC server. Config loading must remain usable off
     # the lab network; child paths are normalized without opening the share.
     return Path(os.path.normpath(str(joined))) if str(base).startswith("\\\\") else joined.resolve()
+
+
+def validate_plot_subfolder(value) -> str:
+    """Return an empty legacy value or one portable, path-safe folder name."""
+    if value is None:
+        return ""
+    if not isinstance(value, str) or value != value.strip():
+        raise ValueError("separate_plot_subfolder must be one path-safe folder name")
+    if value == "":
+        return value
+    reserved = {"CON", "PRN", "AUX", "NUL"} | {
+        f"{prefix}{index}" for prefix in ("COM", "LPT") for index in range(1, 10)}
+    if (not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,79}", value) or
+            value.upper() in reserved):
+        raise ValueError("separate_plot_subfolder must be one path-safe folder name")
+    return value
 
 
 def _relative_under(value, root, key):
@@ -536,14 +557,23 @@ def load(path: str | Path | None = None, base_dir: str | Path | None = None) -> 
     for scope, values in scoped_settings.items():
         if not isinstance(values, dict):
             raise ValueError(f"visual_toolkit.settings.{scope} must be a mapping")
+    missing_context_samples = ui.get("missing_context_samples", [])
+    if (not isinstance(missing_context_samples, list) or
+            any(not isinstance(sid, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", sid)
+                for sid in missing_context_samples) or
+            len(missing_context_samples) != len(set(missing_context_samples))):
+        raise ValueError("visual_toolkit.missing_context_samples must be unique exact sample IDs")
     visual_toolkit = {"output_root": _resolve(ui.get("output_root"), configured_base),
                       "figure_output_root": _resolve(ui.get("figure_output_root"), configured_base),
+                      "separate_plot_subfolder": validate_plot_subfolder(
+                          ui.get("separate_plot_subfolder", "")),
                       "auto_reload": bool(ui.get("auto_reload", True)),
                       "worker_python": _resolve(ui.get("worker_python"), configured_base),
                       "default_sample": ui.get("default_sample", ""),
                       "default_neuron": ui.get("default_neuron", ""),
                       "auto_load": ui.get("auto_load", True),
                       "enforce_render_config": ui.get("enforce_render_config", False),
+                      "missing_context_samples": list(missing_context_samples),
                       "startup_mode": ui.get("startup_mode", "configured"),
                       "settings": copy.deepcopy(scoped_settings)}
     # Optional external tracing tool. Both paths are resolved here so the GUI
@@ -936,6 +966,22 @@ def sample_ids(config: dict | None = None) -> list[str]:
     return sorted((config if config is not None else load())["samples"])
 
 
+def context_unavailable_authorized(config: dict, sample_id: str) -> bool:
+    """Whether a saved profile explicitly allows an empty 5 µm Context panel."""
+    if not isinstance(config, Mapping):
+        raise TypeError("config must be a loaded mapping")
+    selected = config.get("path")
+    if selected is not None and Path(selected).is_file():
+        config = load(selected)
+    visual = config.get("visual_toolkit") or {}
+    listed = visual.get("missing_context_samples", [])
+    if not isinstance(listed, list):
+        raise ValueError("visual_toolkit.missing_context_samples must be a list")
+    entry = (config.get("samples") or {}).get(str(sample_id))
+    return bool(str(sample_id) in listed and isinstance(entry, Mapping) and
+                entry.get("resample_5um") is None)
+
+
 def check(sample_id: str | None = None, config: dict | None = None) -> list[dict]:
     config = config if config is not None else load()
     ids = [str(sample_id)] if sample_id else sample_ids(config)
@@ -1134,6 +1180,7 @@ def _validate_config_mapping(config):
     visual = config.get("visual_toolkit", {})
     if not isinstance(visual, Mapping):
         raise ValueError("visual_toolkit must be a mapping")
+    validate_plot_subfolder(visual.get("separate_plot_subfolder", ""))
     if not isinstance(visual.get("enforce_render_config", False), bool):
         raise ValueError("visual_toolkit.enforce_render_config must be a boolean")
     scoped = visual.get("settings", {})
@@ -1512,6 +1559,8 @@ FIELDS = (
     ("Data folders", "defaults.cache_root", "Download cache folder", "dir"),
     ("Data folders", "defaults.output_root", "Figure output folder", "dir"),
     ("Data folders", "visual_toolkit.figure_output_root", "GUI figure output folder", "dir"),
+    ("Data folders", "visual_toolkit.separate_plot_subfolder",
+     "Single-plot subfolder (blank keeps legacy root layout)", "plot_subfolder"),
     ("Sources", "sources.neuron_catalog.host", "Neuron catalog address", "text"),
     ("Sources", "sources.neuron_catalog.mode", "Neuron catalog source", "catalog_mode"),
     ("Sources", "sources.neuron_catalog.path", "Neuron catalog CSV file (CSV mode)", "file"),
@@ -1535,6 +1584,8 @@ FIELDS = (
     ("Startup", "visual_toolkit.auto_load", "Load default on startup", "bool"),
     ("Rendering", "visual_toolkit.enforce_render_config",
      "Require rendering to match saved settings", "bool"),
+    ("Rendering", "visual_toolkit.missing_context_samples",
+     "Samples with no declared 5 µm Context source (comma-separated IDs)", "sample_ids"),
     ("Render plots", "visual_toolkit.settings.review.soma_window.cubes_xy",
      "Soma window (source cubes)", "positive_number"),
     ("Render plots", "visual_toolkit.settings.review.context.width_um",
@@ -1606,6 +1657,15 @@ def apply_fields(raw: dict, values: dict[str, object]) -> dict:
             if not isinstance(supplied, bool):
                 raise ValueError(f"{dotted}: select on or off")
             value = supplied
+        elif kind == "sample_ids":
+            parts = (supplied if isinstance(supplied, list) else
+                     str(supplied).split(","))
+            value = [str(part).strip() for part in parts if str(part).strip()]
+            if (any(not re.fullmatch(r"[A-Za-z0-9_-]+", sid) for sid in value) or
+                    len(value) != len(set(value))):
+                raise ValueError(f"{dotted}: enter unique exact sample IDs")
+        elif kind == "plot_subfolder":
+            value = validate_plot_subfolder(supplied)
         else:
             value = str(supplied).strip() or None
             if kind == "catalog_mode" and value not in (None, "live-iondata", "csv"):
@@ -1625,7 +1685,9 @@ def apply_fields(raw: dict, values: dict[str, object]) -> dict:
                     raise ValueError(f"{dotted}: enter a positive whole number")
                 value = int(value)
         if (field_value(raw, dotted) is None and value is None) or (
-                kind == "bool" and not _field_exists(raw, dotted) and value is False):
+                kind == "bool" and not _field_exists(raw, dotted) and value is False) or (
+                kind == "sample_ids" and not _field_exists(raw, dotted) and value == []) or (
+                kind == "plot_subfolder" and not _field_exists(raw, dotted) and value == ""):
             continue
         node = result
         parts = _field_parts(dotted)

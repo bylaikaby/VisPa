@@ -1,6 +1,6 @@
 """Render one VisPa review set per published region/FNT job.
 
-Version: 1.21.3 (local/unreleased)
+Version: 1.21.4 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../CHANGELOG.md
 Status: candidate
@@ -177,6 +177,8 @@ def load_review_jobs(jobs_path: Path, output_root: Path, limit: int | None, all_
                 ready_job["neuron_folder"] = entry["neuron_folder"]
             if "vispa_region" in entry:
                 ready_job["vispa_region"] = entry["vispa_region"]
+            if "context_source_status" in entry:
+                ready_job["context_source_status"] = entry["context_source_status"]
             for key in ("source_acquisition_date", "source_acquisition_date_status",
                         "source_observed_at_utc", "raw_source_file_mtime_utc",
                         "raw_source_file_mtime_role", "raw_source_receipt"):
@@ -296,7 +298,7 @@ def render_review_neuron(job: dict, output_dir: Path, config_path: Path) -> dict
     """Render one neuron with the GUI's toolkit calls."""
     import matplotlib
     matplotlib.use("Agg", force=False)
-    from vispa.config import load
+    from vispa.config import load, context_unavailable_authorized
     from vispa.reviewer import make_processing_request
     from vispa.data_input_adaptor import load_raw_neuron, read_swc
     from vispa.toolkit import BLOCK_SIZE_PIXELS, REVIEW_SETTINGS, VisPa, configure_data_sources
@@ -315,6 +317,7 @@ def render_review_neuron(job: dict, output_dir: Path, config_path: Path) -> dict
     region = _region_display_value(job)
     tool = VisPa(job["sample_id"])
     panels, errors = {}, []
+    context_availability = {"status": "source_expected"}
     try:
         volume = origin = resolution = None
         try:
@@ -340,12 +343,23 @@ def render_review_neuron(job: dict, output_dir: Path, config_path: Path) -> dict
                     load_raw_neuron(config, job["sample_id"], job["neuron_id"], allow_download=False))
             if tree is None:
                 raise ValueError("raw SWC was not found")
-            wide, wide_origin, wide_resolution = tool.get_low_res_widefield(
-                request.soma_xyz, width_um=request.width_um,
-                height_um=request.height_um, depth_um=request.depth_um)
-            panels["Context"] = tool.plot_widefield_context(
-                wide, wide_origin, wide_resolution, request.soma_xyz, job["neuron_id"],
-                swc_tree=tree, soma_region=region, output_dir=str(output_dir))
+            if context_unavailable_authorized(config, job["sample_id"]):
+                if job.get("context_source_status") != "missing_declared_5um_source":
+                    raise ValueError("Frozen Context availability differs from saved config")
+                panels["Context"] = tool.plot_unavailable_context(
+                    job["neuron_id"], soma_region=region, soma_coords=request.soma_xyz,
+                    output_dir=str(output_dir), reason="5 µm source missing")
+                context_availability = {"status": "intentionally_unavailable",
+                                        "source_status": "missing_declared_5um_source",
+                                        "reason": "No declared 5 µm Context source for this sample"}
+            else:
+                wide, wide_origin, wide_resolution = tool.get_low_res_widefield(
+                    request.soma_xyz, width_um=request.width_um,
+                    height_um=request.height_um, depth_um=request.depth_um)
+                panels["Context"] = tool.plot_widefield_context(
+                    wide, wide_origin, wide_resolution, request.soma_xyz, job["neuron_id"],
+                    swc_tree=tree, soma_region=region, output_dir=str(output_dir))
+                context_availability = {"status": "source_rendered"}
         except Exception as exc:
             errors.append(f"Context: {exc}")
         try:
@@ -383,6 +397,7 @@ def render_review_neuron(job: dict, output_dir: Path, config_path: Path) -> dict
     if raw_path is not None and _sha256(raw_path).lower() != job["raw_swc_sha256"].lower():
         raise ValueError("Configured raw SWC changed during rendering")
     return {"outputs": outputs, "errors": errors,
+            "role_availability": {"Context": context_availability},
             "raw_swc_source_equivalence": "verified by hash" if raw_path is not None else "unknown"}
 
 
@@ -458,7 +473,8 @@ def _run_review_bulk_flat(plan: dict, *, dry_run: bool, renderer=None,
     from uuid import uuid4
     from vispa.config import load
     from vispa.render_records import (animal_receipt_path, record_neuron_output,
-                                      update_animal_batch, verified_neuron_record)
+                                      separate_plot_output_dir, update_animal_batch,
+                                      verified_neuron_record)
 
     result = {**plan, "status": "dry_run" if dry_run else "in_progress",
               "completed": [], "error": None}
@@ -486,6 +502,7 @@ def _run_review_bulk_flat(plan: dict, *, dry_run: bool, renderer=None,
                               "source_observed_at_utc": job.get("source_observed_at_utc"),
                               "raw_source_file_mtime_utc": job.get("raw_source_file_mtime_utc"),
                               "raw_source_file_mtime_role": job.get("raw_source_file_mtime_role"),
+                              "context_source_status": job.get("context_source_status"),
                               "neuron_folder": job.get("neuron_folder")}
                              for job in plan["jobs"]],
              "status": "in_progress", "started_at_utc": datetime.now(timezone.utc).isoformat()}
@@ -541,21 +558,27 @@ def _run_review_bulk_flat(plan: dict, *, dry_run: bool, renderer=None,
                     if missing:
                         errors.append("Missing verified output roles: " + ", ".join(missing))
                     folder.mkdir(parents=True, exist_ok=True)
+                    plot_folder = separate_plot_output_dir(folder, config)
+                    role_by_source = {Path(value).resolve(): key
+                                      for key, value in rendered.get("outputs", {}).items()
+                                      if key in roles}
                     for source in stage.rglob("*"):
                         if not source.is_file():
                             continue
                         # Keep every scientific derivative, including Soma NIfTI.
                         if source.parent != stage:
                             raise ValueError("Renderer created a nested output")
-                        target = folder / source.name
+                        role = role_by_source.get(source.resolve())
+                        destination = (plot_folder if role in {"Soma", "Context", "Sagittal"}
+                                       else folder)
+                        destination.mkdir(parents=True, exist_ok=True)
+                        target = destination / source.name
                         if target.exists():
                             base = source.name[:-7] if source.name.endswith(".nii.gz") else source.stem
                             suffix = ".nii.gz" if source.name.endswith(".nii.gz") else source.suffix
-                            target = folder / f"{base}_{uuid4().hex[:8]}{suffix}"
+                            target = destination / f"{base}_{uuid4().hex[:8]}{suffix}"
                         source.replace(target)
                         item = {"path": str(target), "sha256": _sha256(target)}
-                        role = next((key for key, value in rendered.get("outputs", {}).items()
-                                     if key in roles and Path(value).resolve() == source.resolve()), None)
                         if role is None:
                             other_outputs[target.name] = item
                         else:
@@ -580,6 +603,8 @@ def _run_review_bulk_flat(plan: dict, *, dry_run: bool, renderer=None,
                       "raw_source_file_mtime_utc": job.get("raw_source_file_mtime_utc"),
                       "raw_source_file_mtime_role": job.get("raw_source_file_mtime_role"),
                       "raw_swc_source_equivalence": rendered.get("raw_swc_source_equivalence", "unknown"),
+                      "context_source_status": job.get("context_source_status"),
+                      "role_availability": rendered.get("role_availability"),
                       "outputs": outputs, "other_outputs": other_outputs,
                       "errors": errors, "status": _status_for(outputs, errors),
                       "rendered_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -710,6 +735,8 @@ def _run_review_bulk(plan: dict, *, dry_run: bool, renderer=None, resume: bool =
                 "soma_coordinate_source": job.get("soma_coordinate_source"),
                 "raw_swc_sha256": job.get("raw_swc_sha256"),
                 "raw_swc_source_equivalence": rendered.get("raw_swc_source_equivalence", "unknown"),
+                "context_source_status": job.get("context_source_status"),
+                "role_availability": rendered.get("role_availability"),
                 "fnt_marker": job.get("fnt_marker"),
                 "fnt_cluster": job.get("fnt_cluster"),
                 "status": status,

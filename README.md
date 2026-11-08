@@ -1,7 +1,7 @@
 # VisPa — Visual Projectome Analysis tool
 
 VisPa reviews macaque neuron and microscopy data configured by the DEB lab.
-This checkout identifies as **1.21.3**. VisPa is a
+This checkout identifies as **1.21.4**. VisPa is a
 Python package inside a Conda environment. Launch the GUI directly from this
 checkout with `python run_vispa.py`.
 
@@ -50,9 +50,14 @@ not implement a second renderer. Saved-profile validation belongs to
 `vispa.data_input_adaptor.display_region_name`, and flat output history to
 `vispa.render_records`. Keep orchestration in the GUI or batch entry point and
 call these public functions instead of copying their behavior into run scripts.
-New outputs use `<output>/<sample>/neurons/001_R_M1/` with a single
-`<output>/<sample>/process_log.json`; unknown side omits the `R/L` token.
+New outputs use `<output>/<sample>/neurons/001_R_M1/` with TrioPlot and Soma
+volumes at that level, and individual Soma/Context/Sagittal PNGs in `plots/`.
+One `<output>/<sample>/process_log.json` records all results; unknown side omits the `R/L` token.
 Complete region identifiers and source-date status stay in that log.
+`visual_toolkit.separate_plot_subfolder` controls the single-plot folder.
+For samples 252383 and 252718, the saved `missing_context_samples` policy
+permits a labelled empty Context box, retaining all three positions in TrioPlot.
+It does not replace other acquisition failures with blank images.
 
 ```mermaid
 flowchart TD

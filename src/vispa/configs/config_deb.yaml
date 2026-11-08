@@ -1,4 +1,4 @@
-# ded_vispa_config_v1.0.9.yaml: single canonical DEB VisPa profile. Shared scientific
+# ded_vispa_config_v1.0.10.yaml: single canonical DEB VisPa profile. Shared scientific
 # resources are read-only; downloads and tool caches stay in a managed local
 # directory while figures are written to the approved fMOST output tree.
 # Default DEB-lab VisPa profile. Live neuron IDs use the IONData API;
@@ -6,14 +6,14 @@
 # configured intranet hosts/shares are reachable. No credentials or local tools.
 # Per-sample DS00/5 µm links are inherited source declarations, not validation or
 # anatomical acceptance. Caches and outputs are explicitly isolated by this profile.
-# Config version: 1.0.9 | Updated: 2026-11-08T16:34:03+08:00
+# Config version: 1.0.10 | Updated: 2026-11-08T17:15:45+08:00
 # History: ../../../CHANGELOG.md (Configuration history)
 # Change history: ../../../CHANGELOG.md
 version: 1
 config_name: ded_vispa_config
-config_version: 1.0.9
-config_updated_at: '2026-11-08T16:34:03+08:00'
-ds00_registry: D:\VisPa_publish_20261023\work\ds00_dataset_registry_20261103\registry.json
+config_version: 1.0.10
+config_updated_at: '2026-11-08T17:15:45+08:00'
+# Optional workstation-specific DS00 selections belong in a personal profile.
 base_dir: \\10.102.8.200\microscopy_data\fMOST\VisPa\configs
 defaults:
   ds00_root: \\10.102.8.200\microscopy_data\fMOST\resources\key_datasets\CH00DS_datasets
@@ -121,6 +121,8 @@ visual_toolkit:
   default_neuron: 004.swc
   auto_load: true
   enforce_render_config: true
+  separate_plot_subfolder: plots
+  missing_context_samples: ['252383', '252718']
   startup_mode: configured
   fnt_tracer:
     executable: '\\10.102.8.200\microscopy_data\fMOST\resources\dependencies\fnt\fnt-tracer-0.99.155\bin\fnt-tracer.exe'

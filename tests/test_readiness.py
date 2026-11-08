@@ -1,6 +1,6 @@
 """Checks for the public data-check API, CLI and GUI progress plumbing.
 
-Version: 1.21.3 (local/unreleased)
+Version: 1.21.4 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../CHANGELOG.md
 Status: candidate
@@ -25,6 +25,22 @@ from vispa.readiness import data_check
 
 
 class DataCheckTests(unittest.TestCase):
+    def test_authorized_missing_context_is_informational(self):
+        with tempfile.TemporaryDirectory() as folder:
+            config = self._config(Path(folder))
+            config['samples']['0007']['resample_5um'] = None
+            config['visual_toolkit']['missing_context_samples'] = ['0007']
+            with mock.patch('vispa.updates.load_updates', return_value={
+                    'matches_installed': True, 'installed_version': vispa.__version__,
+                    'latest_version': vispa.__version__}):
+                report = data_check(config)
+            context = next(item for item in report['checks']
+                           if item['role'] == 'resample_5um')
+            self.assertEqual(context['status'], 'intentionally_unavailable')
+            self.assertFalse(context['required'])
+            self.assertTrue(report['ready'], report['checklist'])
+            self.assertIn('Context intentionally unavailable', report['summary'])
+
     def _config(self, root):
         files = {
             "ds00.nii": b"ds00",
