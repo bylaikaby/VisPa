@@ -1,6 +1,6 @@
 # VisPa batch review
 
-Version 1.21.2. The Bulk review dialog and the packaged commands share one implementation. The ReMAP/FNT bridge and the whole-animal workflow both produce
+Version 1.21.3. The Bulk review dialog and the packaged commands share one implementation. The ReMAP/FNT bridge and the whole-animal workflow both produce
 a frozen review jobs file.
 
 The chart shows calls and data flow. The IONData catalog and declared raw
@@ -28,7 +28,11 @@ flowchart TD
     N([render_review_neuron])
   end
   J[/Frozen review jobs and raw SWC hashes/]
-  O[/Soma, Context, Sagittal, TrioPlot and receipts/]
+  O[/Soma, Context, Sagittal and TrioPlot/]
+  subgraph RECORDS["render_records.py"]
+    LOG([record_neuron_output and verified_neuron_record])
+  end
+  L[/sample/process_log.json/]
   U -->|launches worker| P
   U -->|launches worker| V
   A -->|data| P
@@ -44,14 +48,18 @@ flowchart TD
   S -->|Yes| O
   S -->|No or fresh run| N
   N -->|writes| O
+  S -->|calls| LOG
+  N -->|verified output records| LOG
+  LOG -->|reads and writes| L
   classDef callable fill:#E8F5EE,stroke:#23845B,color:#173B2C
   classDef data fill:#F1F5F9,stroke:#64748B,color:#1F2937
-  class P,M,R,V,N,U callable
-  class A,B,F,J,O data
+  class P,M,R,V,N,U,LOG callable
+  class A,B,F,J,O,L data
   style UI fill:#F4F8FF,stroke:#6186B5,color:#1F2937
   style PREP fill:#F4F8FF,stroke:#6186B5,color:#1F2937
   style LEGACY fill:#F4F8FF,stroke:#6186B5,color:#1F2937
   style BULK fill:#F4F8FF,stroke:#6186B5,color:#1F2937
+  style RECORDS fill:#F4F8FF,stroke:#6186B5,color:#1F2937
 ```
 
 ## GUI
@@ -71,7 +79,7 @@ profile hash and region selection before reusing prepared jobs.
 2. Use **Run / resume all** to verify completed results and render the remaining
    neurons in that selection with the same config.
 3. **Open results** opens the sample's figure tree. **Advanced** contains the
-   prepared jobs selector and **Open batch receipt**. Historical batches remain
+   prepared jobs selector and **Open process log**. Historical batches remain
    viewable; version or settings changes require a fresh run before rendering.
 
 The dialog keeps processing in a background worker and displays the receipt
@@ -96,8 +104,12 @@ records its source and hash. The configured portal soma is a separate
 coordinate source. When exact region entries are supplied, new jobs select
 `checked_region` first, then `ion_atlas`; the current IONData catalog exposes
 only `region`, retained as `portal_region` and used when those entries are
-absent. The jobs file and receipts preserve the selected field, catalog or CSV
-source hash, and available region entries. A displayed region is a source
+absent. New preparation also runs VisPa's native soma/atlas side lookup once
+for the selected neurons and freezes each lookup result. Where verified, plot
+titles use the same `nmt_portal=<side> <atlas region>` value as the GUI; failed
+lookups retain an explicit unknown status and the portal label. The jobs file
+and receipts preserve the selected field, catalog or CSV source hash, raw
+region entries and VisPa atlas lookup provenance. A displayed region is a source
 label, not anatomical acceptance. These jobs do not establish coordinate equivalence or
 anatomical acceptance.
 
@@ -107,7 +119,7 @@ anatomical acceptance.
 4. For an animal run, prepare a new jobs file with `--all` and explicitly render with `--all`. Review the intended root before selecting a server destination. A run-specific subfolder separates the batch figures from existing GUI output.
 5. Use `--resume` with the same jobs file and destination after an interruption. Inspect the batch receipt for reused, rendered and unready neurons. Resume reuses a result only if the input identity and four verified PNGs match.
 
-New prepared jobs use a readable run name such as `review_2026-11-08_15-45-00` (Asia/Shanghai creation time). The dry run and frozen jobs file show the resolved name; `--run-name` can set a path-safe name explicitly. Per-neuron figures use `<root>/<sample>/neurons/<sample>_<SWC ID>_<region-name>/<run_name>/` (for example `252527_011_M1`), and batch receipts use `<root>/<sample>/bulk_runs/<run_name>/`. Only a final underscore plus numeric atlas ID is removed from the folder label (`M1_79` → `M1`); the full source label remains in jobs and receipts. The neuron folder name is frozen in the jobs file; missing region uses `Unassigned`, and unsafe or long labels receive a short hash suffix. Existing jobs without `neuron_folder` and `run_name` keep their original numeric neuron and `bulk_<jobs hash prefix>` paths when resumed. The full jobs-file SHA-256 remains in the batch receipt. Reusing a name for unrelated jobs is rejected. Use a fresh jobs file and output root if a microscopy dataset was replaced in place. Resume checks the frozen SWC, profile, settings and PNG bytes.
+New prepared jobs use a readable run name such as `review_2026-11-08_15-45-00` (Asia/Shanghai creation time). The dry run and frozen jobs file show the resolved name; `--run-name` can set a path-safe name explicitly. Figures go directly in `<root>/<sample>/neurons/<SWC ID>_<verified side>_<region name>/` (for example `252527/neurons/001_R_M1/`); unknown side is omitted. Only a final underscore plus numeric atlas ID is removed from the folder label (`M1_79` → `M1`); full source labels and side provenance remain in the jobs and the sole per-animal `<root>/<sample>/process_log.json`. That log records source identities, checksums, config/settings, figure paths/hashes, and prior render history. Unknown acquisition dates remain explicitly unknown; retrieval and filesystem times have separate provenance labels. The neuron folder name is frozen in the jobs file; missing region uses `Unassigned`, and unsafe or long labels receive a short hash suffix. Existing jobs keep their original numeric neuron and `bulk_<jobs hash prefix>` paths and receipts when resumed. Resume checks the frozen SWC, profile, settings and PNG bytes.
 
 The DEB GUI figure root is `X:/fMOST/Vispa_outputs`. Choose a local stage for
 the first run. Inspect PNG roles, axes, scale bars, and sagittal extent before

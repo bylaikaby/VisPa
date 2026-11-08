@@ -1,8 +1,12 @@
 """Bounded command line for VisPa review renders and source acquisition.
 
-Version: 1.21.1 (local/unreleased)
+Version: 1.21.3 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../../CHANGELOG.md
+2026-11-08: Resolve render styles from selected saved config, reject strict
+one-off conflicts, and record/check config hashes before receipts.
+2026-11-08: Require both parsed atlas region and side for a portal-derived
+NMT title; explicitly mark an incomplete pair unavailable.
 2026-11-08: Describe the shared soma locator without implying an always-on box.
 """
 from __future__ import annotations
@@ -111,11 +115,15 @@ def _render(args):
     if any(value <= 0 for value in resolution):
         raise ValueError("--resolution values must be positive")
     from . import toolkit as tk
-    from .config import apply_settings, config_source
+    from .config import apply_settings, config_source, resolve_render_settings
     from .config import default_output_root, load
     config = load(args.config)
-    base_settings = copy.deepcopy(tk.REVIEW_SETTINGS)
-    resolved_settings = copy.deepcopy(base_settings)
+    config_hash = _sha256(Path(config["path"]))
+    # The selected config is authoritative for this run. A prior GUI or
+    # wrapper call may have changed process globals, which must not leak into
+    # keys omitted by this config.
+    resolve_render_settings("review", config, args.set)
+    resolved_settings = resolve_render_settings("review", config)
     changed = apply_settings("review", args.set, settings=resolved_settings, config=config)
     settings_config_path = (config_source(config) if
                            config.get("visual_toolkit", {}).get("settings", {}).get("review") else None)
@@ -133,7 +141,7 @@ def _render(args):
             "backend_module": str(Path(tk.__file__).resolve()),
         },
         "command": "render", "sample_id": sample,
-        "config_path": str(config["path"]),
+        "config_path": str(config["path"]), "config_sha256": config_hash,
         "neuron_id": neuron, "role": args.role, "input": str(input_path),
         "input_order": "ZYX; a 2D YX array is treated as one Z plane",
         "output_png": str(output_path), "receipt": str(receipt_path),
@@ -228,6 +236,8 @@ def _render(args):
             },
             "status": "rendered_candidate",
         }
+        if _sha256(Path(config["path"])) != config_hash:
+            raise RuntimeError("saved config changed during rendering")
         _atomic_json(receipt_path, receipt)
     except Exception:
         for reserved in reserved_paths:
@@ -278,7 +288,9 @@ def _montage(args):
     if input_path.suffix.lower() not in {".nii", ".gz"} or (input_path.suffix.lower() == ".gz" and not input_path.name.lower().endswith(".nii.gz")):
         raise ValueError("--input must be a local .nii or .nii.gz file")
     config = load(args.config)
-    settings = _montage_settings(args.set, config=config)
+    config_hash = _sha256(Path(config["path"]))
+    from .config import resolve_render_settings
+    settings = resolve_render_settings("montage", config, args.set)
     settings_config_path = (config_source(config) if
                            config.get("visual_toolkit", {}).get("settings", {}).get("montage") else None)
     if isinstance(args.max_voxels, bool) or args.max_voxels < 1:
@@ -321,7 +333,7 @@ def _montage(args):
             "status": "planned_candidate",
             "version": VERSION,
             "command": "montage",
-            "config_path": str(config["path"]),
+            "config_path": str(config["path"]), "config_sha256": config_hash,
             "input": str(input_path),
             "input_sha256": before_hash,
             "input_stat": before_stat,
@@ -383,7 +395,7 @@ def _montage(args):
             "status": "rendered_candidate",
             "version": VERSION,
             "command": "montage",
-            "config_path": str(config["path"]),
+            "config_path": str(config["path"]), "config_sha256": config_hash,
             "created_at_utc": datetime.now(timezone.utc).isoformat(),
             "input": str(input_path),
             "input_sha256": before_hash,
@@ -422,6 +434,8 @@ def _montage(args):
                 "volume_montage_sha256": _sha256(Path(sys.modules["vispa.renderers.brain_volume_montage"].__file__).resolve()),
             },
         }
+        if _sha256(Path(config["path"])) != config_hash:
+            raise RuntimeError("saved config changed during rendering")
         _atomic_json(receipt_path, receipt)
     except Exception:
         for path in reserved:
@@ -650,8 +664,15 @@ def _context(args):
     if not neuron.lower().endswith(".swc"):
         neuron += ".swc"
     config = load(args.config)
+    config_hash = _sha256(Path(config["path"]))
+    from .config import resolve_render_settings
+    settings = resolve_render_settings("review", config, {
+        key: value for key, value in {
+            "context.width_um": args.width_um,
+            "context.height_um": args.height_um,
+            "context.depth_um": args.depth_um,
+        }.items() if value is not None})
     panels.configure_data_sources(config=config)
-    settings = panels.REVIEW_SETTINGS
     width = int(args.width_um or settings["context"]["width_um"])
     height = int(args.height_um or settings["context"]["height_um"])
     depth = int(args.depth_um or settings["context"]["depth_um"])
@@ -667,7 +688,7 @@ def _context(args):
         "command": "context",
         "sample_id": sample,
         "neuron_id": neuron,
-        "config_path": str(config["path"]),
+        "config_path": str(config["path"]), "config_sha256": config_hash,
         "config_name": config["config_name"],
         "config_version": config["config_version"],
         "context_output_dir": str(output_dir),
@@ -709,14 +730,12 @@ def _context(args):
     side = region.get("side")
     if atlas_region and side:
         label = f"Portal: {portal_region or 'Unassigned'} | Atlas: {side} {atlas_region}"
-    elif atlas_region:
-        label = f"Portal: {portal_region or 'Unassigned'} | Atlas: {atlas_region}"
     else:
         label = f"Portal: {portal_region or 'Unassigned'} | Atlas: unavailable"
     if not portal_region:
         comparison = "not_possible_portal_region_blank"
-    elif not atlas_region:
-        comparison = "not_possible_atlas_region_unavailable"
+    elif not atlas_region or not side:
+        comparison = "not_possible_atlas_region_or_side_unavailable"
     elif _normal_label(portal_region) == _normal_label(atlas_region):
         comparison = "match"
     else:
@@ -771,6 +790,8 @@ def _context(args):
         "low_res_acquisition": tool.last_low_res_metadata,
         "scientific_acceptance": "not_assessed",
     }
+    if _sha256(Path(config["path"])) != config_hash:
+        raise RuntimeError("saved config changed during rendering")
     _atomic_json(receipt_path, receipt)
     print(json.dumps({
         "status": receipt["status"],

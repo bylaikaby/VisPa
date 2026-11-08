@@ -1,6 +1,6 @@
 """Bounded GUI bulk command and receipt-path contracts.
 
-Version: 1.21.2 (local/unreleased)
+Version: 1.21.3 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../CHANGELOG.md
 """
@@ -10,6 +10,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
+from vispa._version import __version__
 from vispa.review_bulk_dialog import BulkReviewDialog, batch_receipt_path, bulk_command
 
 
@@ -43,6 +44,11 @@ class BulkReviewDialogContractTests(unittest.TestCase):
             self.assertEqual(batch_receipt_path(jobs, root / "figures"),
                              (root / "figures").resolve() / "252527" / "bulk_runs" /
                              f"bulk_{digest}" / "batch_receipt.json")
+            payload = json.loads(jobs.read_text(encoding='utf-8'))
+            payload['output_layout'] = 'sample_neurons_flat'
+            jobs.write_text(json.dumps(payload), encoding='utf-8')
+            self.assertEqual(batch_receipt_path(jobs, root / 'figures'),
+                             (root / 'figures').resolve() / '252527' / 'process_log.json')
 
     def test_region_filter_is_forwarded_and_frozen_jobs_must_match(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -52,6 +58,7 @@ class BulkReviewDialogContractTests(unittest.TestCase):
             output = root / "figures"
             jobs = root / "jobs.json"
             payload = {"sample_id": "252527", "vispa_config": str(config),
+                       "output_layout": "sample_neurons_flat",
                        "figure_output_root": str(output),
                        "cache_root": str(root / "cache"),
                        "vispa_config_sha256": hashlib.sha256(config.read_bytes()).hexdigest(),
@@ -84,6 +91,8 @@ class BulkReviewDialogContractTests(unittest.TestCase):
         all_path = dialog._default_jobs_path("252527", ())
         filtered_path = dialog._default_jobs_path("252527", ("Iai_41",))
         self.assertNotEqual(all_path, filtered_path)
+        self.assertIn(f"_v{__version__}_", all_path.name)
+        self.assertIn("_review_flat_", all_path.name)
         self.assertIn("a1b2c3d4", all_path.name)
         dialog._config_sha = "e5f6a7b8"
         self.assertNotEqual(all_path, dialog._default_jobs_path("252527", ()))

@@ -1,8 +1,10 @@
 """Load explicit, portable VisPa dataset configuration.
 
-Version: 1.21.2 (local/unreleased)
+Version: 1.21.3 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../../CHANGELOG.md
+2026-11-08: Validate saved-profile render authority, reject strict conflicts,
+and expose plot dimensions in flat-key Settings fields.
 2026-11-08: Compare resolved profile behavior with a pinned factory version;
 protect versioned factory snapshots from active-profile saves.
 2026-11-08: Expose cross stroke and common figure typography/scale-bar style;
@@ -541,6 +543,7 @@ def load(path: str | Path | None = None, base_dir: str | Path | None = None) -> 
                       "default_sample": ui.get("default_sample", ""),
                       "default_neuron": ui.get("default_neuron", ""),
                       "auto_load": ui.get("auto_load", True),
+                      "enforce_render_config": ui.get("enforce_render_config", False),
                       "startup_mode": ui.get("startup_mode", "configured"),
                       "settings": copy.deepcopy(scoped_settings)}
     # Optional external tracing tool. Both paths are resolved here so the GUI
@@ -583,6 +586,8 @@ def load(path: str | Path | None = None, base_dir: str | Path | None = None) -> 
             raise ValueError(f"visual_toolkit.{key} must be a string")
     if not isinstance(visual_toolkit["auto_load"], bool):
         raise ValueError("visual_toolkit.auto_load must be a boolean")
+    if not isinstance(visual_toolkit["enforce_render_config"], bool):
+        raise ValueError("visual_toolkit.enforce_render_config must be a boolean")
     if visual_toolkit["startup_mode"] not in {"configured", "public-example"}:
         raise ValueError("visual_toolkit.startup_mode must be 'configured' or 'public-example'")
     default_sample, default_neuron = visual_toolkit["default_sample"], visual_toolkit["default_neuron"]
@@ -1129,6 +1134,8 @@ def _validate_config_mapping(config):
     visual = config.get("visual_toolkit", {})
     if not isinstance(visual, Mapping):
         raise ValueError("visual_toolkit must be a mapping")
+    if not isinstance(visual.get("enforce_render_config", False), bool):
+        raise ValueError("visual_toolkit.enforce_render_config must be a boolean")
     scoped = visual.get("settings", {})
     if not isinstance(scoped, Mapping):
         raise ValueError("visual_toolkit.settings must be a mapping")
@@ -1262,6 +1269,30 @@ def resolve_settings(scope: str, overrides=None, base: Mapping[str, Any] | None 
     configured_base = copy.deepcopy(dict(base)) if base is not None else {}
     configured_base.update(configured)
     return resolve_montage_settings(parsed, base=configured_base)
+
+
+def resolve_render_settings(scope: str, config, overrides=None, base=None) -> dict[str, Any]:
+    """Resolve a render request, rejecting changes to a strict saved profile.
+
+    Editing APIs may change the config itself; rendering may only use values
+    already saved there when ``enforce_render_config`` is enabled.
+    """
+    loaded = _load_config(config)
+    if loaded is None:
+        raise ValueError("render settings require a selected config")
+    # A caller-owned mapping may be changed after load. When it names a real
+    # saved config, that file remains the authority for rendering.
+    selected = loaded.get("path") if isinstance(loaded, Mapping) else None
+    if selected is not None and Path(selected).is_file():
+        loaded = load(selected)
+    proposed = resolve_settings(scope, overrides, base=base, config=loaded)
+    if loaded["visual_toolkit"].get("enforce_render_config", False):
+        configured = resolve_settings(scope, config=loaded)
+        if proposed != configured:
+            raise ValueError(
+                f"{scope} render settings conflict with the saved config; "
+                "edit the config through tuning before rendering")
+    return proposed
 
 
 def apply_settings(scope: str, overrides, settings: MutableMapping[str, Any] | None = None, *, config=None) -> dict[str, Any]:
@@ -1465,6 +1496,7 @@ def update_tuning(config, scope: str = "all", overrides=None, *,
 
 
 __all__ = ["SCOPES", "parse_overrides", "settings_schema", "resolve_settings",
+           "resolve_render_settings",
            "apply_settings", "tuning_status", "update_tuning", "config_source"]
 
 
@@ -1501,6 +1533,16 @@ FIELDS = (
     ("Startup", "visual_toolkit.default_sample", "Default sample ID", "text"),
     ("Startup", "visual_toolkit.default_neuron", "Default neuron ID", "text"),
     ("Startup", "visual_toolkit.auto_load", "Load default on startup", "bool"),
+    ("Rendering", "visual_toolkit.enforce_render_config",
+     "Require rendering to match saved settings", "bool"),
+    ("Render plots", "visual_toolkit.settings.review.soma_window.cubes_xy",
+     "Soma window (source cubes)", "positive_number"),
+    ("Render plots", "visual_toolkit.settings.review.context.width_um",
+     "Context width (µm)", "positive_int"),
+    ("Render plots", "visual_toolkit.settings.review.context.height_um",
+     "Context height (µm)", "positive_int"),
+    ("Render plots", "visual_toolkit.settings.review.context.depth_um",
+     "Context depth (µm)", "positive_int"),
 )
 
 def parse_text(content: str, path: str | Path) -> dict:
@@ -1521,9 +1563,16 @@ def dump_text(raw: dict, path: str | Path) -> str:
     return yaml.safe_dump(raw, sort_keys=False, allow_unicode=True)
 
 
+def _field_parts(dotted: str) -> list[str]:
+    prefix = "visual_toolkit.settings.review."
+    if dotted.startswith(prefix):
+        return ["visual_toolkit", "settings", "review", dotted[len(prefix):]]
+    return dotted.split(".")
+
+
 def field_value(raw: dict, dotted: str):
     node = raw
-    for part in dotted.split("."):
+    for part in _field_parts(dotted):
         if not isinstance(node, dict):
             return None
         node = node.get(part)
@@ -1532,7 +1581,7 @@ def field_value(raw: dict, dotted: str):
 
 def _field_exists(raw: dict, dotted: str) -> bool:
     node = raw
-    for part in dotted.split("."):
+    for part in _field_parts(dotted):
         if not isinstance(node, dict) or part not in node:
             return False
         node = node[part]
@@ -1579,7 +1628,7 @@ def apply_fields(raw: dict, values: dict[str, object]) -> dict:
                 kind == "bool" and not _field_exists(raw, dotted) and value is False):
             continue
         node = result
-        parts = dotted.split(".")
+        parts = _field_parts(dotted)
         for part in parts[:-1]:
             child = node.get(part)
             if child is None:

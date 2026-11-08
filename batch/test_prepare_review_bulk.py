@@ -1,6 +1,6 @@
 """Bounded job-preparation tests for exact animal identities and raw cache.
 
-Version: 1.21.2 (local/unreleased)
+Version: 1.21.3 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../CHANGELOG.md
 Status: candidate
@@ -16,6 +16,7 @@ from unittest import mock
 
 from batch.prepare_review_bulk import plan_jobs, prepare_jobs
 from vispa.review_bulk_prepare import _region_entries, _selected_region
+from vispa.data_input_adaptor import region_display_label
 from vispa.review_bulk_dialog import BulkReviewDialog
 from vispa.config import load as load_config
 from vispa.review_bulk_render import (
@@ -25,6 +26,16 @@ from vispa.review_bulk_render import (
 
 
 class PrepareReviewBulkTests(unittest.TestCase):
+    def setUp(self):
+        def sides(sample, neuron_ids, config):
+            return {"status": "complete", "source": {"method": "fixture soma atlas"},
+                    "results": {name: {"status": "verified", "side": "Right", "reason": "fixture",
+                                       "source": {"atlas_region": "CR_M1"}}
+                                for name in neuron_ids}}
+        patcher = mock.patch("batch.prepare_review_bulk.acquire_neuron_sides", side_effect=sides)
+        self.side_mock = patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_exact_sources_are_cached_and_frozen(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -35,8 +46,9 @@ class PrepareReviewBulkTests(unittest.TestCase):
             first.write_text("1 1 1 2 3 1 -1\n", encoding="utf-8")
             second.write_text("1 1 4 5 6 1 -1\n", encoding="utf-8")
             identities = root / "identities.csv"
-            identities.write_text("sample,neuron_id,ion_atlas,checked_region\n"
-                                  "251637,002.swc,M1_79,\n251637,001.swc,M1_79,Right INS\n")
+            identities.write_text("sample,neuron_id,ion_atlas,checked_region,portal_region\n"
+                                  "251637,002.swc,M1_79,,M1_79\n"
+                                  "251637,001.swc,M1_79,Right INS,M1_79\n")
             receipt = root / "sources.json"
             receipt.write_text(json.dumps({
                 "sample_id": "251637", "raw_folder": str(sources), "manifest_count": 2,
@@ -49,6 +61,10 @@ class PrepareReviewBulkTests(unittest.TestCase):
             jobs_path = root / "jobs" / "prepared.json"
             plan = plan_jobs(config, "251637", identities, False, [sources.parent], cache,
                              receipt, None, True)
+            self.side_mock.assert_called_once()
+            self.assertEqual(self.side_mock.call_args.args[1], ["001.swc", "002.swc"])
+            self.assertEqual(plan["vispa_region_lookup"]["source"]["method"],
+                             "fixture soma atlas")
             self.assertEqual((plan["selected_count"], plan["available_count"]), (2, 2))
             self.assertFalse(cache.exists())
             result = prepare_jobs(plan, jobs_path, dry_run=False, allow_download=False)
@@ -60,20 +76,23 @@ class PrepareReviewBulkTests(unittest.TestCase):
             self.assertEqual(jobs["jobs"][0]["soma_region"], "Right INS")
             self.assertEqual(jobs["jobs"][0]["soma_region_source"]["field"], "checked_region")
             self.assertEqual(jobs["jobs"][1]["soma_region"], "M1_79")
-            self.assertEqual(jobs["jobs"][0]["neuron_folder"], "251637_001_Right_INS_" +
-                             hashlib.sha256("251637_001_Right INS".encode()).hexdigest()[:8])
-            self.assertEqual(jobs["jobs"][1]["neuron_folder"], "251637_002_M1")
-            self.assertEqual(jobs["output_layout"], "sample_neurons")
+            self.assertEqual(jobs["jobs"][0]["neuron_folder"], "001_R_Right_INS_" +
+                             hashlib.sha256("001_R_Right INS".encode()).hexdigest()[:8])
+            self.assertEqual(jobs["jobs"][1]["neuron_folder"], "002_R_M1")
+            self.assertEqual(jobs["output_layout"], "sample_neurons_flat")
+            self.assertIsNone(jobs["jobs"][0]["source_acquisition_date"])
+            self.assertIn("unknown", jobs["jobs"][0]["source_acquisition_date_status"])
             self.assertRegex(jobs["run_name"], r"^review_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$")
             self.assertEqual(jobs["run_name"], plan["run_name"])
-            render_plan = load_review_jobs(jobs_path, root / "figures", 1, False)
-            self.assertEqual(Path(render_plan["jobs"][0]["output_dir"]).name, plan["run_name"])
-            self.assertEqual(Path(render_plan["jobs"][0]["output_dir"]).parent.name,
+            render_plan = load_review_jobs(jobs_path, Path(jobs["figure_output_root"]), 1, False)
+            self.assertEqual(Path(render_plan["jobs"][0]["output_dir"]).name,
                              jobs["jobs"][0]["neuron_folder"])
+            self.assertEqual(Path(render_plan["jobs"][0]["output_dir"]).parent.name, "neurons")
             self.assertEqual(render_plan["jobs"][0]["soma_region"], "Right INS")
             self.assertEqual(render_plan["jobs"][0]["soma_region_entries"]["ion_atlas"], "M1_79")
             self.assertEqual(_region_display_value(render_plan["jobs"][0]),
-                             "checked_region=Right INS")
+                             "checked_region=Right INS | Portal: M1_79 | Atlas: Right M1")
+            self.assertEqual(render_plan["jobs"][0]["vispa_region"]["status"], "verified")
             self.assertEqual(hashlib.sha256((cache / "251637/001.swc").read_bytes()).hexdigest(),
                              jobs["jobs"][0]["raw_swc_sha256"])
 
@@ -107,6 +126,14 @@ class PrepareReviewBulkTests(unittest.TestCase):
             self.assertEqual(plan["jobs"][0]["neuron_id"], "001.swc")
             self.assertEqual(plan["jobs"][0]["soma_region"], "M1_79")
             self.assertEqual(plan["jobs"][0]["soma_region_source"]["field"], "portal_region")
+            with (mock.patch("batch.prepare_review_bulk.list_neurons", return_value=snapshot),
+                  mock.patch("batch.prepare_review_bulk.acquire_neuron_sides",
+                             side_effect=RuntimeError("offline"))):
+                offline = plan_jobs(config, "251637", None, True, [], root / "cache",
+                                    None, 1, False)
+            self.assertEqual(offline["jobs"][0]["vispa_region"]["status"], "error")
+            self.assertEqual(_region_display_value(offline["jobs"][0]),
+                             "Portal: M1_79 | Atlas: unavailable")
 
     def test_region_union_filters_before_limit_and_unknown_fails(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -158,6 +185,18 @@ class PrepareReviewBulkTests(unittest.TestCase):
         self.assertEqual(_region_display_value({"soma_region": "M1_79",
                                                 "soma_region_source": {"field": "portal_region"}}),
                          "portal_region=M1_79")
+        self.assertEqual(_region_display_value({"soma_region": "M1_79",
+                                                "soma_region_entries": {"portal_region": "M1_79"},
+                                                "soma_region_source": {"field": "portal_region"},
+                                                "vispa_region": {"status": "verified", "side": "Right",
+                                                                 "source": {"atlas_region": "CR_M1"}}}),
+                     "Portal: M1_79 | Atlas: Right M1")
+        self.assertEqual(region_display_label("M1_79", {"status": "verified", "side": "Right",
+                                                         "source": {"atlas_region": "CR_M1"}}),
+                     "Portal: M1_79 | Atlas: Right M1")
+        self.assertEqual(region_display_label("M1_79", {"status": "error", "side": None,
+                                                         "source": None}),
+                         "Portal: M1_79 | Atlas: unavailable")
         with self.assertRaisesRegex(ValueError, "must be a string"):
             _selected_region(_region_entries({"soma_region": {"checked_region": ["M1_79"]}}))
 
@@ -168,10 +207,10 @@ class PrepareReviewBulkTests(unittest.TestCase):
         for name in ("../escape", "a/b", "a\\b", "", ".", "bad name", "CON", "com1", "LPT9"):
             with self.subTest(name=name), self.assertRaises(ValueError):
                 validate_run_name(name)
-        self.assertEqual(neuron_folder_name("252527", "011.swc", "M1_79"), "252527_011_M1")
-        self.assertEqual(neuron_folder_name("252527", "011.swc", "PMdc_82"), "252527_011_PMdc")
-        self.assertEqual(neuron_folder_name("252527", "011.swc", "area_7a_122"), "252527_011_area_7a")
-        self.assertEqual(neuron_folder_name("252527", "011.swc", None), "252527_011_Unassigned")
+        self.assertEqual(neuron_folder_name("252527", "011.swc", "M1_79", side="Right"), "011_R_M1")
+        self.assertEqual(neuron_folder_name("252527", "011.swc", "PMdc_82", side="Left"), "011_L_PMdc")
+        self.assertEqual(neuron_folder_name("252527", "011.swc", "area_7a_122"), "011_area_7a")
+        self.assertEqual(neuron_folder_name("252527", "011.swc", None), "011_Unassigned")
         self.assertNotIn("/", neuron_folder_name("252527", "011.swc", "../../region"))
 
     def test_canonical_gui_cache_and_figure_root_round_trip(self):
@@ -227,6 +266,110 @@ class PrepareReviewBulkTests(unittest.TestCase):
             (folder / "review_receipt.json").write_text('{"job_sha256":"unrelated"}', encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "different job"):
                 run_review_bulk(plan, dry_run=False, renderer=lambda *_: self.fail("rendered"), resume=True)
+
+    def test_flat_render_uses_one_log_and_retains_history(self):
+        from PIL import Image
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            config = Path(__file__).parents[1] / "src/vispa/configs/config_deb.yaml"
+            jobs_path = root / "jobs" / "jobs.json"
+            jobs_path.parent.mkdir()
+            jobs_path.write_text(json.dumps({
+                "schema": "vispa.review_bulk.v1", "sample_id": "251637",
+                "vispa_config": str(config), "output_layout": "sample_neurons_flat",
+                "run_name": "review_fixture", "allow_all": False,
+                "figure_output_root": str(root / "figures"),
+                "jobs": [{"sample_id": "251637", "neuron_id": "001.swc",
+                          "neuron_folder": "001_R_M1", "soma_xyz": [1, 2, 3],
+                          "render_ready": True}],
+            }), encoding="utf-8")
+            configured = load_config(config)
+            configured["visual_toolkit"]["figure_output_root"] = root / "figures"
+            output_root = root / "figures"
+            with mock.patch("vispa.config.load", return_value=configured):
+                plan = load_review_jobs(jobs_path, output_root, 1, False)
+            def render(_job, folder, _config):
+                paths = {}
+                for role in ("Soma", "Context", "Sagittal", "TrioPlot"):
+                    path = folder / f"{role}.png"
+                    Image.new("RGB", (2, 2), "red").save(path)
+                    paths[role] = str(path)
+                (folder / "SomaBlock.nii.gz").write_bytes(b"fixture derivative")
+                return {"outputs": paths, "errors": []}
+            with mock.patch("vispa.config.load", return_value=configured), mock.patch(
+                    "vispa.review_bulk_render._verified_raw_path", return_value=None):
+                first = run_review_bulk(plan, dry_run=False, renderer=render)
+                self.assertEqual(first["status"], "pass", first.get("error"))
+                log_path = output_root / "251637" / "process_log.json"
+                record = json.loads(log_path.read_text(encoding="utf-8"))
+                self.assertEqual(record["current_batch"]["source_jobs"][0]["neuron_id"], "001.swc")
+                self.assertEqual(len(record["neurons"]["001.swc"]["current"]["outputs"]), 4)
+                folder = Path(plan["jobs"][0]["output_dir"])
+                self.assertEqual(folder.name, "001_R_M1")
+                self.assertTrue((folder / "SomaBlock.nii.gz").is_file())
+                self.assertFalse((folder / "review_receipt.json").exists())
+                self.assertFalse((output_root / "251637" / "bulk_runs").exists())
+                with mock.patch("vispa.review_bulk_render.render_review_neuron", side_effect=AssertionError("rerendered")):
+                    resumed = run_review_bulk(plan, dry_run=False, resume=True)
+                self.assertEqual(resumed["completed"][0]["resume_action"], "verified_skip")
+                second = run_review_bulk(plan, dry_run=False, renderer=render)
+                self.assertEqual(second["status"], "pass")
+                record = json.loads(log_path.read_text(encoding="utf-8"))
+                self.assertEqual(len(record["neurons"]["001.swc"]["history"]), 1)
+                self.assertGreaterEqual(len(record["batches"]), 2)
+
+    def test_animal_log_preserves_brain_view_across_review_rerender(self):
+        from vispa.render_records import record_neuron_output, record_neuron_product
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "251637" / "process_log.json"
+            record_neuron_output(path, "251637", "001.swc", {
+                "sample_id": "251637", "neuron_id": "001.swc", "status": "rendered_candidate",
+                "outputs": {"Soma": {"path": "fixture"}}, "errors": []})
+            record_neuron_product(path, "251637", "001.swc", "SWC3D",
+                                  {"path": "brain-view.png", "sha256": "fixture-hash"})
+            record_neuron_output(path, "251637", "001.swc", {
+                "sample_id": "251637", "neuron_id": "001.swc", "status": "rendered_candidate",
+                "outputs": {"Soma": {"path": "new-fixture"}}, "errors": []})
+            slot = json.loads(path.read_text(encoding="utf-8"))["neurons"]["001.swc"]
+            self.assertEqual(slot["current"]["products"]["SWC3D"]["path"], "brain-view.png")
+            self.assertEqual(slot["current"]["outputs"]["Soma"]["path"], "new-fixture")
+            self.assertEqual(len(slot["history"]), 2)
+
+    def test_cache_control_requires_complete_reviewed_classification(self):
+        from work.ins_cohort_20261108.cache_control import (
+            classifications, reverify_candidate, select_cache_candidates, source_cubes)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            labels = root / "labels.csv"
+            labels.write_text("neuron_id,classification\n001.swc,non_insular\n", encoding="utf-8")
+            self.assertEqual(classifications(labels, {"001.swc"}),
+                             {"001.swc": "non_insular"})
+            with self.assertRaisesRegex(ValueError, "cover every"):
+                classifications(labels, {"001.swc", "002.swc"})
+            sidecar = root / "Soma.nii.gz.json"
+            sidecar.write_text(json.dumps({"sample_id": "251637", "complete": True,
+                "source_paths": ["http://host/monkeydata/251637/cube/95/66_47_95.tif"]}),
+                encoding="utf-8")
+            self.assertEqual(source_cubes(sidecar, hashlib.sha256(sidecar.read_bytes()).hexdigest(),
+                                          "251637"), {"95/66_47_95.tif"})
+            cache = root / "cache"
+            depth = cache / "95"
+            depth.mkdir(parents=True)
+            for name in ("1_1_95.tif", "2_2_95.tif", "3_3_95.tif"):
+                (depth / name).write_bytes(name.encode())
+            owners = {"95/1_1_95.tif": {"001.swc"},
+                      "95/2_2_95.tif": {"001.swc", "002.swc"}}
+            selected, protected = select_cache_candidates(
+                cache, owners, {"001.swc": "non_insular", "002.swc": "insular"})
+            self.assertEqual(([Path(item["path"]).name for item in selected], protected),
+                             (["1_1_95.tif"], 2))
+            reverify_candidate(depth / "1_1_95.tif", selected[0]["sha256"], cache)
+            (root / "outside.tif").write_bytes((depth / "1_1_95.tif").read_bytes())
+            with self.assertRaisesRegex(ValueError, "changed"):
+                reverify_candidate(root / "outside.tif", selected[0]["sha256"], cache)
+            (depth / "1_1_95.tif").write_bytes(b"changed")
+            with self.assertRaisesRegex(ValueError, "changed"):
+                reverify_candidate(depth / "1_1_95.tif", selected[0]["sha256"], cache)
 
 
 if __name__ == "__main__":

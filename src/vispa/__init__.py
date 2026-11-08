@@ -3,14 +3,14 @@
 Importing the package root does not import Matplotlib, acquisition providers, or
 optional image libraries. Public names are loaded on first access.
 
-Version: 1.21.2 (local/unreleased)
+Version: 1.21.3 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../../CHANGELOG.md
 """
 from importlib import import_module
 from ._version import __version__
 
-_SETTINGS_NAMES = {"settings_schema", "resolve_settings", "apply_settings",
+_SETTINGS_NAMES = {"settings_schema", "resolve_settings", "resolve_render_settings", "apply_settings",
                    "tuning_status", "update_tuning"}
 _DATA_CHECK_NAMES = {"check", "data_check"}
 _UPDATE_NAMES = {"load_git_updates", "load_updates", "parse_updates"}

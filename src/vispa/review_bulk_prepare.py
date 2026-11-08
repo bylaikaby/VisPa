@@ -1,6 +1,6 @@
 """Freeze one animal of exact raw-SWC review jobs with a managed byte cache.
 
-Version: 1.21.2 (local/unreleased)
+Version: 1.21.3 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../CHANGELOG.md
 Status: candidate
@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import argparse
 import csv
-from datetime import datetime
+from datetime import datetime, timezone
 import hashlib
 import io
 import json
@@ -25,7 +25,7 @@ from zoneinfo import ZoneInfo
 from vispa.config import load
 from vispa.data_input_adaptor import (
     PortalSWCProvider, _guard_managed_cache, _publish_swc_versioned,
-    list_neurons, read_swc,
+    acquire_neuron_sides, list_neurons, read_swc,
 )
 
 from .review_bulk_render import _atomic_json, _sha256, neuron_folder_name, validate_run_name
@@ -66,6 +66,29 @@ def _selected_region(entries: dict) -> tuple[str | None, str | None]:
     if value and value.strip():
         return value.strip(), "portal_region"
     return None, None
+
+
+def _source_receipt_info(path: Path | None, digest: str | None,
+                         sample: str, neuron: str) -> dict:
+    """Read cache provenance without treating retrieval time as source date."""
+    if path is None:
+        return {"status": "source_absent"}
+    receipt = path.with_name(path.name + ".source.json")
+    if not receipt.is_file():
+        return {"status": "receipt_absent"}
+    data = receipt.read_bytes()
+    try:
+        content = json.loads(data)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return {"status": "receipt_unreadable", "path": str(receipt),
+                "receipt_sha256": hashlib.sha256(data).hexdigest()}
+    matched = (isinstance(content, dict) and content.get("sample_id") == sample and
+               content.get("neuron_id") == neuron and content.get("sha256") == digest)
+    return {"status": "verified_identity_and_hash" if matched else "identity_or_hash_mismatch",
+            "path": str(receipt), "receipt_sha256": hashlib.sha256(data).hexdigest(),
+            "retrieved_at_utc": content.get("retrieved_at_utc") if matched else None,
+            "freshness": content.get("freshness") if matched else None,
+            "origin_url": content.get("origin_url") if matched else None}
 
 
 def _identities_from_csv(path: Path, sample: str) -> tuple[list[str], dict, dict[str, dict]]:
@@ -172,7 +195,16 @@ def plan_jobs(config_path: Path, sample: str, identities: Path | None, catalog: 
             raise ValueError("Managed cache must be separate from declared raw source root")
         if declared not in roots and declared != cache_root:
             roots.append(declared)
+    try:
+        side_batch = acquire_neuron_sides(sample, selected, config)
+        side_results = side_batch["results"]
+    except (OSError, RuntimeError, ValueError, KeyError, TypeError) as exc:
+        reason = f"VisPa native atlas region acquisition failed: {exc}"
+        side_batch = {"status": "unavailable", "source": {"reason": reason}}
+        side_results = {name: {"status": "error", "side": None,
+                               "reason": reason, "source": None} for name in selected}
     jobs = []
+    observed_at_utc = datetime.now(timezone.utc).isoformat()
     for name in selected:
         region_entries = regions_by_neuron.get(name) or {}
         region, region_field = _selected_region(region_entries)
@@ -184,15 +216,30 @@ def plan_jobs(config_path: Path, sample: str, identities: Path | None, catalog: 
         if len(hashes) > 1:
             raise ValueError(f"Conflicting raw source bytes for {sample}/{name}")
         digest = next(iter(hashes), None)
+        source_receipt = _source_receipt_info(candidates[0] if candidates else None,
+                                              digest, sample, name)
+        source_mtime_utc = (datetime.fromtimestamp(candidates[0].stat().st_mtime, timezone.utc).isoformat()
+                            if candidates else None)
         if digest and expected and digest != expected[name]:
             raise ValueError(f"Raw source hash differs from receipt for {sample}/{name}")
+        vispa_region = side_results.get(name, {"status": "unknown", "side": None,
+                                               "reason": "No VisPa region result", "source": None})
+        verified_side = (vispa_region.get("side") if vispa_region.get("status") == "verified"
+                         and vispa_region.get("side") in {"Left", "Right"} else None)
         jobs.append({"sample_id": sample, "neuron_id": name,
-                     "neuron_folder": neuron_folder_name(sample, name, region),
+                     "vispa_region": vispa_region,
+                     "neuron_folder": neuron_folder_name(sample, name, region, side=verified_side),
                      "soma_region": region,
                      "soma_region_entries": region_entries,
                      "soma_region_source": ({**identity_source, "field": region_field} if region else None),
                      "raw_source_path": str(candidates[0]) if candidates else None,
                      "raw_swc_sha256": digest, "expected_raw_swc_sha256": expected.get(name),
+                     "raw_source_receipt": source_receipt,
+                     "source_acquisition_date": None,
+                     "source_acquisition_date_status": "unknown; no verified date in source metadata",
+                     "source_observed_at_utc": observed_at_utc,
+                     "raw_source_file_mtime_utc": source_mtime_utc,
+                     "raw_source_file_mtime_role": "filesystem mtime; not acquisition date",
                      "cache_path": str(cache_root / sample / name),
                      "render_ready": bool(digest),
                      "soma_error": None if digest else "raw SWC absent from declared roots; download requires --allow-download"})
@@ -201,6 +248,9 @@ def plan_jobs(config_path: Path, sample: str, identities: Path | None, catalog: 
             "vispa_config": str(config_path), "vispa_config_sha256": _sha256(config_path),
             "figure_output_root": str(config["visual_toolkit"]["figure_output_root"]),
             "identity_source": identity_source, "expected_source": expected_source,
+            "vispa_region_lookup": {"status": side_batch.get("status"),
+                                    "source": side_batch.get("source"),
+                                    "counts": side_batch.get("counts")},
             "region_filter": {"labels": requested_regions, "field": "portal_region",
                               "source": identity_source},
             "catalog_excluded": catalog_excluded,
@@ -255,7 +305,14 @@ def prepare_jobs(plan: dict, output_jobs: Path, *, dry_run: bool, allow_download
                          "soma_coordinate_source": str(target) + f"#root-node-{tree.root.id}",
                          "raw_swc_path": str(target), "raw_swc_sha256": digest,
                          "raw_source_path": str(source) if source else "portal managed cache",
+                         "raw_source_receipt": item["raw_source_receipt"],
+                         "source_acquisition_date": item["source_acquisition_date"],
+                         "source_acquisition_date_status": item["source_acquisition_date_status"],
+                         "source_observed_at_utc": item["source_observed_at_utc"],
+                         "raw_source_file_mtime_utc": item["raw_source_file_mtime_utc"],
+                         "raw_source_file_mtime_role": item["raw_source_file_mtime_role"],
                          "soma_region": item["soma_region"],
+                         "vispa_region": item["vispa_region"],
                          "soma_region_entries": item["soma_region_entries"],
                          "soma_region_source": item["soma_region_source"],
                          "fnt_marker": None, "fnt_cluster": None})
@@ -269,7 +326,8 @@ def prepare_jobs(plan: dict, output_jobs: Path, *, dry_run: bool, allow_download
                "vispa_config_sha256": plan["vispa_config_sha256"],
                "figure_output_root": plan["figure_output_root"],
                "allow_all": plan["allow_all"],
-               "output_layout": "sample_neurons", "identity_source": plan["identity_source"],
+               "output_layout": "sample_neurons_flat", "identity_source": plan["identity_source"],
+               "vispa_region_lookup": plan["vispa_region_lookup"],
                "region_filter": plan["region_filter"],
                "catalog_excluded": plan["catalog_excluded"],
                "source_receipt": plan["expected_source"], "cache_root": plan["cache_root"],

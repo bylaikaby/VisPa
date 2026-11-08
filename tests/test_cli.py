@@ -1,14 +1,16 @@
 """CLI contract tests for bounded standalone use.
 
-Version: 1.21.0 (local/unreleased)
+Version: 1.21.3 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../CHANGELOG.md
+2026-11-08: Exercise strict render policy and explicit legacy override path.
 """
 from __future__ import annotations
 
 import json
 import hashlib
 import io
+from contextlib import redirect_stdout
 import os
 from pathlib import Path
 import runpy
@@ -74,6 +76,27 @@ def same_planned_path(actual, expected, existing_parent):
 
 
 class CliContractTests(unittest.TestCase):
+    def test_strict_render_rejects_conflicting_style_before_outputs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "tiny.npy"
+            np.save(source, np.ones((3, 5, 5), dtype=np.uint8))
+            config = root / "strict.json"
+            config.write_text(json.dumps({"version": 1, "visual_toolkit": {
+                "enforce_render_config": True,
+                "settings": {"review": {"marker.linewidth": 1.0}}}}),
+                encoding="utf-8")
+            output = root / "out"
+            result = run_cli(*render_args(source, output, "--config", config,
+                                          "--set", "marker.linewidth=2"), cwd=root)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("saved config", result.stderr)
+            self.assertFalse(output.exists())
+            same = run_cli(*render_args(source, output, "--config", config,
+                                        "--set", "marker.linewidth=1", "--dry-run"), cwd=root)
+            self.assertEqual(same.returncode, 0, same.stderr)
+            self.assertEqual(json.loads(same.stdout)["review_settings"]["marker"]["linewidth"], 1.0)
+
     def test_root_script_defaults_to_gui(self):
         from vispa import cli
         with mock.patch.object(sys, "argv", [str(ROOT / "run_vispa.py")]), \
@@ -280,7 +303,11 @@ assert main(["settings", "--scope", "all"]) == 0
             source = tmp_path / "tiny.npy"
             np.save(source, np.ones((3, 5, 5), dtype=np.uint8))
             output = tmp_path / "out"
-            result = run_cli(*render_args(source, output, "--set", "marker.color=#123456", "--dry-run"),
+            legacy = tmp_path / "legacy.json"
+            legacy.write_text(json.dumps({"version": 1, "visual_toolkit": {
+                "enforce_render_config": False}}), encoding="utf-8")
+            result = run_cli(*render_args(source, output, "--config", legacy,
+                                          "--set", "marker.color=#123456", "--dry-run"),
                              cwd=tmp_path)
             self.assertEqual(result.returncode, 0, result.stderr)
             plan = json.loads(result.stdout)
@@ -454,7 +481,11 @@ assert main(["settings", "--scope", "all"]) == 0
             volume[:, 2, 2] = 255
             np.save(source, volume)
             output = tmp_path / "out"
-            result = run_cli(*render_args(source, output, "--set", "figure.review_figsize=5,3",
+            legacy = tmp_path / "legacy.json"
+            legacy.write_text(json.dumps({"version": 1, "visual_toolkit": {
+                "enforce_render_config": False}}), encoding="utf-8")
+            result = run_cli(*render_args(source, output, "--config", legacy,
+                                          "--set", "figure.review_figsize=5,3",
                                           "--set", "figure.review_dpi=50",
                                           "--set", "marker.color=#ff00ff",
                                           "--set", "marker.crosshair_px=2",
@@ -516,6 +547,14 @@ assert main(["settings", "--scope", "all"]) == 0
                 "review": {"marker.color": "#123456", "figure.panel_dpi": 40,
                            "figure.review_dpi": 45}}}}), encoding="utf-8")
             try:
+                with mock.patch.dict(toolkit.REVIEW_SETTINGS["marker"], {"linewidth": 8.0}):
+                    stream = io.StringIO()
+                    with redirect_stdout(stream):
+                        result = main(list(map(str, render_args(
+                            source, root / "dry-run", "--config", config, "--dry-run"))))
+                    self.assertEqual(result, 0)
+                    plan = json.loads(stream.getvalue())
+                    self.assertEqual(plan["review_settings"]["marker"]["linewidth"], 1.0)
                 for index in range(2):
                     result = main(list(map(str, render_args(source, root / f"success-{index}",
                                                             "--config", config))))

@@ -1,10 +1,12 @@
 """
 vispa_gui.py - GUI for NeuroVis Visual Toolkit
 
-Version: 1.21.2 (local/unreleased)
+Version: 1.21.3 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../../CHANGELOG.md
 Status: candidate (GUI layout reviewed; scientific review pending)
+2026-11-08: Resolve saved review and Brain View folders from the active profile and
+exact region/side; consolidate figure provenance in one animal process log.
 2026-10-30: Record effective fixed crosshair and smaller legacy square separately from legacy
 profile settings in figure fingerprints and cache receipts.
 2026-11-02: Pass a validated current-sample portal region to brain-view after manual identity entry.
@@ -28,8 +30,8 @@ KEY FEATURES:
     - Render (F5) produces the complete panel set (Soma, Context, Sagittal and
       TrioPlot); there is no per-panel selection to tick
     - Preview: one panel at a time in the right pane
-    - Saving: choose the output folder; the ticked panels and Soma NIfTI are
-      written automatically, and "Browse…" / "Open output folder" sit in one block
+    - Saving: the active profile supplies the read-only output folder; selected
+      panels and Soma NIfTI are written automatically there
     - Auto-Load on Startup: Uses optional configured identity and auto-load defaults
     - Auto-Fill Soma: Read soma coordinates from the configured SWC source
     - Neuron list: Browse the configured live or dated source and select an exact SWC ID
@@ -151,8 +153,10 @@ import queue
 import contextlib
 import shutil
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
-from dataclasses import dataclass
+from types import SimpleNamespace
+from dataclasses import dataclass, replace
 from importlib import resources
 from ._version import __version__
 from .config import _stamp
@@ -426,10 +430,16 @@ def _resolve_figure_output_root(config_path=None):
     return _resolve_output_root(config_path)
 
 
-def _figure_folder(root, sample_id, neuron_id):
+def _figure_folder(root, sample_id, neuron_id, region=None, *, side=None):
+    """Use the shared catalog-region folder for new figures."""
+    from .review_bulk_render import neuron_folder_name
     sample = re.sub(r'[^A-Za-z0-9_.-]', '_', str(sample_id).strip()).strip('.') or 'sample'
     neuron = re.sub(r'[^A-Za-z0-9_.-]', '_', str(neuron_id).strip().removesuffix('.swc')).strip('.') or 'neuron'
-    return os.path.join(root, sample, 'neurons', neuron)
+    if region is None:
+        # A provisional display path before the exact catalog lookup completes.
+        return os.path.join(root, sample, 'neurons', neuron)
+    return os.path.join(root, sample, 'neurons',
+                        neuron_folder_name(sample_id, neuron_id, region, side=side))
 
 # Import the core toolkit
 try:
@@ -463,6 +473,9 @@ class NeuroVisGUI:
         """Initialize GUI window and widgets."""
         from .config import config_version_report, load
         configuration = load(config_path)
+        from .config import resolve_settings
+        self._profile_review_settings = resolve_settings('review', config=configuration)
+        self._profile_config_sha256 = self._file_sha256(Path(configuration['path']))
         self.version_report = config_version_report(configuration)
         (sample_id, neuron_id), identity_source, auto_load = resolve_gui_launch_defaults(
             configuration, sample_id, neuron_id, auto_load)
@@ -498,13 +511,16 @@ class NeuroVisGUI:
         self.grid_radius = tk.IntVar(value=1)
         # Context/widefield defaults come from the shared review settings so the GUI
         # and the bulk runners cannot disagree.
-        context = REVIEW_SETTINGS['context']
+        context = self._profile_review_settings['context']
         self.width_um = tk.StringVar(value=str(context['width_um']))
         self.height_um = tk.StringVar(value=str(context['height_um']))
         self.depth_um = tk.StringVar(value=str(context['depth_um']))
         # Soma panel window in cubes; the toolkit takes the largest covered centred step.
         self.soma_cubes = tk.StringVar(
-            value=f"{REVIEW_SETTINGS['soma_window']['cubes_xy']:g}")
+            value=f"{self._profile_review_settings['soma_window']['cubes_xy']:g}")
+        self.soma_window_description = tk.StringVar(value=(
+            "Block 234×234×270 µm · XY: 1 block = 234 µm · "
+            f"default {self._profile_review_settings['soma_window']['cubes_xy']:g}"))
         self.soma_source = tk.StringVar(value="")
         self.context_source = tk.StringVar(value="")
         # Plot lane: which panels to render.
@@ -543,7 +559,7 @@ class NeuroVisGUI:
         default_path = self._generate_default_path(self.sample_id.get())
         self.output_dir = tk.StringVar(value=default_path)
 
-        # Flag to track if user manually changed the path
+        # Output follows the active profile; the main window displays it read-only.
         self.manual_path_set = False
 
         # Add listener: Update output path when Sample ID changes (if not manually set)
@@ -595,6 +611,7 @@ class NeuroVisGUI:
         self._catalog_view_side_state = "idle"
         self.neuron_catalog_visible_count = tk.StringVar(value="")
         self._portal_region_cache = {}
+        self._last_region_context = None
         self._portal_region_snapshots = {}
         self._side_config = configuration
         self._neuron_side_cache = {}
@@ -649,9 +666,12 @@ class NeuroVisGUI:
         style.configure('TRadiobutton', background=C['page'], foreground=C['text'])
 
     def _generate_default_path(self, sample_id, neuron_id=None):
-        """Per-neuron figure folder under the configured GUI figure root."""
+        """Show the exact folder when the catalog region is already known."""
         neuron = neuron_id if neuron_id is not None else self.neuron_id.get()
-        return _figure_folder(self.figure_output_root, sample_id, neuron)
+        region = (getattr(self, '_portal_region_cache', {}).get(sample_id) or {}).get(neuron)
+        side_result = getattr(self, '_neuron_side_cache', {}).get((sample_id, neuron)) or {}
+        side = side_result.get('side') if side_result.get('status') == 'verified' else None
+        return _figure_folder(self.figure_output_root, sample_id, neuron, region, side=side)
 
     def _configured_output_root(self):
         """Output/reload root from the active VisPa config or per-user default."""
@@ -660,11 +680,48 @@ class NeuroVisGUI:
     def _configured_figure_output_root(self):
         return _resolve_figure_output_root(self.config_path)[0]
 
+    def _apply_profile_fields(self, config, settings, config_sha, version_report=None):
+        """Mirror the validated profile in read-only plot controls on Tk thread."""
+        context = settings['context']
+        self._profile_review_settings = settings
+        self._profile_config_sha256 = config_sha
+        self.width_um.set(str(context['width_um']))
+        self.height_um.set(str(context['height_um']))
+        self.depth_um.set(str(context['depth_um']))
+        cubes = settings['soma_window']['cubes_xy']
+        self.soma_cubes.set(f'{cubes:g}')
+        self.soma_window_description.set(
+            'Block 234×234×270 µm · XY: 1 block = 234 µm · '
+            f'default {cubes:g}')
+        self._side_config = config
+        self.figure_output_root = str(config['visual_toolkit']['figure_output_root'])
+        self.output_root = str(config['visual_toolkit']['output_root'])
+        self.output_dir.set(self._generate_default_path(self.sample_id.get()))
+        if version_report is not None:
+            self.version_report = version_report
+
+    def _refresh_active_profile_async(self):
+        """Refresh read-only plot controls after a Settings save."""
+        profile_path = Path(self.config_path)
+        def worker():
+            staging = None
+            try:
+                from .config import config_version_report, load, resolve_render_settings
+                before = profile_path.read_bytes()
+                config = load(profile_path)
+                settings = resolve_render_settings('review', config=config)
+                if profile_path.read_bytes() != before:
+                    raise ValueError('Active profile changed during refresh; reopen Settings')
+                self._ui_call(self._apply_profile_fields, config, settings,
+                              hashlib.sha256(before).hexdigest(),
+                              config_version_report(config))
+            except Exception as exc:
+                self._ui_call(self.update_status, f'Could not refresh plot settings: {exc}')
+        threading.Thread(target=worker, name='vispa-profile-refresh', daemon=True).start()
+
     def _on_sample_id_change(self, *args):
         """Updates output directory automatically when Sample ID changes."""
-        if not self.manual_path_set:
-            new_path = self._generate_default_path(self.sample_id.get())
-            self.output_dir.set(new_path)
+        self.output_dir.set(self._generate_default_path(self.sample_id.get()))
 
     def _on_identity_change(self, *args):
         """Clear coordinates when identity changes, preventing silent stale reuse."""
@@ -729,6 +786,7 @@ class NeuroVisGUI:
         self._ephemeral_images = {}
         self.current_preview = None
         self.current_role = None
+        self._last_region_context = None
         self._preview_photo = None
         after_id = getattr(self, "_preview_after", None)
         if after_id:
@@ -972,6 +1030,9 @@ class NeuroVisGUI:
         # Put Soma and Context in the compact top row, with Sagittal spanning
         # both columns underneath. Source text remains visible through wrapping.
         body = self._card(inner, 'Plotting settings')
+        tk.Label(body, text='Edit plot dimensions in Settings.',
+                 bg=C['card'], fg=C['muted'], font=('Segoe UI', 8)).grid(
+                     row=2, column=0, columnspan=2, sticky='w', pady=(P(2), P(4)))
         for column in range(2):
             body.grid_columnconfigure(column, weight=1, uniform='plots')
         body.grid_rowconfigure(0, weight=1)
@@ -998,14 +1059,13 @@ class NeuroVisGUI:
         soma_box = plot_box(0, 0, 'Soma plot')
         plot_source(soma_box, text='Window (blocks)')
         tk.Entry(soma_box, textvariable=self.soma_cubes, width=5, relief='flat',
-                 bg=C['field'], fg=C['text'], highlightthickness=1,
+                 bg=C['field'], fg=C['text'], readonlybackground=C['field'],
+                 state='readonly', highlightthickness=1,
                  highlightbackground=C['field_border'],
                  highlightcolor=C['accent'],
                  font=('Segoe UI', 9), insertbackground=C['text']).pack(
                      anchor='w', padx=P(6), pady=(0, P(4)), ipady=P(1))
-        plot_source(soma_box, text=(
-            f"Block 234×234×270 µm · XY: 1 block = 234 µm · "
-            f"default {REVIEW_SETTINGS['soma_window']['cubes_xy']:g}"))
+        plot_source(soma_box, variable=self.soma_window_description)
         plot_source(soma_box, variable=self.soma_source)
 
         ctx_box = plot_box(0, 1, 'Context plot')
@@ -1020,7 +1080,8 @@ class NeuroVisGUI:
             tk.Label(field, text=label, bg=C['card'], fg=C['muted'],
                      font=('Segoe UI', 9)).pack(anchor='w')
             tk.Entry(field, textvariable=variable, width=4, relief='flat',
-                     bg=C['field'], fg=C['text'], highlightthickness=1,
+                     bg=C['field'], fg=C['text'], readonlybackground=C['field'],
+                     state='readonly', highlightthickness=1,
                      highlightbackground=C['field_border'],
                      highlightcolor=C['accent'],
                      font=('Segoe UI', 9), insertbackground=C['text']).pack(
@@ -1044,17 +1105,17 @@ class NeuroVisGUI:
                  font=('Segoe UI', 9)).grid(
                      row=0, column=0, columnspan=3, sticky='w', pady=(P(2), P(3)))
         out_entry = tk.Entry(body, textvariable=self.output_dir, relief='flat',
-                             bg=C['field'], fg=C['text'], highlightthickness=1,
+                             bg=C['field'], fg=C['text'], readonlybackground=C['field'],
+                             state='readonly', highlightthickness=1,
                              highlightbackground=C['field_border'],
                              highlightcolor=C['accent'],
                              font=('Segoe UI', 9), insertbackground=C['text'])
         out_entry.grid(row=1, column=0, columnspan=3, sticky='ew',
                        pady=(0, P(6)), ipady=P(3))
-        out_entry.bind("<Key>", lambda event: setattr(self, 'manual_path_set', True))
         body.grid_columnconfigure(0, weight=1)
         folder_buttons = tk.Frame(body, bg=C['card'])
         folder_buttons.grid(row=2, column=0, columnspan=3, sticky='ew')
-        self._flat_button(folder_buttons, "Browse…", self.browse_folder, small=True,
+        self._flat_button(folder_buttons, "Settings…", self.browse_folder, small=True,
                           color='#eef3f6', active='#dde8ee').pack(
                               side='left', fill='x', expand=True, padx=(0, P(4)))
         self._flat_button(folder_buttons, "Open output folder", self._open_output_folder,
@@ -2391,6 +2452,7 @@ class NeuroVisGUI:
             self._apply_portal_region(self.neuron_id.get().strip(), mapping)
 
     def _apply_portal_region(self, neuron, mapping):
+        self.output_dir.set(self._generate_default_path(self.sample_id.get(), neuron))
         self._update_neuron_status()
 
     def _set_neuron_status(self, message):
@@ -2466,6 +2528,7 @@ class NeuroVisGUI:
 
     def _update_neuron_status(self):
         """Keep neuron lookup and region boxes current for the selected identity."""
+        from .data_input_adaptor import display_region_name
         sample = self.sample_id.get().strip()
         neuron = self.neuron_id.get().strip()
         self._update_nmt_coordinate_display()
@@ -2478,10 +2541,14 @@ class NeuroVisGUI:
         side_result = getattr(self, '_neuron_side_cache', {}).get((sample, neuron)) or {}
         verified_side = (side_result.get('side') if
                          side_result.get('status') == 'verified' else None)
+        if region and hasattr(self, 'output_dir'):
+            self.output_dir.set(self._generate_default_path(sample, neuron))
         state = getattr(self, "_neuron_lookup_state", "idle")
+        display_region = (display_region_name(region, strip_numeric_suffix=True)
+                          if region else None)
         self._set_region_status(
-            (f"Region: {verified_side} {region}" if verified_side else
-             f"Region: {region} · side unverified") if region else
+            (f"Region: {verified_side} {display_region}" if verified_side else
+             f"Region: {display_region} · side unverified") if region else
             "Region: unavailable" if state == "not_found" else "Region: checking")
         if state == "found":
             cache_status = getattr(self, '_cache_status', '')
@@ -2719,23 +2786,7 @@ class NeuroVisGUI:
         if not sample or not neuron:
             messagebox.showwarning("SWC Brain View", "Choose a sample and neuron first.")
             return
-        portal_region = self._current_portal_region(sample, neuron)
         save = bool(self.save_outputs.get())
-        folder = self.output_dir.get().strip()
-        if not folder:
-            folder = self._generate_default_path(sample)
-            self.output_dir.set(folder)
-        if save:
-            os.makedirs(folder, exist_ok=True)
-        else:
-            folder = os.path.join(
-                tempfile.gettempdir(), 'visual_toolkit_preview',
-                ''.join(ch if ch.isalnum() or ch in '-_.' else '_'
-                        for ch in f"{sample}_{neuron}"))
-            os.makedirs(folder, exist_ok=True)
-        snapshot = os.path.join(
-            folder,
-            f"{sample}_{neuron.removesuffix('.swc')}_{_stamp()}_{time.time_ns() % 1000000:06d}_3D_SWC.png")
         self.current_role = 'SWC3D'
         self.current_preview = None
         self._preview_photo = None
@@ -2747,24 +2798,73 @@ class NeuroVisGUI:
         self.update_status("SWC Brain View · rendering template mesh and trace…")
         self._log_operation(
             "SWC Brain View snapshot worker", "start",
-            sample=sample, neuron=neuron, config=self.config_path,
-            snapshot=snapshot, save=save)
+            sample=sample, neuron=neuron, config=self.config_path, save=save)
 
         def worker():
             try:
                 self._ui_call(self._show_progress)
+                from .config import load
+                from .render_records import animal_receipt_path, record_neuron_product
                 from .renderers.swc_brain_view import render_configured_snapshot
+                config = load(self.config_path)
+                region = self._resolve_plot_region(
+                    SimpleNamespace(sample_id=sample, neuron_id=neuron), config)
+                portal_region = region.get('portal_region') or ''
+                figure_root = str(config['visual_toolkit']['figure_output_root'])
+                folder = _figure_folder(
+                    figure_root, sample, neuron, portal_region or 'Unassigned',
+                    side=(region.get('atlas_side') if region.get('atlas_status') == 'verified'
+                          else None))
+                if save:
+                    staging = Path(tempfile.mkdtemp(prefix='vispa_brain_view_'))
+                else:
+                    staging = (Path(tempfile.gettempdir()) / 'visual_toolkit_preview' /
+                               re.sub(r'[^A-Za-z0-9_.-]', '_', f'{sample}_{neuron}'))
+                    staging.mkdir(parents=True, exist_ok=True)
+                snapshot = staging / (
+                    f"{sample}_{neuron.removesuffix('.swc')}_{_stamp()}_"
+                    f"{time.time_ns() % 1000000:06d}_3D_SWC.png")
                 receipt = render_configured_snapshot(
-                    sample, neuron, snapshot,
+                    sample, neuron, str(snapshot),
                     portal_region=portal_region, config_path=self.config_path)
+                receipt_path = receipt.get('receipt')
+                if save:
+                    final = Path(folder) / snapshot.name
+                    final.parent.mkdir(parents=True, exist_ok=True)
+                    if final.exists():
+                        raise FileExistsError(final)
+                    shutil.move(str(snapshot), str(final))
+                    try:
+                        product = {
+                            'output': {'path': str(final),
+                                       'sha256': self._file_sha256(final)},
+                            'config_sha256': receipt.get('config_sha256'),
+                            'region_resolution': region,
+                            'worker': {key: value for key, value in receipt.items()
+                                       if key not in ('snapshot_png', 'receipt')},
+                            'recorded_at': datetime.now(timezone.utc).isoformat(),
+                        }
+                        record_neuron_product(
+                            animal_receipt_path(figure_root, sample), sample, neuron,
+                            'SWC3D', product)
+                    except Exception:
+                        final.unlink(missing_ok=True)
+                        raise
+                    finally:
+                        shutil.rmtree(staging, ignore_errors=True)
+                    self._ui_call(self._set_resolved_output_folder,
+                                  sample, neuron, folder)
+                    snapshot, receipt_path = final, None
             except Exception as exc:
+                if save and staging is not None:
+                    shutil.rmtree(staging, ignore_errors=True)
                 self._ui_call(self._hide_progress)
                 self._ui_call(self._show_swc3d_error, sample, neuron, str(exc))
                 self._ui_call(messagebox.showerror, "SWC Brain View", f"Could not render:\n{exc}")
             else:
                 self._ui_call(
-                    self._finish_swc3d, sample, neuron, snapshot,
-                    receipt.get("receipt"), save)
+                    self._finish_swc3d, sample, neuron, str(snapshot),
+                    receipt_path, save)
                 resolution = receipt.get("region_resolution", {})
                 if resolution.get("status") == "selected":
                     self._ui_call(
@@ -2795,13 +2895,15 @@ class NeuroVisGUI:
         self._hide_progress()
         if not identity_matches(
                 (sample, neuron), self.sample_id.get(), self.neuron_id.get()):
-            for path in (image_path, receipt_path):
-                if path:
-                    try:
-                        os.remove(path)
-                    except OSError:
-                        pass
-            self.update_status("Discarded stale SWC Brain View result")
+            if not save:
+                for path in (image_path, receipt_path):
+                    if path:
+                        try:
+                            os.remove(path)
+                        except OSError:
+                            pass
+            self.update_status("SWC Brain View saved for earlier neuron" if save else
+                               "Discarded stale SWC Brain View result")
             return
         self._ephemeral_images = getattr(self, '_ephemeral_images', {})
         if not save and Image is not None:
@@ -2886,7 +2988,7 @@ class NeuroVisGUI:
                 # this refresh; a destroyed tab needs no state update.
                 continue
 
-    RECEIPT_NAME = 'visual_gui_receipt.json'
+    RECEIPT_NAME = 'process_log.json'
 
     def _fingerprint(self):
         """Current identity + render settings, or None when coordinates are invalid."""
@@ -2898,20 +3000,49 @@ class NeuroVisGUI:
                        int(float(self.depth_um.get()))]
         except Exception:
             return None
+        return self._fingerprint_values(
+            self.sample_id.get().strip(), self.neuron_id.get().strip(),
+            xyz, cubes, context,
+            getattr(self, '_profile_config_sha256', None),
+            getattr(self, '_profile_review_settings', REVIEW_SETTINGS),
+            getattr(self, '_last_region_context', None))
+
+    def _store_render_region(self, sample, neuron, region):
+        if (self.sample_id.get().strip(), self.neuron_id.get().strip()) == (sample, neuron):
+            self._last_region_context = region
+
+    def _set_resolved_output_folder(self, sample, neuron, folder):
+        if (self.sample_id.get().strip(), self.neuron_id.get().strip()) == (sample, neuron):
+            self.output_dir.set(folder)
+
+    def _fingerprint_for_request(self, request, config_sha, settings, region):
+        return self._fingerprint_values(
+            request.sample_id, request.neuron_id,
+            [round(float(value), 3) for value in request.soma_xyz],
+            float(request.soma_cubes),
+            [request.width_um, request.height_um, request.depth_um],
+            config_sha, settings, region)
+
+    def _fingerprint_values(self, sample, neuron, xyz, cubes, context,
+                            config_sha, settings, region):
         return {
             'style_schema': '1.12.0.dev2',
             'gui_sha256': self._file_sha256(Path(__file__)),
             'renderer_sha256': {
                 name: self._file_sha256(Path(__file__).parent / 'renderers' / name)
                 for name in ('microscopy_panels.py', 'brain_volume_montage.py')},
-            'sample': self.sample_id.get().strip(),
-            'neuron': self.neuron_id.get().strip(),
+            'sample': sample,
+            'neuron': neuron,
             'soma_xyz': xyz,
             'soma_cubes': round(cubes, 3),
             'context_um': context,
-            'review_settings': json.loads(json.dumps(REVIEW_SETTINGS)),
-            'effective_marker': {'crosshair_arm_px': REVIEW_SETTINGS['marker']['crosshair_px'],
-                                 'box_mode': REVIEW_SETTINGS['marker']['box_mode'],
+            'config_sha256': config_sha,
+            'review_settings': json.loads(json.dumps(settings)),
+            'region': {key: (region or {}).get(key) for key in
+                       ('display_label', 'portal_region', 'atlas_status',
+                        'atlas_side', 'atlas_region')},
+            'effective_marker': {'crosshair_arm_px': settings['marker']['crosshair_px'],
+                                 'box_mode': settings['marker']['box_mode'],
                                  'box_side_scale': TARGET_BOX_SIDE_SCALE},
         }
 
@@ -2929,15 +3060,11 @@ class NeuroVisGUI:
         return digest.hexdigest()
 
     def _write_receipt(self, folder, fingerprint, outputs, specs=None, trio_path=None,
+                       exports=None, errors=None,
                        review_session_path=None, review_session_source=None,
-                       review_session_event_id=None):
-        """Record what was rendered, with settings and file hashes, for cache checks."""
-        path = os.path.join(folder, self.RECEIPT_NAME)
-        try:
-            data = json.load(open(path, encoding='utf-8')) if os.path.isfile(path) else {}
-        except Exception:
-            data = {}
-        entries = data.get('entries') or {}
+                       review_session_event_id=None, region_resolution=None):
+        """Append verified GUI outputs to the animal's sole process log."""
+        from .render_records import animal_receipt_path, record_neuron_output
         files = {}
         folder_abs = os.path.abspath(folder)
         specs = specs or {}
@@ -2958,15 +3085,40 @@ class NeuroVisGUI:
             files['TrioPlot'] = {'path': os.path.abspath(trio_path),
                                  'sha256': self._file_sha256(trio_path),
                                  'bytes': os.path.getsize(trio_path)}
-        neuron = fingerprint['neuron'].removesuffix('.swc')
-        entries[neuron] = {
-            'sample': fingerprint['sample'], 'neuron': neuron,
-            'rendered_at': time.strftime('%Y-%m-%dT%H:%M:%S'),
+        exported = {}
+        for role, path in (exports or {}).items():
+            if path and os.path.isfile(path) and os.path.abspath(path).startswith(folder_abs + os.sep):
+                exported[role] = {'path': os.path.abspath(path),
+                                  'sha256': self._file_sha256(path),
+                                  'bytes': os.path.getsize(path)}
+        sample, neuron = fingerprint['sample'], fingerprint['neuron']
+        record = {
+            'sample_id': sample, 'neuron_id': neuron,
+            'output_dir': os.path.abspath(folder),
+            'status': ('rendered_candidate' if (files or exported) and not errors
+                       else 'partial_or_failed'),
+            'errors': list(errors or []),
+            'rendered_at': datetime.now(timezone.utc).isoformat(),
+            'config_sha256': fingerprint.get('config_sha256'),
+            'settings_sha256': hashlib.sha256(json.dumps(
+                fingerprint.get('review_settings'), sort_keys=True).encode('utf-8')).hexdigest(),
+            'raw_swc_sha256': (region_resolution or {}).get('raw_swc_source', {}).get('sha256')
+            if (region_resolution or {}).get('raw_swc_source') else None,
+            'raw_swc_source': (region_resolution or {}).get('raw_swc_source'),
+            'source_acquisition_dates': (region_resolution or {}).get(
+                'source_acquisition_dates',
+                {'raw_swc': None, 'catalog': None, 'atlas': None}),
+            'source_dates': (region_resolution or {}).get('source_dates', {}),
+            'source_observed_at': (region_resolution or {}).get('source_observed_at'),
             'fingerprint': fingerprint,
             'key': self._fingerprint_key(fingerprint),
             'roles': sorted(files),
             'outputs': files,
+            'exports': exported,
+            'anatomical_acceptance': 'not established',
         }
+        if region_resolution:
+            record['region_resolution'] = region_resolution
         if review_session_path:
             source = {
                 'kind': 'review_session',
@@ -2982,13 +3134,25 @@ class NeuroVisGUI:
                 }
             if review_session_event_id:
                 source['event_id'] = review_session_event_id
-            entries[neuron]['source'] = source
-        os.makedirs(folder, exist_ok=True)
-        with open(path, 'w', encoding='utf-8') as stream:
-            json.dump({'schema': 1, 'entries': entries}, stream, indent=2, ensure_ascii=False)
+            record['source'] = source
+        figure_root = Path(folder).resolve().parents[2]
+        path = animal_receipt_path(figure_root, sample)
+        record_neuron_output(path, sample, neuron, record)
 
     def _read_receipt(self, folder, neuron):
-        path = os.path.join(folder, self.RECEIPT_NAME)
+        from .render_records import animal_receipt_path, load_animal_receipt
+        folder_path = Path(folder).resolve()
+        if folder_path.parent.name == 'neurons':
+            sample = folder_path.parent.parent.name
+            path = animal_receipt_path(folder_path.parents[2], sample)
+            try:
+                record = load_animal_receipt(path, sample)['neurons'][
+                    str(neuron) if str(neuron).lower().endswith('.swc') else f'{neuron}.swc']['current']
+                if Path(record['output_dir']).resolve() == folder_path:
+                    return record
+            except (OSError, ValueError, KeyError, TypeError):
+                pass
+        path = os.path.join(folder, 'visual_gui_receipt.json')
         if not os.path.isfile(path):
             return None
         try:
@@ -2999,9 +3163,9 @@ class NeuroVisGUI:
         key = str(neuron).removesuffix('.swc')
         return entries.get(key) or entries.get(f"{key}.swc")
 
-    def _evaluate_cached(self, entry, roles=None):
+    def _evaluate_cached(self, entry, roles=None, current=None):
         """Three-stage cache check: coordinates, settings key, file hashes."""
-        current = self._fingerprint()
+        current = current if current is not None else self._fingerprint()
         if current is None:
             return 'no_coords', ['coordinates are not filled in']
         cached = entry.get('fingerprint') or {}
@@ -3018,6 +3182,11 @@ class NeuroVisGUI:
             os.path.isfile(item.get('path', ''))
             and self._file_sha256(item['path']) == item.get('sha256')
             for item in outputs.values())
+        same_exports = all(
+            os.path.isfile(item.get('path', ''))
+            and self._file_sha256(item['path']) == item.get('sha256')
+            for item in (entry.get('exports') or {}).values())
+        same_files = same_files and same_exports
         if not same_coords:
             notes.append('coordinates changed')
         if not same_settings:
@@ -3027,12 +3196,16 @@ class NeuroVisGUI:
         return ('same' if (same_coords and same_settings and same_key and same_files)
                 else 'differs'), notes
 
-    def _find_cached_figures(self, sample, neuron):
+    def _find_cached_figures(self, sample, neuron, *, current_folder=None):
         """Cached PNGs and receipt from one current or legacy neuron folder."""
         folders = []
-        current = self.output_dir.get().strip()
+        current = (self.output_dir.get().strip() if current_folder is None
+                   else str(current_folder))
         if current:
             folders.append(current)
+        figure_root = getattr(self, 'figure_output_root', None)
+        if figure_root:
+            folders.append(_figure_folder(figure_root, sample, neuron))
         root = getattr(self, 'output_root', None) or self._configured_output_root()
         if os.path.isdir(root):
             candidates = [os.path.join(root, name) for name in os.listdir(root)
@@ -3176,7 +3349,8 @@ class NeuroVisGUI:
                 folder = self._generate_default_path(self.sample_id.get())
                 self.output_dir.set(folder)
             folder = os.path.abspath(folder)
-            os.makedirs(folder, exist_ok=True)
+            if not os.path.isdir(folder):
+                raise FileNotFoundError('No figures are saved for this neuron yet; render it first')
             os.startfile(folder)
             self.update_status(f"Opened output folder: {folder}")
             self._log_operation("Open output folder", "finished", path=folder)
@@ -3528,6 +3702,8 @@ class NeuroVisGUI:
             if self._save_config_text(path, content, expected_sha256=state['hash']):
                 load()
                 self._refresh_dataset_sources()
+                if hasattr(self, 'soma_window_description'):
+                    self._refresh_active_profile_async()
                 self.update_status('Configuration saved; restart VisPa to apply changed source folders')
                 return True
             return False
@@ -3961,7 +4137,7 @@ class NeuroVisGUI:
             return False
         try:
             _x, _y, _z, _w, _h, _d, cubes = self._numeric_values()
-            limit = float(REVIEW_SETTINGS['soma_window']['max_cubes_xy'])
+            limit = float(self._profile_review_settings['soma_window']['max_cubes_xy'])
             if not 0 < cubes <= limit:
                 raise ValueError(
                     f"Soma window must be greater than 0 and at most {limit:g} blocks.")
@@ -3971,11 +4147,8 @@ class NeuroVisGUI:
             return False
 
     def browse_folder(self):
-        """Open folder selection dialog."""
-        selected_dir = filedialog.askdirectory(initialdir=self.output_dir.get(), title="Select Output Folder")
-        if selected_dir:
-            self.output_dir.set(selected_dir)
-            self.manual_path_set = True
+        """Open the saved profile's output-folder setting."""
+        self._open_config_yaml(section='Data folders')
 
     def update_status(self, message):
         if threading.current_thread() is not threading.main_thread():
@@ -4206,7 +4379,7 @@ class NeuroVisGUI:
     def _capture_processing_request(self):
         if not self.validate_inputs():
             return None
-        out_path = self.prepare_output_dir()
+        out_path = self.output_dir.get().strip()
         if not out_path:
             return None
         try:
@@ -4266,11 +4439,17 @@ class NeuroVisGUI:
     def _render_soma(self, toolkit, request, target):
         vol, origin, res = toolkit.get_high_res_soma_window(
             request.soma_xyz, window_px=self._soma_window_px(request))
+        export_path = None
         if request.save_outputs and request.save_soma_nifti:
-            toolkit.export_data(vol, origin, res, request.neuron_id,
-                                suffix="SomaBlock", output_dir=request.output_dir)
-        return toolkit.plot_soma_block(vol, origin, res, request.soma_xyz,
-                                       request.neuron_id, output_dir=target)
+            export_path = toolkit.export_data(vol, origin, res, request.neuron_id,
+                                              suffix="SomaBlock", output_dir=request.output_dir)
+        panel = toolkit.plot_soma_block(vol, origin, res, request.soma_xyz,
+                                        request.neuron_id, output_dir=target,
+                                        soma_region=(getattr(self, '_plot_region_context', {})
+                                                     or {}).get('display_label'))
+        if export_path and isinstance(panel, dict):
+            panel['_soma_nifti'] = export_path
+        return panel
 
     def _render_context(self, toolkit, ion, request, target):
         tree = ion.getRawNeuronTreeByID(request.sample_id, request.neuron_id)
@@ -4281,7 +4460,9 @@ class NeuroVisGUI:
             depth_um=request.depth_um)
         return toolkit.plot_widefield_context(
             vol, origin, res, request.soma_xyz, request.neuron_id,
-            swc_tree=tree, output_dir=target)
+            swc_tree=tree, output_dir=target,
+            soma_region=(getattr(self, '_plot_region_context', {})
+                         or {}).get('display_label'))
 
     def _render_sagittal(self, toolkit, request, target):
         from .renderers.microscopy_panels import SAMPLE_PATHS, resolve_swc_path
@@ -4298,9 +4479,76 @@ class NeuroVisGUI:
                     f"Portal SWC fetch failed for {request.sample_id}/"
                     f"{request.neuron_id}: {exc}")
         panel = toolkit.render_sagittal_context_from_ds(
-            request.neuron_id, request.soma_xyz, output_dir=target)['panel']
+            request.neuron_id, request.soma_xyz, output_dir=target,
+            soma_region=(getattr(self, '_plot_region_context', {})
+                         or {}).get('display_label'))['panel']
         self._ui_call(self._refresh_sagittal_hint)
         return panel
+
+    def _resolve_plot_region(self, request, config=None):
+        """Freeze exact catalog and native atlas evidence on the render thread."""
+        from .config import load
+        from .data_input_adaptor import region_display_label
+        config = load(self.config_path) if config is None else config
+        catalog_source = None
+        portal_region = None
+        catalog_error = None
+        try:
+            catalog = IT.list_neurons(request.sample_id, config)
+            matches = [row for row in catalog.get('rows', ())
+                       if row.get('neuron_id') == request.neuron_id]
+            if len(matches) != 1:
+                raise ValueError('exact neuron missing or duplicated in active catalog')
+            portal_region = matches[0].get('portal_region') or None
+            catalog_source = {key: str(catalog[key]) for key in
+                              ('source_kind', 'source_path', 'sha256', 'snapshot_id',
+                               'source_date')
+                              if catalog.get(key) is not None}
+        except Exception as exc:
+            catalog_error = str(exc)
+        try:
+            native = IT.acquire_neuron_side(request.sample_id, request.neuron_id, config)
+        except Exception as exc:
+            native = {'status': 'unknown', 'side': None, 'source': None,
+                      'reason': str(exc)}
+        source = native.get('source') or {}
+        label = region_display_label(portal_region, native)
+        sources = config.get('sources') or {}
+        atlas_config = sources.get('atlas') or {}
+        if not isinstance(atlas_config, dict):
+            atlas_config = {}
+        raw_paths = []
+        managed_root = (config.get('defaults') or {}).get('cache_root')
+        if managed_root:
+            raw_paths.append(Path(managed_root) / 'swc_raw' /
+                             request.sample_id / request.neuron_id)
+        if sources.get('legacy_raw_swc_root'):
+            raw_paths.append(Path(sources['legacy_raw_swc_root']) /
+                             request.sample_id / request.neuron_id)
+        raw_path = next((path for path in raw_paths if path.is_file()), None)
+        return {'display_label': label,
+                'portal_region': portal_region,
+                'portal_source': catalog_source,
+                'portal_error': catalog_error,
+                'atlas_status': native.get('status'),
+                'atlas_side': native.get('side'),
+                'atlas_region': source.get('atlas_region'),
+                'atlas_source': {key: str(source[key]) for key in
+                                 ('method', 'atlas_path', 'atlas_sha256',
+                                  'atlas_key_path', 'atlas_key_sha256')
+                                 if source.get(key) is not None},
+                'atlas_error': native.get('reason'),
+                'raw_swc_source': ({'path': str(raw_path),
+                                    'sha256': self._file_sha256(raw_path)}
+                                   if raw_path is not None else None),
+                'source_acquisition_dates': {
+                    'raw_swc': None,
+                    'catalog': None,
+                    'atlas': atlas_config.get('acquisition_date')},
+                'source_dates': {
+                    'raw_swc_declared_source_date': sources.get('raw_swc_source_date'),
+                    'catalog_source_date': (catalog_source or {}).get('source_date')},
+                'source_observed_at': datetime.now(timezone.utc).isoformat()}
 
     def _run_worker(self, request, work, message, *, force_reprocess=False):
         """Shared thread body: request + toolkit lifecycle, errors and progress."""
@@ -4308,24 +4556,64 @@ class NeuroVisGUI:
             toolkit = None
             try:
                 self._ui_call(self._show_progress)
+                from .config import config_version_report, load, resolve_render_settings
+                profile_path = Path(self.config_path)
+                before = profile_path.read_bytes()
+                config = load(profile_path)
+                if profile_path.read_bytes() != before:
+                    raise ValueError('Active VisPa profile changed during render preflight; retry')
+                config_sha = hashlib.sha256(before).hexdigest()
+                settings = resolve_render_settings('review', config=config)
+                configure_data_sources(config=config)
+                if profile_path.read_bytes() != before:
+                    raise ValueError('Active VisPa profile changed during render preflight; retry')
+                context = settings['context']
+                self._plot_region_context = self._resolve_plot_region(request, config)
+                output_dir = _figure_folder(
+                    str(config['visual_toolkit']['figure_output_root']),
+                    request.sample_id, request.neuron_id,
+                    self._plot_region_context.get('portal_region') or 'Unassigned',
+                    side=(self._plot_region_context.get('atlas_side')
+                          if self._plot_region_context.get('atlas_status') == 'verified'
+                          else None))
+                active_request = replace(
+                    request, width_um=int(context['width_um']),
+                    height_um=int(context['height_um']),
+                    depth_um=int(context['depth_um']),
+                    soma_cubes=float(settings['soma_window']['cubes_xy']),
+                    output_dir=output_dir)
+                self._ui_call(self._apply_profile_fields, config, settings,
+                              config_sha, config_version_report(config))
+                self._ui_call(self._set_resolved_output_folder,
+                              request.sample_id, request.neuron_id, output_dir)
                 self._log_operation(
                     "Render worker", "start",
-                    sample=request.sample_id, neuron=request.neuron_id,
-                    output=request.output_dir, save=request.save_outputs,
+                    sample=active_request.sample_id, neuron=active_request.neuron_id,
+                    output=active_request.output_dir, save=active_request.save_outputs,
                     force_reprocess=force_reprocess)
                 toolkit = VisPa(
-                    request.sample_id, force_reprocess=force_reprocess)
+                    active_request.sample_id, force_reprocess=force_reprocess)
+                self._ui_call(self._store_render_region, active_request.sample_id,
+                              active_request.neuron_id, self._plot_region_context)
+                fingerprint = self._fingerprint_for_request(
+                    active_request, config_sha, settings, self._plot_region_context)
+                self._log_operation(
+                    'Render region', 'resolved', sample=active_request.sample_id,
+                    neuron=active_request.neuron_id,
+                    label=self._plot_region_context['display_label'])
+                if active_request.save_outputs:
+                    os.makedirs(active_request.output_dir, exist_ok=True)
                 stream = getattr(self, '_log_stream', None)
                 if stream is not None:
                     # Show the toolkit's fetch/download/render lines in the GUI log.
                     with contextlib.redirect_stdout(stream):
-                        paths, errors = work(toolkit)
+                        paths, errors = work(toolkit, active_request, fingerprint)
                 else:
-                    paths, errors = work(toolkit)
-                self._ui_call(self._finish, request, paths, message(request), errors)
+                    paths, errors = work(toolkit, active_request, fingerprint)
+                self._ui_call(self._finish, active_request, paths, message(active_request), errors)
                 self._log_operation(
                     "Render worker", "finished",
-                    sample=request.sample_id, neuron=request.neuron_id,
+                    sample=active_request.sample_id, neuron=active_request.neuron_id,
                     outputs=len([path for path in paths if path]),
                     errors=len(errors))
             except Exception as e:
@@ -4337,6 +4625,7 @@ class NeuroVisGUI:
                     error=e)
                 self._ui_call(messagebox.showerror, "Processing Error", f"Error: {str(e)}")
             finally:
+                self._plot_region_context = None
                 self._fetch_fnt(request.sample_id, request.neuron_id.removesuffix('.swc'))
                 self._ui_call(self._hide_progress)
                 if toolkit:
@@ -4363,43 +4652,28 @@ class NeuroVisGUI:
 
         rendered = []
         review_option = getattr(self, 'make_review_figure', None)
-        make_review = force_review_figure or (
+        make_review = len(roles) == 3 and (force_review_figure or (
             bool(review_option.get()) if review_option is not None else False)
+        )
         force_option = getattr(self, 'force_rerender', None)
         force = force_rerender or force_reprocess or (
             bool(force_option.get()) if force_option is not None else False)
-        fingerprint = self._fingerprint()
+        cached_used = [False]
 
-        if not force:
-            try:
+        def work(toolkit, request, fingerprint):
+            if not force:
                 needed = list(roles) + (["TrioPlot"] if make_review else [])
                 _folders, found, entry = self._find_cached_figures(
-                    request.sample_id, request.neuron_id.removesuffix('.swc'))
-                if (entry and all(role in found for role in needed)
-                        and getattr(self, 'preview_label', None) is not None):
-                    state, _notes = self._evaluate_cached(entry, roles=needed)
+                    request.sample_id, request.neuron_id.removesuffix('.swc'),
+                    current_folder=request.output_dir)
+                if entry and all(role in found for role in needed):
+                    state, _notes = self._evaluate_cached(
+                        entry, roles=needed, current=fingerprint)
                     if state == 'same':
-                        self._cache_status = (
-                            f"cached: current ({len(needed)} figures)")
-                        self._update_neuron_status()
-                        self.preview_files.update(
-                            {role: found[role] for role in needed})
-                        self._refresh_preview_tabs()
-                        for role in ('Soma', 'Context', 'Sagittal', 'TrioPlot'):
-                            if role in needed:
-                                self._show_role(role)
-                                break
-                        self.update_status(
-                            "Cached figures match; loaded without re-rendering.")
-                        self._append_log("Cached figures reused; no re-render.")
-                        self._start_fnt_fetch(
-                            request.sample_id, request.neuron_id.removesuffix('.swc'))
-                        return
-            except Exception:
-                # A partially built or headless instance renders normally.
-                pass
-
-        def work(toolkit):
+                        cached_used[0] = True
+                        self._ui_call(self._append_log,
+                                      'Cached figures match current profile and region; reused.')
+                        return [found[role] for role in needed], []
             ion = IT.IONData() if "Context" in roles else None
             panels, paths, errors = {}, [], []
             for role in roles:
@@ -4432,7 +4706,9 @@ class NeuroVisGUI:
                 trio_target = request.output_dir if saving else self._preview_target_dir(request)
                 trio_path = toolkit.plot_tri_plot(
                     [panels["Soma"], panels["Context"], panels["Sagittal"]],
-                    request.neuron_id, output_dir=trio_target, legend=False)
+                    request.neuron_id, output_dir=trio_target, legend=False,
+                    soma_region=(getattr(self, '_plot_region_context', {})
+                                 or {}).get('display_label'))
                 paths.append(trio_path)
             elif make_review:
                 missing = [role for role in ("Soma", "Context", "Sagittal")
@@ -4441,77 +4717,47 @@ class NeuroVisGUI:
                               f"missing {', '.join(missing)}")
             specs = {role: self._panel_spec(panel) for role, panel in panels.items()}
             if request.save_outputs and fingerprint is not None:
+                exports = {}
+                soma_panel = panels.get('Soma')
+                soma_export = soma_panel.get('_soma_nifti') if isinstance(soma_panel, dict) else None
+                if soma_export:
+                    exports['SomaNIfTI'] = soma_export
+                    if os.path.isfile(soma_export + '.json'):
+                        exports['SomaNIfTIMetadata'] = soma_export + '.json'
                 self._write_receipt(
                     request.output_dir, fingerprint,
                     {role: self._panel_png(panel) for role, panel in panels.items()},
-                    specs, trio_path=trio_path,
+                    specs, trio_path=trio_path, exports=exports, errors=errors,
                     review_session_path=request.review_session_path,
                     review_session_source=request.review_session_source,
-                    review_session_event_id=request.review_session_event_id)
+                    review_session_event_id=request.review_session_event_id,
+                    region_resolution=getattr(self, '_plot_region_context', None))
             return paths, errors
 
         self._begin_render_preview(request)
         self._run_worker(
             request, work,
-            lambda r: f"Rendered {' + '.join(rendered) if rendered else 'nothing'}",
+            lambda r: ("Loaded cached figures" if cached_used[0] else
+                       f"Rendered {' + '.join(rendered) if rendered else 'nothing'}"),
             force_reprocess=force_reprocess)
 
     def run_highres(self):
         """Render the Soma panel with the current ticks (kept as a direct action)."""
-        request = self._capture_processing_request()
-        if request is None: return
-
-        def work(toolkit):
-            self.update_status("Soma Plot · acquiring soma-centred window…")
-            panel = self._render_soma(
-                toolkit, request, self._target_for(request, request.save_soma_png))
-            return [self._panel_png(panel)], []
-
-        self._run_worker(request, work, lambda r: "Soma plot ready")
+        self.run_selected(roles=['Soma'])
 
     def run_lowres(self):
         """Render the Context panel with the current ticks."""
-        request = self._capture_processing_request()
-        if request is None: return
-
-        def work(toolkit):
-            self.update_status("Context Plot · acquiring 5 µm sections…")
-            panel = self._render_context(
-                toolkit, IT.IONData(), request,
-                self._target_for(request, request.save_context_png))
-            return [self._panel_png(panel)], []
-
-        self._run_worker(request, work, lambda r: "Context plot ready")
+        self.run_selected(roles=['Context'])
 
     def run_both(self):
         """Render Soma and Context together (direct action)."""
-        request = self._capture_processing_request()
-        if request is None or not messagebox.askyesno("Confirm", "Render Soma and Context panels?"):
+        if not messagebox.askyesno("Confirm", "Render Soma and Context panels?"):
             return
-
-        def work(toolkit):
-            soma = self._render_soma(
-                toolkit, request, self._target_for(request, request.save_soma_png))
-            context = self._render_context(
-                toolkit, IT.IONData(), request,
-                self._target_for(request, request.save_context_png))
-            return [self._panel_png(soma), self._panel_png(context)], []
-
-        self._run_worker(request, work, lambda r: "Soma + Context ready")
+        self.run_selected(roles=['Soma', 'Context'])
 
     def run_sagittal(self):
         """Render the registered processed-DS sagittal panel for the current neuron."""
-        request = self._capture_processing_request()
-        if request is None: return
-
-        def work(toolkit):
-            self.update_status("Sagittal Context Plot · resolving processed-DS panel…")
-            panel = self._render_sagittal(
-                toolkit, request,
-                self._target_for(request, request.save_sagittal_png))
-            return [self._panel_png(panel)], []
-
-        self._run_worker(request, work, lambda r: "Sagittal context ready")
+        self.run_selected(roles=['Sagittal'])
 
     def run_all_panels(self):
         """Render all three panels and their TrioPlot."""

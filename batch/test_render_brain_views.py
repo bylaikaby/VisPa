@@ -1,6 +1,6 @@
 """Bounded batch planning tests with synthetic local mesh/SWC inputs.
 
-Version: 1.21.2 (local/unreleased)
+Version: 1.21.3 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../CHANGELOG.md
 Status: candidate
@@ -8,6 +8,7 @@ Status: candidate
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import io
 import json
 from pathlib import Path
@@ -94,6 +95,18 @@ class BatchPlanningTests(unittest.TestCase):
         plan = load_jobs(self.jobs, self.root / "output", 1, False)
         self.assertEqual(plan["jobs"][0]["mesh_label"], "anterior_insula")
         self.assertEqual(plan["jobs"][0]["preflight"]["mesh_label"], "anterior_insula")
+
+    def test_strict_config_rejects_conflicting_batch_camera_override(self):
+        config = json.loads(self.config.read_text())
+        config["visual_toolkit"]["enforce_render_config"] = True
+        self.config.write_text(json.dumps(config))
+        with self.assertRaisesRegex(ValueError, "conflict with the saved config"):
+            load_jobs(self.jobs, self.root / "output", 1, False)
+        self.payload["jobs"][0]["camera_overrides"] = {}
+        self.save()
+        plan = load_jobs(self.jobs, self.root / "output", 1, False)
+        self.assertEqual(plan["jobs"][0]["preflight"]["config_sha256"],
+                         hashlib.sha256(self.config.read_bytes()).hexdigest())
 
     def test_optional_region_selector_adds_one_overlay_without_changing_region_id(self):
         self.payload["jobs"][0]["region"] = "Amy"

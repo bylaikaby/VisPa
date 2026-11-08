@@ -1,8 +1,9 @@
 """Focused regression checks for the standalone extraction seams.
 
-Version: 1.21.2 (local/unreleased)
+Version: 1.21.3 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../CHANGELOG.md
+2026-11-08: Cover strict saved-config render resolution and flat review fields.
 2026-11-08: Verify startup follows configured autoload and explicit opt-out.
 2026-11-08: Check the optional locator box and configurable cross without
 assuming a square in every review panel.
@@ -119,6 +120,57 @@ assert Path(toolkit.ACTIVE_CONFIG['path']).name == 'visual_toolkit_config.yaml'
 
 
 class ReviewSettingsTests(unittest.TestCase):
+    def test_strict_render_settings_use_saved_file_not_mutated_mapping(self):
+        from vispa.config import load, resolve_render_settings
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "strict.json"
+            path.write_text(json.dumps({"version": 1, "visual_toolkit": {
+                "enforce_render_config": True,
+                "settings": {"review": {"marker.linewidth": 1.0}}}}),
+                encoding="utf-8")
+            loaded = load(path)
+            loaded["visual_toolkit"]["enforce_render_config"] = False
+            loaded["visual_toolkit"]["settings"]["review"]["marker.linewidth"] = 8.0
+            self.assertEqual(resolve_render_settings("review", loaded)["marker"]["linewidth"], 1.0)
+            self.assertEqual(resolve_render_settings("review", loaded,
+                                                     {"marker.linewidth": 1.0})["marker"]["linewidth"], 1.0)
+            with self.assertRaisesRegex(ValueError, "saved config"):
+                resolve_render_settings("review", loaded, {"marker.linewidth": 8.0})
+
+    def test_render_plot_fields_preserve_flat_review_setting_keys(self):
+        from vispa.config import FIELDS, apply_fields, field_value, _field_exists
+        raw = {"version": 1, "visual_toolkit": {"settings": {"review": {
+            "context.width_um": 8000, "marker.linewidth": 1.0}}}}
+        width = "visual_toolkit.settings.review.context.width_um"
+        depth = "visual_toolkit.settings.review.context.depth_um"
+        cubes = "visual_toolkit.settings.review.soma_window.cubes_xy"
+        self.assertIn(width, {field[1] for field in FIELDS})
+        self.assertEqual(field_value(raw, width), 8000)
+        self.assertFalse(_field_exists(raw, depth))
+        changed = apply_fields(raw, {width: "9000", depth: "40", cubes: "1.25"})
+        review = changed["visual_toolkit"]["settings"]["review"]
+        self.assertEqual(review["context.width_um"], 9000)
+        self.assertEqual(review["context.depth_um"], 40)
+        self.assertEqual(review["soma_window.cubes_xy"], 1.25)
+        self.assertEqual(review["marker.linewidth"], 1.0)
+        self.assertNotIn("context", review)
+        self.assertEqual(raw["visual_toolkit"]["settings"]["review"]["context.width_um"], 8000)
+
+    def test_strict_render_guard_covers_review_and_montage_overrides(self):
+        from vispa.config import resolve_render_settings
+        strict = {"visual_toolkit": {"enforce_render_config": True,
+                                     "settings": {"review": {"context.width_um": 8000},
+                                                  "montage": {}}}}
+        self.assertEqual(resolve_render_settings("review", strict,
+                                                 {"context.width_um": 8000})["context"]["width_um"], 8000)
+        with self.assertRaisesRegex(ValueError, "saved config"):
+            resolve_render_settings("review", strict, {"context.width_um": 9000})
+        with self.assertRaisesRegex(ValueError, "saved config"):
+            resolve_render_settings("montage", strict, {"display_gamma": 1.0})
+        legacy = {"visual_toolkit": {"enforce_render_config": False}}
+        self.assertEqual(resolve_render_settings("review", legacy,
+                                                 {"context.width_um": 9000})["context"]["width_um"], 9000)
+
     def test_schema_exposes_defaults_current_ranges_and_effects(self):
         from vispa import review_settings_schema, toolkit
         schema = review_settings_schema()

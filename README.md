@@ -1,7 +1,7 @@
 # VisPa — Visual Projectome Analysis tool
 
 VisPa reviews macaque neuron and microscopy data configured by the DEB lab.
-This checkout identifies as **1.21.2**. VisPa is a
+This checkout identifies as **1.21.3**. VisPa is a
 Python package inside a Conda environment. Launch the GUI directly from this
 checkout with `python run_vispa.py`.
 
@@ -25,6 +25,7 @@ src/vispa/
 ├── review_bulk_dialog.py             Bulk review dialog and background job control
 ├── review_bulk_prepare.py            whole-animal identities and managed raw cache
 ├── review_bulk_render.py             four-role rendering and verified resume
+├── render_records.py                 shared animal process log and verified figure records
 ├── commands.py                       command routing; installed vispa command
 ├── input_resource_check.py           availability checks, not image/anatomy acceptance
 ├── fnt_tracer_launcher.py            native raw-SWC session preparation and tracer launch
@@ -42,6 +43,16 @@ independent state. New code uses the names above. YAML/JSON stores values;
 `config.py` owns configuration behavior. Packaged defaults live in `configs/`;
 existing explicit user profiles, scientific data and cache locations are not
 moved.
+
+GUI and batch share these owners; checkout `batch/` compatibility wrappers do
+not implement a second renderer. Saved-profile validation belongs to
+`vispa.config.resolve_render_settings`, display-only region shortening to
+`vispa.data_input_adaptor.display_region_name`, and flat output history to
+`vispa.render_records`. Keep orchestration in the GUI or batch entry point and
+call these public functions instead of copying their behavior into run scripts.
+New outputs use `<output>/<sample>/neurons/001_R_M1/` with a single
+`<output>/<sample>/process_log.json`; unknown side omits the `R/L` token.
+Complete region identifiers and source-date status stay in that log.
 
 ```mermaid
 flowchart TD
@@ -108,12 +119,21 @@ flowchart TD
   BP -->|frozen jobs| W
   K --> W
   W --> O
+  subgraph RREC["render_records.py"]
+    RR([record_neuron_output / verified_neuron_record])
+  end
+  G -->|calls| RR
+  W -->|calls| RR
+  RR -->|reads and writes| PL[/sample/process_log.json/]
   T -. planned .-> TR[Terminal image review]
   classDef callable fill:#E8F5EE,stroke:#23845B,color:#173B2C
   classDef data fill:#F1F5F9,stroke:#64748B,color:#1F2937
   class D,DSOMA,DFETCH,DSIDE,DBATCH,DAPPLY,SREG,DCW callable
   class I,ION,ATL,CSV data
+  class RR callable
+  class PL data
   style DI fill:#F4F8FF,stroke:#6186B5,color:#1F2937
+  style RREC fill:#F4F8FF,stroke:#6186B5,color:#1F2937
 ```
 
 Solid arrows show implemented components; terminal image-review integration is

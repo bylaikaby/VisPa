@@ -1,5 +1,33 @@
 # VisPa change log
 
+## 1.21.3 — 2026-11-08 (local/unreleased candidate)
+- Restore missing GUI region arguments and freeze VisPa-parsed atlas region and
+  side for new bulk jobs. Use one source-aware region label across all panels;
+  remove the separate sagittal hemisphere clause without changing provenance.
+- Make main plot controls read-only views of the saved profile. Reload config
+  and region evidence before GUI cache reuse; record resolved settings and hashes.
+- Add explicit strict-profile rendering enforcement so maintained entrypoints
+  reject conflicting unsaved overrides. Historical profiles retain their declared
+  compatibility behavior; arbitrary code outside VisPa's APIs is not constrained.
+- Scope default prepared jobs by package version and config hash, preserving old
+  jobs and outputs. New jobs use direct side-qualified neuron folders such as
+  `001_R_M1` and one animal `process_log.json`, retaining history and source dates
+  without extra review/bulk-run folders. Unknown acquisition dates stay unknown.
+- Share display-only region formatting: `CR_M1` becomes `Right M1`, `CL_M1`
+  becomes `Left M1`, and GUI region status omits trailing numeric atlas IDs.
+  Full identifiers and side provenance remain unchanged in records.
+- Save GUI Brain View products beside the review figures and embed worker
+  provenance into the common process log; transient worker receipts stay out
+  of the final product folder.
+- Audit module ownership and keep batch wrappers as compatibility adapters.
+  Reject legacy sagittal/crop overrides in strict profiles before output writes;
+  preserve environment-selection provenance when authoritative files reload.
+- Bounded server validation: two neurons produced eight independently decoded,
+  hash-matched PNGs plus Soma volumes, with compact crosses and full sagittal
+  extent. All 311 source tests and 37 batch tests pass, including hidden-Tk
+  read-only/config-recovery and strict-profile checks. Cohort rendering status is recorded in the
+  living project journal; anatomical acceptance remains separate.
+
 ## 1.21.2 — 2026-11-08 (local/unreleased candidate)
 - Enable configured startup neuron loading by default and retain explicit
   no-autoload overrides. Use light blue coordinate panels with readable dark text.

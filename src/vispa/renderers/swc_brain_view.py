@@ -1,6 +1,6 @@
 """Explicit local-input launcher for the isolated legacy OpenGL viewer.
 
-Version: 1.21.2 (local/unreleased)
+Version: 1.21.3 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../../../CHANGELOG.md
 Status: candidate
@@ -370,9 +370,11 @@ def plan_configured_view(sample_id: str, neuron_id: str, portal_region: str = ""
     if ("/" in neuron_id or "\\" in neuron_id
             or Path(neuron_id).name != neuron_id or neuron_id in {".", ".."}):
         raise ValueError("neuron_id must be a filename, not a path")
-    from ..config import load
+    from ..config import load, resolve_render_settings
 
     config = load(config_path)
+    settings = resolve_render_settings("brain-view", config, overrides=overrides)
+    config_sha256 = _sha256(Path(config["path"]))
     source = config.get("sources", {}).get("brain_view")
     if not isinstance(source, dict):
         raise ValueError("sources.brain_view is not configured")
@@ -441,8 +443,7 @@ def plan_configured_view(sample_id: str, neuron_id: str, portal_region: str = ""
     if region_resolution.get("canonical_region_key"):
         region_resolution["portal_namespace"] = "side-collapsed CHARM cortical key"
         region_resolution["neuron_side"] = "unverified by this worker"
-    from ..config import resolve_settings, config_source
-    settings = resolve_settings("brain-view", overrides, config=config)
+    from ..config import config_source
     settings_config_path = (config_source(config) if source.get("settings") or
                             config.get("visual_toolkit", {}).get("settings", {}).get("brain-view") else None)
     center, bounds_min, bounds_max, diagonal = _obj_bounds(mesh)
@@ -517,6 +518,7 @@ def plan_configured_view(sample_id: str, neuron_id: str, portal_region: str = ""
                    "clipping": clipping},
         "settings": settings, "worker_python": worker, "worker_entry": worker_entry,
         "config_path": str(config["path"]),
+        "config_sha256": config_sha256,
         "settings_config_path": settings_config_path,
         "session_receipt": str(session_receipt),
         "display_space": "legacy renderer recenters mesh and neuron together at the origin",
@@ -634,6 +636,8 @@ def render_configured_snapshot(sample_id: str, neuron_id: str,
     payload = json.loads(receipt.read_text(encoding="utf-8"))
     if payload.get("status") != "rendered_candidate":
         raise RuntimeError(f"Unexpected SWC Brain View receipt status: {payload.get('status')!r}")
+    if payload.get("config_sha256") != plan["config_sha256"]:
+        raise RuntimeError("SWC Brain View worker used a different config revision")
     if payload.get("output_png_sha256") != _sha256(image):
         raise RuntimeError("SWC Brain View snapshot hash does not match its receipt")
     return payload
@@ -703,6 +707,8 @@ def main(argv=None) -> int:
 
 def _run_view(plan: dict) -> int:
     """Import the optional backend only after preflight succeeds."""
+    if _sha256(Path(plan["config_path"])) != plan["config_sha256"]:
+        raise RuntimeError("Brain View config changed after planning; re-run the view request")
     try:
         from ..legacy_gl.GeometryAdapter import GeometryAdapter
         from ..legacy_gl.RenderGL import RenderGL

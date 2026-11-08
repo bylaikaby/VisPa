@@ -1,6 +1,6 @@
 """Contract tests for the lazy original-engine OpenGL worker.
 
-Version: 1.21.2 (local/unreleased)
+Version: 1.21.3 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../CHANGELOG.md
 Status: candidate
@@ -67,6 +67,25 @@ class LegacyOpenGLPlanningTests(unittest.TestCase):
             self.assertEqual(first["processed_swc"]["source_receipt"]["role"], "processed")
             self.assertEqual(first["processed_swc"]["source_receipt"]["path"],
                              str(self.swc.with_name("001.swc.source.json")))
+
+    def test_strict_profile_rejects_style_override_before_acquisition(self):
+        config = json.loads(self.config.read_text())
+        config["visual_toolkit"]["enforce_render_config"] = True
+        self.config.write_text(json.dumps(config))
+        from vispa.config import load, resolve_settings
+        baseline = resolve_settings("brain-view", config=load(self.config))
+        with mock.patch("vispa.data_input_adaptor.load_processed_neuron") as acquisition:
+            with self.assertRaisesRegex(ValueError, "conflict with the saved config"):
+                opengl.plan_configured_view(
+                    "251637", "001.swc", config_path=self.config,
+                    overrides={"camera_distance_scale": baseline["camera_distance_scale"] + 0.1},
+                    allow_download=True)
+            acquisition.assert_not_called()
+        plan = opengl.plan_configured_view(
+            "251637", "001.swc", config_path=self.config,
+            overrides={"camera_distance_scale": baseline["camera_distance_scale"]})
+        self.assertEqual(plan["settings"], baseline)
+        self.assertEqual(plan["config_sha256"], opengl._sha256(self.config))
 
     def _write_config(self, *, frame=None, units=None, settings=None, scoped_settings=None):
         brain_view = {"mesh_path": str(self.mesh), "processed_swc_root": str(self.root / "dependencies")}
@@ -435,6 +454,7 @@ class LegacyOpenGLPlanningTests(unittest.TestCase):
             output.with_suffix(".json").write_text(json.dumps({
                 "status": "rendered_candidate",
                 "output_png_sha256": opengl._sha256(output),
+                "config_sha256": opengl._sha256(Path(command[command.index("--config") + 1])),
             }), encoding="utf-8")
             return opengl.subprocess.CompletedProcess(command, 0, "", "")
 

@@ -7,6 +7,7 @@ Change history: ../CHANGELOG.md
 import unittest
 import tempfile
 import json
+import yaml
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -212,29 +213,24 @@ class ConfigEditorTests(unittest.TestCase):
         self.assertEqual(changed['visual_toolkit']['fnt_tracer']['max_response_bytes'], 67108864)
         self.assertEqual(changed['samples'], source['samples'])
 
-    def test_render_with_matching_cached_figures_still_fetches_fnt(self):
+    def test_render_reuses_cache_only_after_worker_fingerprint_check(self):
         from vispa.gui import NeuroVisGUI
         gui = NeuroVisGUI.__new__(NeuroVisGUI)
-        request = SimpleNamespace(sample_id='251637', neuron_id='003.swc')
+        request = SimpleNamespace(sample_id='251637', neuron_id='003.swc',
+                                  output_dir='chosen')
         events = []
         gui._capture_processing_request = lambda: request
-        gui._fingerprint = lambda: {'sample': '251637'}
-        gui._find_cached_figures = lambda sample, neuron: ([], {'Soma': 'cached.png'}, {'key': 'matching'})
-        gui._evaluate_cached = lambda entry, roles: ('same', [])
-        gui.preview_label = mock.Mock()
-        gui.preview_caption = mock.Mock()
-        gui._update_neuron_status = mock.Mock()
-        gui.preview_files = {}
-        gui._refresh_preview_tabs = lambda: events.append('preview')
-        gui._show_role = lambda role: events.append(role)
-        gui.update_status = lambda message: events.append('status')
-        gui._append_log = lambda message: events.append('log')
-        gui._start_fnt_fetch = lambda sample, neuron: events.append(('fnt', sample, neuron))
-        gui._launch_processing = lambda process: events.append('rerender')
+        gui._find_cached_figures = lambda sample, neuron, **kwargs: (
+            [], {'Soma': 'cached.png'}, {'key': 'matching'})
+        gui._evaluate_cached = lambda entry, roles, current: (
+            'same' if current == {'fresh': True} else 'differs', [])
+        gui._begin_render_preview = lambda req: None
+        gui._ui_call = lambda callback, *args: callback(*args)
+        gui._append_log = events.append
+        gui._run_worker = lambda req, work, message, **kw: events.append(
+            work(mock.Mock(), req, {'fresh': True}))
         gui.run_selected(roles=['Soma'])
-        self.assertEqual(events.count(('fnt', '251637', '003')), 1)
-        self.assertNotIn('rerender', events)
-        self.assertEqual(gui.preview_files, {'Soma': 'cached.png'})
+        self.assertIn((['cached.png'], []), events)
 
     def test_partial_render_logs_sagittal_and_trio_dependency(self):
         from vispa.gui import NeuroVisGUI
@@ -268,7 +264,7 @@ class ConfigEditorTests(unittest.TestCase):
         gui._refresh_preview_tabs = mock.Mock()
         toolkit = SimpleNamespace(plot_tri_plot=mock.Mock())
         def finish_work(req, work, message, **_kwargs):
-            paths, errors = work(toolkit)
+            paths, errors = work(toolkit, req, None)
             gui._finish(req, paths, message(req), errors)
         gui._run_worker = finish_work
         with mock.patch('vispa.gui.IT.IONData', return_value=object()):
@@ -347,7 +343,8 @@ class SettingsWindowTests(unittest.TestCase):
                                  ['Organized editor', 'Raw YAML', 'Factory default YAML'])
                 self.assertEqual(tabs.tab(tabs.select(), 'text'), 'Organized editor')
                 self.assertEqual(section_list.get(0, 'end'),
-                                 ('Data folders', 'Sources', 'Brain view', 'FNT', 'Startup'))
+                                 ('Data folders', 'Sources', 'Brain view', 'FNT',
+                                  'Startup', 'Rendering', 'Render plots'))
                 self.assertIn(__version__, window.title())
                 self.assertNotIn('Apply YAML to form', buttons)
                 gui._on_fnt_setup()
@@ -481,7 +478,9 @@ class SettingsWindowTests(unittest.TestCase):
                 readonly = window._default_text
                 buttons = {item.cget('text'): item for item in widgets
                            if isinstance(item, ttk.Button)}
-                default_path = path.with_name('vispa_config.factory-v1.0.8.yaml')
+                factory_version = yaml.safe_load(original)['config_version']
+                default_path = path.with_name(
+                    f'vispa_config.factory-v{factory_version}.yaml')
                 self.assertEqual(default_path.read_bytes(), original)
                 self.assertEqual(readonly.cget('state'), 'disabled')
                 folders = next(item for item in widgets if isinstance(item, ttk.LabelFrame)

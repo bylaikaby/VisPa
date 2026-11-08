@@ -1,13 +1,16 @@
 """Synthetic render-style regression checks.
 
-Version: 1.21.2 (local/unreleased)
+Version: 1.21.3 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../CHANGELOG.md
+2026-11-08: Reject mutated renderer style under a saved strict profile.
 2026-10-30: Cover the fixed 320-pixel crosshair, reduced legacy square,
 exact centre, and GUI receipt
 fingerprint with a legacy 60-pixel profile.
 2026-11-08: Cover configurable, smaller crosshair and optional centre box.
 2026-11-08: Check thinner shared cross stroke and exposed figure style.
+2026-11-08: Check combined selected/VisPa atlas Region title and no separate
+sagittal hemisphere clause.
 """
 import unittest
 import sys
@@ -25,11 +28,21 @@ from PIL import Image
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from vispa.renderers.microscopy_panels import VisPa
 from vispa.config import REVIEW_SETTINGS, review_settings_schema
+from vispa.data_input_adaptor import display_region_name, region_display_label
 from vispa.reviewer import NeuroVisGUI, FIXED_CROSSHAIR_NOTICE
 from vispa.renderers.swc_brain_view import TRACE_LABEL, _legend_texture
 
 
 class OutputStyleTests(unittest.TestCase):
+    def test_display_region_name_strips_only_hemisphere_id_prefix(self):
+        native = {'status': 'verified', 'side': 'Right',
+                  'source': {'atlas_region': 'CR_M1'}}
+        self.assertEqual(region_display_label('M1_79', native),
+                         'Portal: M1_79 | Atlas: Right M1')
+        self.assertEqual(display_region_name('CL_M1', 'Left'), 'M1')
+        self.assertEqual(display_region_name('CR_M1', 'Left'), 'CR_M1')
+        self.assertEqual(display_region_name('microCR_M1', 'Right'), 'microCR_M1')
+
     def test_all_panel_titles_use_one_region_section(self):
         tool = object.__new__(VisPa)
         tool.sample_id = "252384"
@@ -62,6 +75,26 @@ class OutputStyleTests(unittest.TestCase):
             "011.swc", "Context", "checked_region=M1_79", (1, 2, 3),
             (8000, 8000), 30)
         self.assertIn("Region: checked_region=M1_79", checked)
+        vispa = tool._title_text(
+            "011.swc", "Sagittal", "Portal: M1_79 | Atlas: Right CR_M1",
+            (1, 2, 3), (57870, 49300), 100, hemisphere="Right")
+        self.assertIn("Region: nmt_portal=Right M1", vispa)
+        self.assertNotIn("Right_hemisphere", vispa)
+        combined = tool._title_text(
+            "011.swc", "Soma", "checked_region=M1_79 | Portal: M1_79 | Atlas: Right CR_M1",
+            (1, 2, 3), (351, 351), 270)
+        self.assertIn("Region: checked_region=M1_79 · nmt_portal=Right M1", combined)
+        self.assertEqual(tool._region_title_value("nmt_portal=Left CL_M1"),
+                         "nmt_portal=Left M1")
+        self.assertEqual(tool._region_title_value("nmt_portal=Right microCR_M1"),
+                         "nmt_portal=Right microCR_M1")
+        self.assertEqual(tool._region_title_value("nmt_portal=Right CR_M1",
+                                                   "Left CL_PrCO"),
+                         "nmt_portal=Right M1 · nmt_corrected=Left PrCO")
+        unknown = tool._title_text(
+            "011.swc", "Context", "Portal: M1_79 | Atlas: unavailable",
+            (1, 2, 3), (8000, 8000), 30)
+        self.assertIn("nmt_portal=unavailable · portal_region=M1_79", unknown)
 
     def test_gui_fingerprint_records_requested_and_effective_crosshair(self):
         self.assertIn('marker.crosshair_px', FIXED_CROSSHAIR_NOTICE)
@@ -172,6 +205,40 @@ class OutputStyleTests(unittest.TestCase):
                 self.assertIn(key, schema)
         finally:
             plt.close(fig)
+
+    def test_strict_renderer_rejects_mutated_global_style(self):
+        import json
+        import hashlib
+        from vispa.config import load, resolve_settings
+        from vispa.renderers import microscopy_panels as panels
+        with tempfile.TemporaryDirectory(dir=os.environ.get('VISPA_TEST_ROOT')) as directory:
+            path = Path(directory) / 'strict.json'
+            path.write_text(json.dumps({'version': 1, 'visual_toolkit': {
+                'enforce_render_config': True}}), encoding='utf-8')
+            config = load(path)
+            settings = resolve_settings('review', config=config)
+            tool = object.__new__(VisPa)
+            with mock.patch.object(panels, 'ACTIVE_CONFIG', config), \
+                 mock.patch.object(panels, 'ACTIVE_CONFIG_SHA256',
+                                   hashlib.sha256(path.read_bytes()).hexdigest()), \
+                 mock.patch.object(panels, 'REVIEW_SETTINGS', settings):
+                tool._assert_render_config()
+                settings['marker']['linewidth'] = 8.0
+                with self.assertRaisesRegex(ValueError, 'saved config'):
+                    tool._assert_render_config()
+
+    def test_strict_sagittal_entry_rejects_unsaved_display_variants(self):
+        from vispa.renderers import microscopy_panels as panels
+        with tempfile.TemporaryDirectory(dir=os.environ.get('VISPA_TEST_ROOT')) as directory:
+            output = Path(directory) / 'not-created' / 'legacy.png'
+            with mock.patch.object(panels, 'ACTIVE_CONFIG',
+                                   {'visual_toolkit': {'enforce_render_config': True}}), \
+                 mock.patch.dict(panels.SAMPLE_PATHS, {'SYNTH': {}}, clear=False):
+                for options in ({'style': 'legacy'}, {'crop_half_width_mm': 5.0}):
+                    with self.assertRaisesRegex(ValueError, 'saved config'):
+                        panels.render_sagittal_context('SYNTH', '001', (1, 2, 3),
+                                                       output, **options)
+            self.assertFalse(output.parent.exists())
 
     def test_panel_trace_style_matches_standalone_context(self):
         tool = object.__new__(VisPa)

@@ -1,6 +1,6 @@
 """Checks for the public data-check API, CLI and GUI progress plumbing.
 
-Version: 1.21.2 (local/unreleased)
+Version: 1.21.3 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../CHANGELOG.md
 Status: candidate
@@ -612,42 +612,58 @@ class ProgressBarTests(unittest.TestCase):
             gui._show_progress = mock.Mock()
             gui._hide_progress = mock.Mock()
             gui._finish_swc3d = mock.Mock()
+            gui._set_resolved_output_folder = mock.Mock()
+            gui._resolve_plot_region = mock.Mock(return_value={
+                'portal_region': 'PrCO_49', 'atlas_status': 'verified',
+                'atlas_side': 'Right'})
+            gui._log_operation = mock.Mock()
             gui._ui_call = lambda callback, *args: callback(*args)
             gui._launch_processing = lambda worker: worker()
+            def render_snapshot(sample, neuron, target, **kwargs):
+                Path(target).write_bytes(b'bounded brain view PNG fixture')
+                receipt = Path(target).with_suffix('.json')
+                receipt.write_text('{"status":"rendered_candidate"}', encoding='utf-8')
+                return {'receipt': str(receipt), 'config_sha256': 'fixture-config',
+                        'region_resolution': {}}
             with mock.patch(
                     "vispa.renderers.swc_brain_view.render_configured_snapshot",
-                    return_value={"receipt": str(Path(folder) / "receipt.json")}
-            ) as render:
+                    side_effect=render_snapshot
+            ) as render, mock.patch('vispa.config.load', return_value={
+                    'visual_toolkit': {'figure_output_root': folder}}):
                 gui._render_swc3d()
             render.assert_called_once()
             args, kwargs = render.call_args
             self.assertEqual(args[:2], ("251637", "004.swc"))
             self.assertTrue(args[2].endswith("_3D_SWC.png"))
-            self.assertEqual(kwargs, {"portal_region": "PrCO",
+            self.assertEqual(kwargs, {"portal_region": "PrCO_49",
                                       "config_path": "fixture.yaml"})
+            final = Path(folder) / '251637' / 'neurons' / '004_R_PrCO' / Path(args[2]).name
             gui._finish_swc3d.assert_called_once_with(
-                "251637", "004.swc", args[2],
-                str(Path(folder) / "receipt.json"), True)
+                "251637", "004.swc", str(final), None, True)
+            self.assertTrue(final.is_file())
+            process_log = Path(folder) / '251637' / 'process_log.json'
+            record = json.loads(process_log.read_text(encoding='utf-8'))
+            self.assertEqual(record['neurons']['004.swc']['current']['products'][
+                'SWC3D']['output']['path'], str(final))
             gui.preview_label.configure.assert_called_once_with(
                 image='', text='Rendering SWC Brain View…')
             gui.preview_caption.set.assert_called_once_with(
                 'SWC Brain View · 251637/004.swc · rendering')
 
-    def test_open_output_folder_uses_saving_field_after_preview(self):
+    def test_open_output_folder_uses_existing_saving_folder_after_preview(self):
         from vispa.reviewer import NeuroVisGUI
         gui = object.__new__(NeuroVisGUI)
         gui.current_preview = r'C:\temp\visual_toolkit_preview\deleted.png'
         gui.output_dir = mock.Mock()
-        gui.output_dir.get.return_value = r'C:\review\saved_outputs'
         gui.update_status = mock.Mock()
         gui._append_log = mock.Mock()
-        with mock.patch('vispa.reviewer.os.makedirs') as mkdir, mock.patch(
-                'vispa.reviewer.os.startfile', create=True) as start:
-            gui._open_output_folder()
-        expected = str(Path(r'C:\review\saved_outputs').absolute())
-        mkdir.assert_called_once_with(expected, exist_ok=True)
-        start.assert_called_once_with(expected)
-        gui.update_status.assert_called_once_with(f'Opened output folder: {expected}')
+        with tempfile.TemporaryDirectory() as folder:
+            gui.output_dir.get.return_value = folder
+            with mock.patch('vispa.reviewer.os.startfile', create=True) as start:
+                gui._open_output_folder()
+            expected = str(Path(folder).absolute())
+            start.assert_called_once_with(expected)
+            gui.update_status.assert_called_once_with(f'Opened output folder: {expected}')
 
     def test_operation_log_records_activated_script_command_and_pid(self):
         from vispa.reviewer import NeuroVisGUI
@@ -855,7 +871,7 @@ class ProgressBarTests(unittest.TestCase):
         gui.neuron_status_var.set.assert_called_once_with(
             "Neuron status: found")
         gui.region_status_var.set.assert_called_once_with(
-            "Region: PrCO_49 · side unverified")
+            "Region: PrCO · side unverified")
 
     def test_neuron_side_uses_exact_workbook_result_not_portal_index(self):
         from vispa.gui import NeuroVisGUI
@@ -872,7 +888,7 @@ class ProgressBarTests(unittest.TestCase):
         gui.region_status_var = mock.Mock()
         gui._update_neuron_status()
         gui.region_status_var.set.assert_called_once_with(
-            'Region: Right PrCO_49')
+            'Region: Right PrCO')
 
     def test_nmt_coordinate_row_uses_vispa_side_atlas_voxel(self):
         from vispa.gui import NeuroVisGUI

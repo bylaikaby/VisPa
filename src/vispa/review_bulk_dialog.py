@@ -1,6 +1,6 @@
 """Tk controls for packaged, receipt-backed whole-animal review rendering.
 
-Version: 1.21.2 (local/unreleased)
+Version: 1.21.3 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../../CHANGELOG.md
 Status: candidate
@@ -19,6 +19,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from .config import load
 from .data_input_adaptor import list_neurons
+from ._version import __version__
 
 
 GRAPHITE = {
@@ -99,6 +100,7 @@ def bulk_command(action: str, values: dict) -> list[str]:
 
 def batch_receipt_path(jobs_path: Path, output_root: Path) -> Path:
     from .review_bulk_render import run_folder_name
+    from .render_records import animal_receipt_path
     jobs_path = jobs_path.expanduser().resolve(strict=True)
     payload = json.loads(jobs_path.read_text(encoding="utf-8"))
     sample = payload["sample_id"]
@@ -106,6 +108,8 @@ def batch_receipt_path(jobs_path: Path, output_root: Path) -> Path:
         raise ValueError("Jobs file has an invalid sample ID")
     digest = hashlib.sha256(jobs_path.read_bytes()).hexdigest()
     root = output_root.expanduser().resolve()
+    if payload.get("output_layout") == "sample_neurons_flat":
+        return animal_receipt_path(root, sample)
     if payload.get("output_layout") == "sample_neurons":
         return root / sample / "bulk_runs" / run_folder_name(payload, digest) / "batch_receipt.json"
     return root / "batch_receipt.json"
@@ -135,7 +139,7 @@ class BulkReviewDialog:
         self._jobs_manual = False
         cache = Path(config["defaults"]["cache_root"]) / "swc_raw"
         jobs = (Path(config["defaults"]["cache_root"]) / "review_jobs" /
-                f"{sample or 'sample'}_review_{self._config_sha}_jobs.json")
+                f"{sample or 'sample'}_review_v{__version__}_{self._config_sha}_jobs.json")
         defaults = {"sample": sample, "config": str(resolved), "csv": "",
                     "raw_roots": "", "source_receipt": "", "cache": str(cache),
                     "jobs": str(jobs),
@@ -236,7 +240,7 @@ class BulkReviewDialog:
                    command=self._open_results).pack(side="left")
         result_actions = ttk.Frame(advanced, style="Bulk.TFrame")
         result_actions.grid(row=12, column=0, columnspan=3, sticky="w", pady=4)
-        ttk.Button(result_actions, text="Open batch receipt", style="Bulk.TButton",
+        ttk.Button(result_actions, text="Open process log", style="Bulk.TButton",
                    command=self._open_receipt).pack(side="left", padx=(0, 6))
         ttk.Button(result_actions, text="Choose existing jobs…", style="Bulk.TButton",
                    command=lambda: self._browse("jobs")).pack(side="left")
@@ -350,7 +354,7 @@ class BulkReviewDialog:
     def _default_jobs_path(self, sample, regions):
         suffix = ("" if not regions else "_" + hashlib.sha256(
             json.dumps(sorted(regions), ensure_ascii=False).encode("utf-8")).hexdigest()[:8])
-        return self._jobs_root / f"{sample or 'sample'}_review_{self._config_sha}{suffix}_jobs.json"
+        return self._jobs_root / f"{sample or 'sample'}_review_flat_v{__version__}_{self._config_sha}{suffix}_jobs.json"
 
     @staticmethod
     def _validate_jobs(jobs: Path, values: dict, *, require_exists=False,
@@ -367,6 +371,8 @@ class BulkReviewDialog:
             raise ValueError("Prepared jobs use another profile; keep the active VisPa profile")
         if payload.get("sample_id") != values["sample"]:
             raise ValueError("Prepared jobs use another animal/sample")
+        if not view_only and payload.get("output_layout") != "sample_neurons_flat":
+            raise ValueError("Prepared jobs use an older output layout; prepare new flat-layout jobs")
         frozen_regions = sorted((payload.get("region_filter") or {}).get("labels") or [])
         if frozen_regions != sorted(values.get("regions") or []):
             raise ValueError("Prepared jobs use another atlas region selection")
@@ -548,6 +554,8 @@ class BulkReviewDialog:
                 receipt = batch_receipt_path(jobs, output)
                 path = (receipt.parent.parent.parent / "neurons"
                         if kind == "results" and receipt.parent.parent.name == "bulk_runs" else
+                        receipt.parent / "neurons" if kind == "results" and
+                        receipt.name == "process_log.json" else
                         receipt.parent if kind == "results" else receipt)
                 if path.exists():
                     os.startfile(str(path))
@@ -586,10 +594,16 @@ class BulkReviewDialog:
                 path = batch_receipt_path(Path(jobs), Path(output))
                 if path.is_file():
                     record = json.loads(path.read_text(encoding="utf-8"))
-                    completed = record.get("completed") or []
-                    ready = record.get("requested", "?")
-                    status = record.get("status", "unknown")
-                    message = f"Run receipt: {len(completed)}/{ready} · {status} · {path}"
+                    if path.name == "process_log.json":
+                        batch = record.get("current_batch") or {}
+                        completed = batch.get("completed", 0)
+                        ready = batch.get("requested", "?")
+                        status = batch.get("status", "unknown")
+                    else:
+                        completed = len(record.get("completed") or [])
+                        ready = record.get("requested", "?")
+                        status = record.get("status", "unknown")
+                    message = f"Process log: {completed}/{ready} · {status} · {path}"
                     self.parent.after(0, lambda: self._show_receipt_status(message))
             except (OSError, ValueError, KeyError, TypeError, tk.TclError):
                 pass

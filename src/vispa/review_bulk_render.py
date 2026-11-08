@@ -1,6 +1,6 @@
 """Render one VisPa review set per published region/FNT job.
 
-Version: 1.21.2 (local/unreleased)
+Version: 1.21.3 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../CHANGELOG.md
 Status: candidate
@@ -15,6 +15,7 @@ Operator:
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import hashlib
 import json
 import os
@@ -43,7 +44,8 @@ def run_folder_name(payload: dict, jobs_sha256: str) -> str:
     return validate_run_name(name) if name is not None else f"bulk_{jobs_sha256[:12]}"
 
 
-def neuron_folder_name(sample_id: str, neuron_id: str, region: str | None) -> str:
+def neuron_folder_name(sample_id: str, neuron_id: str, region: str | None,
+                       *, side: str | None = None) -> str:
     """Freeze one short, portable neuron/region folder for new jobs."""
     if not isinstance(sample_id, str) or not _TOKEN.fullmatch(sample_id):
         raise ValueError("sample_id must be a short path-safe name")
@@ -53,13 +55,16 @@ def neuron_folder_name(sample_id: str, neuron_id: str, region: str | None) -> st
     # Atlas labels commonly append a numeric atlas ID; keep intrinsic digits.
     label = re.sub(r"_[0-9]+\Z", "", label)
     label = label or "Unassigned"
-    original = f"{sample_id}_{neuron_id[:-4]}_{label}"
+    if side not in (None, "Left", "Right"):
+        raise ValueError("side must be verified Left, Right, or unknown")
+    side_token = {"Left": "L", "Right": "R", None: None}[side]
+    original = "_".join(part for part in (neuron_id[:-4], side_token, label) if part)
     if _RUN_NAME.fullmatch(original):
         return original
     stem = re.sub(r"[^A-Za-z0-9_-]+", "_", neuron_id[:-4]).strip("_")[:20] or "neuron"
     safe_label = re.sub(r"[^A-Za-z0-9_-]+", "_", label).strip("_")[:24] or "region"
     suffix = hashlib.sha256(original.encode("utf-8")).hexdigest()[:8]
-    return f"{sample_id[:20]}_{stem}_{safe_label}_{suffix}"
+    return "_".join(part for part in (stem, side_token, safe_label, suffix) if part)
 
 
 def _sha256(path: Path) -> str:
@@ -121,8 +126,8 @@ def load_review_jobs(jobs_path: Path, output_root: Path, limit: int | None, all_
         raise ValueError("Output root must be separate from the jobs file")
     ready, skipped = [], []
     layout = payload.get("output_layout", "legacy")
-    if layout not in {"legacy", "sample_neurons"}:
-        raise ValueError("output_layout must be legacy or sample_neurons")
+    if layout not in {"legacy", "sample_neurons", "sample_neurons_flat"}:
+        raise ValueError("output_layout must be legacy, sample_neurons or sample_neurons_flat")
     region_filter = payload.get("region_filter")
     if region_filter is not None:
         if (not isinstance(region_filter, dict) or
@@ -170,6 +175,13 @@ def load_review_jobs(jobs_path: Path, output_root: Path, limit: int | None, all_
                 ready_job["soma_region_entries"] = entry["soma_region_entries"]
             if "neuron_folder" in entry:
                 ready_job["neuron_folder"] = entry["neuron_folder"]
+            if "vispa_region" in entry:
+                ready_job["vispa_region"] = entry["vispa_region"]
+            for key in ("source_acquisition_date", "source_acquisition_date_status",
+                        "source_observed_at_utc", "raw_source_file_mtime_utc",
+                        "raw_source_file_mtime_role", "raw_source_receipt"):
+                if key in entry:
+                    ready_job[key] = entry[key]
             ready.append(ready_job)
         else:
             skipped.append({"sample_id": sample, "neuron_id": neuron,
@@ -190,21 +202,27 @@ def load_review_jobs(jobs_path: Path, output_root: Path, limit: int | None, all_
     jobs_hash = _sha256(jobs_path)
     run_name = run_folder_name(payload, jobs_hash)
     for entry in selected:
-        if layout == "sample_neurons":
+        if layout in {"sample_neurons", "sample_neurons_flat"}:
             neuron_folder = entry.get("neuron_folder", entry["neuron_id"][:-4])
             if not isinstance(neuron_folder, str) or not _RUN_NAME.fullmatch(neuron_folder):
                 raise ValueError("neuron_folder must be one short path-safe name")
-            folder = output_root / sample / "neurons" / neuron_folder / run_name
+            folder = output_root / sample / "neurons" / neuron_folder
+            if layout == "sample_neurons":
+                folder = folder / run_name
         else:
             folder = output_root / sample / entry["neuron_id"][:-4]
         entry["output_dir"] = str(folder)
     from vispa import __version__
     review_settings, figure_output_root = {}, None
-    if layout == "sample_neurons":
+    if layout in {"sample_neurons", "sample_neurons_flat"}:
         from vispa.config import load, resolve_settings
         resolved_config = load(config_path)
         review_settings = resolve_settings("review", config=resolved_config)
         figure_output_root = str(resolved_config["visual_toolkit"]["figure_output_root"])
+        if (layout == "sample_neurons_flat" and
+                resolved_config["visual_toolkit"].get("enforce_render_config") and
+                output_root != Path(figure_output_root).expanduser().resolve()):
+            raise ValueError("Flat review output root must match the saved figure_output_root")
     return {
         "schema": payload["schema"],
         "jobs_path": str(jobs_path),
@@ -220,6 +238,7 @@ def load_review_jobs(jobs_path: Path, output_root: Path, limit: int | None, all_
         "vispa_version": __version__,
         "review_settings": review_settings,
         "figure_output_root": figure_output_root,
+        "vispa_region_lookup": payload.get("vispa_region_lookup"),
         "region_filter": region_filter,
         "skipped_not_ready": skipped,
         "jobs": selected,
@@ -262,19 +281,15 @@ def _verified_raw_path(config: dict, job: dict) -> Path | None:
 
 
 def _region_display_value(job: dict) -> str | None:
-    """Tag a frozen source label for plot titles without changing its stored value."""
-    value = job.get("soma_region")
-    if not isinstance(value, str) or not value.strip():
-        return None
+    """Compatibility wrapper around the shared pure GUI/bulk formatter."""
+    from vispa.data_input_adaptor import region_display_label
     source = job.get("soma_region_source")
     field = source.get("field") if isinstance(source, dict) else None
-    if field in {"checked_region", "soma_region.checked_region"}:
-        return f"checked_region={value}"
-    if field in {"ion_atlas", "soma_region.ion_atlas"}:
-        return f"ion_atlas={value}"
-    if field == "portal_region":
-        return f"portal_region={value}"
-    return value
+    entries = job.get("soma_region_entries") or {}
+    portal = entries.get("portal_region") if isinstance(entries, dict) else None
+    return region_display_label(portal, job.get("vispa_region"),
+                                selected_region=job.get("soma_region"),
+                                selected_source=field)
 
 
 def render_review_neuron(job: dict, output_dir: Path, config_path: Path) -> dict:
@@ -437,6 +452,154 @@ def run_review_bulk(plan: dict, *, dry_run: bool, renderer=None, resume: bool = 
         return _run_review_bulk(plan, dry_run=False, renderer=renderer, resume=resume)
 
 
+def _run_review_bulk_flat(plan: dict, *, dry_run: bool, renderer=None,
+                          resume: bool = False) -> dict:
+    """Render into direct neuron folders and keep one animal process log."""
+    from uuid import uuid4
+    from vispa.config import load
+    from vispa.render_records import (animal_receipt_path, record_neuron_output,
+                                      update_animal_batch, verified_neuron_record)
+
+    result = {**plan, "status": "dry_run" if dry_run else "in_progress",
+              "completed": [], "error": None}
+    if dry_run:
+        return result
+    sample = plan["sample_id"]
+    sample_root = Path(plan["output_root"]) / sample
+    sample_root.mkdir(parents=True, exist_ok=True)
+    receipt_path = animal_receipt_path(plan["output_root"], sample)
+    batch = {"attempt_id": uuid4().hex, "run_name": plan["run_name"],
+             "jobs_path": plan["jobs_path"], "jobs_sha256": plan["jobs_sha256"],
+             "vispa_config": plan["vispa_config"],
+             "vispa_config_sha256": plan["vispa_config_sha256"],
+             "vispa_version": plan["vispa_version"], "output_layout": plan["output_layout"],
+             "review_settings": plan["review_settings"],
+             "settings_sha256": _settings_sha256(plan),
+             "requested": plan["requested"], "completed": 0,
+             "source_jobs": [{"neuron_id": job["neuron_id"],
+                              "job_sha256": _job_sha256(job),
+                              "raw_swc_path": job.get("raw_swc_path"),
+                              "raw_swc_sha256": job.get("raw_swc_sha256"),
+                              "raw_source_receipt": job.get("raw_source_receipt"),
+                              "source_acquisition_date": job.get("source_acquisition_date"),
+                              "source_acquisition_date_status": job.get("source_acquisition_date_status"),
+                              "source_observed_at_utc": job.get("source_observed_at_utc"),
+                              "raw_source_file_mtime_utc": job.get("raw_source_file_mtime_utc"),
+                              "raw_source_file_mtime_role": job.get("raw_source_file_mtime_role"),
+                              "neuron_folder": job.get("neuron_folder")}
+                             for job in plan["jobs"]],
+             "status": "in_progress", "started_at_utc": datetime.now(timezone.utc).isoformat()}
+    update_animal_batch(receipt_path, sample, batch)
+    render = renderer or render_review_neuron
+    roles = {"Soma", "Context", "Sagittal", "TrioPlot"}
+    try:
+        for job in plan["jobs"]:
+            folder = Path(job["output_dir"])
+            if not folder.resolve().is_relative_to((sample_root / "neurons").resolve()):
+                raise ValueError("Neuron output escapes the animal folder")
+            config = load(Path(plan["vispa_config"]))
+            _verified_raw_path(config, job)
+            expected = {"job_sha256": _job_sha256(job),
+                        "config_sha256": plan["vispa_config_sha256"],
+                        "settings_sha256": _settings_sha256(plan),
+                        "vispa_version": plan["vispa_version"],
+                        "raw_swc_sha256": job.get("raw_swc_sha256"),
+                        "output_dir": str(folder)}
+            if resume:
+                prior = verified_neuron_record(receipt_path, sample, job["neuron_id"], expected)
+                if prior is not None:
+                    result["completed"].append({**prior, "resume_action": "verified_skip"})
+                    batch["completed"] = len(result["completed"])
+                    update_animal_batch(receipt_path, sample, batch)
+                    continue
+            errors, outputs, other_outputs = [], {}, {}
+            rendered = {}
+            with tempfile.TemporaryDirectory(prefix=".stage-neuron-", dir=sample_root) as temporary:
+                stage = Path(temporary)
+                try:
+                    if _sha256(Path(plan["vispa_config"])) != plan["vispa_config_sha256"]:
+                        raise ValueError("VisPa config changed during rendering")
+                    rendered = render(job, stage, Path(plan["vispa_config"]))
+                    errors.extend(rendered.get("errors", []))
+                    from PIL import Image
+                    seen = set()
+                    for role, value in rendered.get("outputs", {}).items():
+                        if role not in roles:
+                            continue
+                        source = Path(value).resolve(strict=True)
+                        if (not source.is_file() or not source.stat().st_size or
+                                not source.is_relative_to(stage.resolve()) or source in seen):
+                            raise ValueError(f"{role}: invalid or duplicate staged path")
+                        seen.add(source)
+                        with Image.open(source) as image:
+                            if image.format != "PNG":
+                                raise ValueError(f"{role}: output is not PNG")
+                            image.verify()
+                        with Image.open(source) as image:
+                            image.load()
+                    missing = sorted(roles - set(rendered.get("outputs", {})))
+                    if missing:
+                        errors.append("Missing verified output roles: " + ", ".join(missing))
+                    folder.mkdir(parents=True, exist_ok=True)
+                    for source in stage.rglob("*"):
+                        if not source.is_file():
+                            continue
+                        # Keep every scientific derivative, including Soma NIfTI.
+                        if source.parent != stage:
+                            raise ValueError("Renderer created a nested output")
+                        target = folder / source.name
+                        if target.exists():
+                            base = source.name[:-7] if source.name.endswith(".nii.gz") else source.stem
+                            suffix = ".nii.gz" if source.name.endswith(".nii.gz") else source.suffix
+                            target = folder / f"{base}_{uuid4().hex[:8]}{suffix}"
+                        source.replace(target)
+                        item = {"path": str(target), "sha256": _sha256(target)}
+                        role = next((key for key, value in rendered.get("outputs", {}).items()
+                                     if key in roles and Path(value).resolve() == source.resolve()), None)
+                        if role is None:
+                            other_outputs[target.name] = item
+                        else:
+                            outputs[role] = item
+                except Exception as exc:
+                    errors.append(str(exc))
+            missing = sorted(roles - set(outputs))
+            if missing:
+                errors.append("Missing verified output roles: " + ", ".join(missing))
+            record = {**expected, "sample_id": sample, "neuron_id": job["neuron_id"],
+                      "neuron_folder": job.get("neuron_folder"),
+                      "soma_region": job.get("soma_region"),
+                      "soma_region_source": job.get("soma_region_source"),
+                      "soma_region_entries": job.get("soma_region_entries"),
+                      "vispa_region": job.get("vispa_region"),
+                      "soma_xyz": job.get("soma_xyz"),
+                      "raw_swc_path": job.get("raw_swc_path"),
+                      "raw_source_receipt": job.get("raw_source_receipt"),
+                      "source_acquisition_date": job.get("source_acquisition_date"),
+                      "source_acquisition_date_status": job.get("source_acquisition_date_status"),
+                      "source_observed_at_utc": job.get("source_observed_at_utc"),
+                      "raw_source_file_mtime_utc": job.get("raw_source_file_mtime_utc"),
+                      "raw_source_file_mtime_role": job.get("raw_source_file_mtime_role"),
+                      "raw_swc_source_equivalence": rendered.get("raw_swc_source_equivalence", "unknown"),
+                      "outputs": outputs, "other_outputs": other_outputs,
+                      "errors": errors, "status": _status_for(outputs, errors),
+                      "rendered_at_utc": datetime.now(timezone.utc).isoformat(),
+                      "resume_action": "rendered", "anatomical_acceptance": "not established"}
+            record_neuron_output(receipt_path, sample, job["neuron_id"], record, batch=batch)
+            result["completed"].append(record)
+            batch["completed"] = len(result["completed"])
+            update_animal_batch(receipt_path, sample, batch)
+        result["status"] = ("pass" if result["completed"] and all(
+            item["status"] == "rendered_candidate" for item in result["completed"])
+            and not (plan["all_jobs"] and plan["skipped_not_ready"]) else "partial_or_failed")
+    except Exception as exc:
+        result["status"], result["error"] = "partial_or_failed", str(exc)
+    batch["status"] = result["status"]
+    batch["error"] = result["error"]
+    batch["finished_at_utc"] = datetime.now(timezone.utc).isoformat()
+    update_animal_batch(receipt_path, sample, batch)
+    return result
+
+
 def _run_review_bulk(plan: dict, *, dry_run: bool, renderer=None, resume: bool = False) -> dict:
     result = {
         **plan,
@@ -448,6 +611,9 @@ def _run_review_bulk(plan: dict, *, dry_run: bool, renderer=None, resume: bool =
         raise ValueError("VisPa config changed after job planning")
     if _sha256(Path(plan["jobs_path"])) != plan["jobs_sha256"]:
         raise ValueError("Review jobs changed after planning")
+    if plan["output_layout"] == "sample_neurons_flat":
+        return _run_review_bulk_flat(plan, dry_run=dry_run, renderer=renderer,
+                                     resume=resume)
     if dry_run:
         return result
     output_root = Path(plan["output_root"])
@@ -538,6 +704,7 @@ def _run_review_bulk(plan: dict, *, dry_run: bool, renderer=None, resume: bool =
                 "soma_region": job.get("soma_region"),
                 "soma_region_source": job.get("soma_region_source"),
                 "soma_region_entries": job.get("soma_region_entries"),
+                "vispa_region": job.get("vispa_region"),
                 "soma_xyz": job["soma_xyz"],
                 "soma_units": job.get("soma_units"),
                 "soma_coordinate_source": job.get("soma_coordinate_source"),

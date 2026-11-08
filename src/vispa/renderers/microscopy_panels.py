@@ -1,9 +1,15 @@
 """
 vispa.py - Macaque Brain Hybrid-Resolution Visualization Toolkit
 
-Version: 1.21.2 (local/unreleased)
+Version: 1.21.3 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../../../CHANGELOG.md
+2026-11-08: Shorten CL_/CR_ atlas ID prefixes in displayed Region titles
+while retaining source identifiers and side metadata.
+2026-11-08: Reload selected saved config at source activation and guard public
+figure writes against strict-profile drift in memory or on disk.
+2026-11-08: Combine selected region source with VisPa portal/atlas mapping
+in one Region title; omit the separate sagittal hemisphere title clause.
 2026-11-08: Make cross stroke thinner and route shared/standalone figure
 typography and scale bars through validated review settings.
 2026-11-08: Size trio columns to panel aspect; honor configurable crosshair
@@ -154,11 +160,21 @@ def configure_data_sources(path=None, config=None):
     """Select explicit source roots and transport settings for this process."""
     global LOW_RES_SHARE_BY_SAMPLE, HTTP_HOST, HTTP_PATH, SSH_HOST, SSH_PORT, SSH_USER, SSH_PASS, SSH_REMOTE_BASE, SSH_SAMPLE_ID, ACTIVE_CONFIG
     global SAMPLE_PATHS, SHARE_ROOT, DATASET_MANIFEST, EXPECTED_GEOMETRY
+    global ACTIVE_CONFIG_SHA256
     if config is None:
         from ..config import load
         config = load(path)
     if not isinstance(config, dict):
         raise ValueError("VisualToolkit config must be a mapping")
+    selected = config.get('path')
+    if selected is not None and Path(selected).is_file():
+        from ..config import load
+        selection_origin = config.get('config_origin')
+        config = load(selected)
+        if selection_origin is not None:
+            config['config_origin'] = selection_origin
+    selected_hash = (hashlib.sha256(Path(selected).read_bytes()).hexdigest()
+                     if selected is not None and Path(selected).is_file() else None)
     defaults = config.get('defaults', {})
     ui = config.get('visual_toolkit', {})
     sources = config.get('sources', {})
@@ -226,13 +242,14 @@ def configure_data_sources(path=None, config=None):
     dataset_manifest = Path(sources['dataset_manifest']) if sources.get('dataset_manifest') else None
     # Every source activation starts from package defaults. Validation finishes
     # before any source or review globals change, so a failed load stays atomic.
-    from ..config import resolve_settings
-    review_candidate = resolve_settings('review', config=config)
+    from ..config import resolve_render_settings
+    review_candidate = resolve_render_settings('review', config)
     REVIEW_SETTINGS.clear()
     REVIEW_SETTINGS.update(review_candidate)
     from ..config import _sync_review_setting_constants
     _sync_review_setting_constants()
     ACTIVE_CONFIG = config
+    ACTIVE_CONFIG_SHA256 = selected_hash
     EXPECTED_GEOMETRY = expected_geometry
     LOW_RES_SHARE_BY_SAMPLE = low_res_paths
     HTTP_HOST, HTTP_PATH = http_host, http_path
@@ -248,6 +265,7 @@ LOW_RES_SHARE_BY_SAMPLE = {}
 HTTP_HOST = HTTP_PATH = None
 SSH_HOST = SSH_PORT = SSH_USER = SSH_PASS = SSH_REMOTE_BASE = SSH_SAMPLE_ID = None
 ACTIVE_CONFIG = None
+ACTIVE_CONFIG_SHA256 = None
 RESOLUTION_LOW = [5.0, 5.0, 3.0]
 
 # Shared pure-Python defaults, schema, and validators live in vispa.config.
@@ -960,7 +978,7 @@ class VisPa:
 
         # Build filename with region (coordinates NOT in filename)
         # Sanitize region name to prevent path issues
-        if soma_region:
+        if soma_region or nmt_corrected:
             safe_region = self._sanitize_filename(soma_region)
             filename = f"{self.sample_id}_{neuron_id}_{safe_region}_{_output_name(suffix)}"
         else:
@@ -1064,6 +1082,24 @@ class VisPa:
     PANEL_DPI = REVIEW_SETTINGS['figure']['panel_dpi']
     TRIO_FIGSIZE = REVIEW_SETTINGS['figure']['review_figsize']
     TRIO_DPI = REVIEW_SETTINGS['figure']['review_dpi']
+
+    def _assert_render_config(self, dpi=None):
+        """Reject stale or one-off figure style under a saved strict profile."""
+        config = ACTIVE_CONFIG
+        if not config or not config.get('visual_toolkit', {}).get('enforce_render_config', False):
+            return
+        selected = config.get('path')
+        if selected is not None and ACTIVE_CONFIG_SHA256 is not None:
+            if hashlib.sha256(Path(selected).read_bytes()).hexdigest() != ACTIVE_CONFIG_SHA256:
+                raise ValueError('saved config changed after source activation; reload it before rendering')
+        from ..config import resolve_render_settings
+        expected = resolve_render_settings('review', config, base=REVIEW_SETTINGS)
+        figure = expected['figure']
+        actual = (self.PANEL_FIGSIZE, self.PANEL_DPI, self.TRIO_FIGSIZE, self.TRIO_DPI)
+        configured = (figure['panel_figsize'], figure['panel_dpi'],
+                      figure['review_figsize'], figure['review_dpi'])
+        if actual != configured or (dpi is not None and dpi != figure['review_dpi']):
+            raise ValueError('figure size or DPI conflicts with the saved config')
     TRACE_COLOR_A = '#de2d2c'
     TRACE_COLOR_B = '#1e73de'
     # Review titles: legacy filename suffixes map to the display name and the
@@ -1077,35 +1113,39 @@ class VisPa:
     @staticmethod
     def _region_title_value(soma_region, nmt_corrected=None):
         """Format portal-derived and optional corrected NMT region values."""
+        from ..data_input_adaptor import display_region_name
         text = str(soma_region or "").strip()
-        # Bulk jobs can carry their own named region sources. Keep those
-        # declared names instead of relabeling them as portal assignments.
-        if re.match(r"^(?:checked_region|ion_atlas|portal_region|nmt_portal)\s*=", text, re.IGNORECASE):
-            pieces = [re.sub(r"\s+", " ", part).strip()
-                      for part in re.split(r"\s*[|·]\s*", text) if part.strip()]
-            if nmt_corrected:
-                corrected = re.sub(r"^(?:nmt_corrected\s*[=:]\s*)", "",
-                                   str(nmt_corrected).strip(), flags=re.IGNORECASE)
-                pieces.append(f"nmt_corrected={re.sub(r'\s+', ' ', corrected).strip()}")
-            return " · ".join(pieces)
+        selected_match = re.match(
+            r"^(checked_region|ion_atlas|portal_region|nmt_portal)\s*=\s*([^|·]+)",
+            text, flags=re.IGNORECASE)
+        pieces = []
+        if selected_match:
+            field = selected_match.group(1).lower()
+            value = re.sub(r"\s+", " ", selected_match.group(2)).strip() or "unavailable"
+            if field == 'nmt_portal':
+                value = display_region_name(value)
+            pieces.append(f"{field}={value}")
         portal_match = re.search(
             r"(?:^|\|)\s*Portal:\s*(.*?)(?=\s*\|\s*Atlas:|$)",
             text, flags=re.IGNORECASE)
         atlas_match = re.search(
             r"(?:^|\|)\s*Atlas:\s*(.*)$", text, flags=re.IGNORECASE)
         if portal_match and atlas_match:
-            portal = re.sub(r"\s+", " ", portal_match.group(1)).strip() or "Unassigned"
+            portal = re.sub(r"\s+", " ", portal_match.group(1)).strip() or "unavailable"
             atlas = re.sub(r"\s+", " ", atlas_match.group(1)).strip() or "unavailable"
-            nmt_portal = portal if atlas.lower() == "unavailable" else atlas
-        else:
-            nmt_portal = re.sub(r"\s+", " ", text).strip() or "unavailable"
-        pieces = [f"nmt_portal={nmt_portal}"]
+            if atlas.lower() == "unavailable":
+                pieces.append("nmt_portal=unavailable")
+                pieces.append(f"portal_region={portal}")
+            else:
+                pieces.append(f"nmt_portal={display_region_name(atlas)}")
+        elif not selected_match:
+            pieces.append(f"nmt_portal={re.sub(r'\s+', ' ', text).strip() or 'unavailable'}")
         corrected = re.sub(
             r"^(?:nmt_corrected\s*[=:]\s*)", "",
             str(nmt_corrected or "").strip(), flags=re.IGNORECASE)
         corrected = re.sub(r"\s+", " ", corrected).strip()
         if corrected:
-            pieces.append(f"nmt_corrected={corrected}")
+            pieces.append(f"nmt_corrected={display_region_name(corrected)}")
         return " · ".join(pieces)
 
     def _title_text(self, neuron_id, suffix, soma_region, soma_coords, fov_um, depth_um,
@@ -1124,8 +1164,6 @@ class VisPa:
         if soma_coords is not None:
             context.append(f"XYZ: ({int(soma_coords[0])}, {int(soma_coords[1])}, "
                            f"{int(soma_coords[2])})")
-        if hemisphere:
-            context.append(f"{hemisphere}_hemisphere")
         if context:
             lines.append(" | ".join(context))
         lines.append(f"FOV: {fov_um[0]:.0f}x{fov_um[1]:.0f} µm | Depth: {depth_um:.0f} µm")
@@ -1257,6 +1295,7 @@ class VisPa:
     def _save_panel_plot(self, panel, neuron_id, suffix, soma_region=None,
                          soma_coords=None, output_dir=None, nmt_corrected=None):
         """Write one legacy-styled panel PNG and return the panel."""
+        self._assert_render_config()
         target_dir = output_dir if output_dir else self.output_dir
         if not os.path.exists(target_dir):
             os.makedirs(target_dir, exist_ok=True)
@@ -1479,6 +1518,7 @@ class VisPa:
                        output_dir=None, scale_bar_um=30, extra_title=None,
                        legend_entries=None, show_axes=True, show_legend=True,
                        nmt_corrected=None):
+        self._assert_render_config()
         h, w = ax.images[0].get_size()
 
         target_dir = output_dir if output_dir else self.output_dir
@@ -1601,6 +1641,7 @@ class VisPa:
         panels = [dict(panel) for panel in panels if panel]
         if not panels:
             raise ValueError("plot_tri_plot needs at least one panel")
+        self._assert_render_config(dpi=dpi)
         target_dir = output_dir if output_dir else self.output_dir
         if not os.path.exists(target_dir):
             os.makedirs(target_dir, exist_ok=True)
@@ -2316,6 +2357,13 @@ def render_sagittal_context(
         raise ValueError(f"mappings must be a non-empty sequence of {tuple(MAPPINGS)}")
     if style not in ("toolkit", "legacy"):
         raise ValueError("style must be 'toolkit' or 'legacy'")
+    if (ACTIVE_CONFIG is not None and
+            ACTIVE_CONFIG.get('visual_toolkit', {}).get('enforce_render_config', False)):
+        # The historical PIL view and crop/mapping variants have no saved
+        # review-setting keys. They remain available through legacy profiles.
+        if (style != 'toolkit' or tuple(mappings) != ('A',) or
+                slab_thickness_mm != 0.1 or crop_half_width_mm is not None):
+            raise ValueError('sagittal render options conflict with the saved config')
     if slab_thickness_mm <= 0 or (crop_half_width_mm is not None and crop_half_width_mm <= 0):
         raise ValueError("Slab and crop width must be positive")
     if source is not None and (source.sample_id != sample_id or processed_path is not None):

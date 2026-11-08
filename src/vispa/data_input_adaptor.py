@@ -1,8 +1,10 @@
 """Explicit data-input adaptor for local SWCs and source-tree providers.
 
-Version: 1.21.0 (local/unreleased)
+Version: 1.21.3 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../../CHANGELOG.md
+2026-11-08: Shorten atlas hemisphere ID prefixes in display labels only;
+source atlas identifiers remain unchanged in acquisition records.
 """
 from __future__ import annotations
 
@@ -205,6 +207,52 @@ def side_from_region(region) -> str | None:
     if text.startswith(_RIGHT_PREFIXES):
         return "Right"
     return None
+
+
+def display_region_name(region: str, side: str | None = None,
+                        *, strip_numeric_suffix: bool = False) -> str:
+    """Shorten a leading CL_/CR_ atlas ID only when its side is consistent."""
+    text = str(region).strip()
+    embedded_side = re.match(r"^(Left|Right)\s+(.+)$", text, flags=re.IGNORECASE)
+    if embedded_side:
+        name = display_region_name(embedded_side.group(2), embedded_side.group(1),
+                                   strip_numeric_suffix=strip_numeric_suffix)
+        return f"{embedded_side.group(1).capitalize()} {name}"
+    expected = {"left": "CL_", "right": "CR_"}.get(str(side).strip().lower())
+    if expected is not None and text.upper().startswith(expected):
+        text = text[len(expected):]
+    elif side is None and text.upper().startswith(("CL_", "CR_")):
+        text = text[3:]
+    if strip_numeric_suffix:
+        text = re.sub(r"_\d+$", "", text)
+    return text
+
+
+def region_display_label(portal_region, vispa_region, *, selected_region=None,
+                         selected_source=None) -> str | None:
+    """Build one GUI/bulk plot label from frozen source and VisPa atlas results."""
+    selected = selected_region.strip() if isinstance(selected_region, str) and selected_region.strip() else None
+    portal = portal_region.strip() if isinstance(portal_region, str) and portal_region.strip() else "Unassigned"
+    if isinstance(vispa_region, dict):
+        source = vispa_region.get("source") or {}
+        atlas_region = source.get("atlas_region") if isinstance(source, dict) else None
+        side = vispa_region.get("side") if vispa_region.get("status") == "verified" else None
+        atlas = f"{side} {display_region_name(atlas_region, side)}" if side and atlas_region else "unavailable"
+        parsed = f"Portal: {portal} | Atlas: {atlas}"
+        if selected and selected_source in {"checked_region", "soma_region.checked_region"}:
+            return f"checked_region={selected} | {parsed}"
+        if selected and selected_source in {"ion_atlas", "soma_region.ion_atlas"}:
+            return f"ion_atlas={selected} | {parsed}"
+        return parsed
+    if selected is None:
+        return None
+    if selected_source in {"checked_region", "soma_region.checked_region"}:
+        return f"checked_region={selected}"
+    if selected_source in {"ion_atlas", "soma_region.ion_atlas"}:
+        return f"ion_atlas={selected}"
+    if selected_source == "portal_region":
+        return f"portal_region={selected}"
+    return selected
 
 
 def _resolve_side_workbook(root: str | Path | None, sample_id: str) -> Path | None:
