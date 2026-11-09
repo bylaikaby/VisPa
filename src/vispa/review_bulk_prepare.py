@@ -12,8 +12,6 @@ Operator: python -m vispa.review_bulk_prepare --config PATH --sample SAMPLE
 
 The preparation result reports exact failed neuron IDs and grouped source errors.
 Callers may atomically replace a matching partial jobs file when retrying.
-The local `--config-overlay` layer changes only the effective render settings;
-the base profile is never written.
 """
 from __future__ import annotations
 
@@ -23,12 +21,11 @@ from datetime import datetime, timezone
 import hashlib
 import io
 import json
-import os
 from pathlib import Path
 import re
 from zoneinfo import ZoneInfo
 
-from vispa.config import config_fingerprint, load
+from vispa.config import load
 from vispa.data_input_adaptor import (
     PortalSWCProvider, _guard_managed_cache, _publish_swc_versioned,
     acquire_neuron_sides, list_neurons, read_swc,
@@ -258,11 +255,7 @@ def plan_jobs(config_path: Path, sample: str, identities: Path | None, catalog: 
                      "soma_error": None if digest else "raw SWC absent from declared roots; download requires --allow-download"})
     return {"schema": "vispa.review_bulk.prepare.v1", "sample_id": sample,
             "run_name": run_name,
-            "vispa_config": str(config_path),
-            "vispa_config_sha256": config_fingerprint(config),
-            "vispa_base_config_sha256": config.get("base_config_sha256"),
-            "vispa_config_overlay": config.get("config_overlay_path"),
-            "vispa_config_overlay_sha256": config.get("config_overlay_sha256"),
+            "vispa_config": str(config_path), "vispa_config_sha256": _sha256(config_path),
             "figure_output_root": str(config["visual_toolkit"]["figure_output_root"]),
             "identity_source": identity_source, "expected_source": expected_source,
             "vispa_region_lookup": {"status": side_batch.get("status"),
@@ -286,9 +279,9 @@ def prepare_jobs(plan: dict, output_jobs: Path, *, dry_run: bool, allow_download
     output_jobs = output_jobs.resolve()
     if output_jobs.exists() and not replace_existing:
         raise FileExistsError(f"Jobs file already exists: {output_jobs}")
-    config = load(plan["vispa_config"])
-    if config_fingerprint(config) != plan["vispa_config_sha256"]:
+    if _sha256(Path(plan["vispa_config"])) != plan["vispa_config_sha256"]:
         raise ValueError("VisPa config changed after preparation plan")
+    config = load(plan["vispa_config"])
     cache_root = Path(plan["cache_root"])
     portal = PortalSWCProvider(config, cache_root=cache_root) if allow_download else None
     jobs = []
@@ -344,9 +337,6 @@ def prepare_jobs(plan: dict, output_jobs: Path, *, dry_run: bool, allow_download
                "run_name": plan["run_name"],
                "vispa_config": plan["vispa_config"],
                "vispa_config_sha256": plan["vispa_config_sha256"],
-               "vispa_base_config_sha256": plan.get("vispa_base_config_sha256"),
-               "vispa_config_overlay": plan.get("vispa_config_overlay"),
-               "vispa_config_overlay_sha256": plan.get("vispa_config_overlay_sha256"),
                "figure_output_root": plan["figure_output_root"],
                "allow_all": plan["allow_all"],
                "output_layout": "sample_neurons_flat", "identity_source": plan["identity_source"],
@@ -379,8 +369,6 @@ def main(argv=None) -> int:
     from vispa import __version__
     parser.add_argument("--version", action="version", version=__version__)
     parser.add_argument("--config", type=Path, required=True)
-    parser.add_argument("--config-overlay", type=Path,
-                        help="local read-only overlay applied over the base config")
     parser.add_argument("--sample", required=True)
     selection = parser.add_mutually_exclusive_group(required=True)
     selection.add_argument("--identities", type=Path)
@@ -398,9 +386,6 @@ def main(argv=None) -> int:
     parser.add_argument("--allow-download", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
-    if args.config_overlay:
-        os.environ["VISPA_CONFIG_OVERLAY"] = str(
-            args.config_overlay.expanduser().resolve())
     try:
         plan = plan_jobs(args.config, args.sample, args.identities, args.catalog,
                          args.raw_root, args.cache_root, args.source_receipt,

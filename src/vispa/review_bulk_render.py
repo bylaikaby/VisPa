@@ -11,9 +11,6 @@ as the VisPa GUI. The command does not discover cohorts or rewrite SWCs.
 
 Operator:
   python -m vispa.review_bulk_render --jobs PATH --output-root PATH --limit 1 --dry-run
-
-Use `--config-overlay PATH` for one local temporary profile revision. Existing
-complete and source-blocked neurons can be skipped without rewriting products.
 """
 from __future__ import annotations
 
@@ -310,12 +307,7 @@ def load_review_jobs(jobs_path: Path, output_root: Path, limit: int | None, all_
     layout = payload.get("output_layout", "legacy")
     if layout not in {"legacy", "sample_neurons", "sample_neurons_flat"}:
         raise ValueError("output_layout must be legacy, sample_neurons or sample_neurons_flat")
-    from vispa.config import ENV_OVERLAY, config_fingerprint, load, resolve_settings
-    needs_config = layout in {"sample_neurons", "sample_neurons_flat"} or bool(
-        os.environ.get(ENV_OVERLAY, "").strip())
-    resolved_config = load(config_path) if needs_config else None
-    config_hash = (config_fingerprint(resolved_config) if resolved_config is not None
-                   else _sha256(config_path))
+    config_hash = _sha256(config_path)
     if payload.get("vispa_config_sha256") and payload["vispa_config_sha256"] != config_hash:
         raise ValueError("Prepared VisPa config hash differs from current config")
     output_root = Path(output_root).expanduser().resolve()
@@ -411,8 +403,8 @@ def load_review_jobs(jobs_path: Path, output_root: Path, limit: int | None, all_
     from vispa import __version__
     review_settings, figure_output_root = {}, None
     if layout in {"sample_neurons", "sample_neurons_flat"}:
-        if resolved_config is None:
-            resolved_config = load(config_path)
+        from vispa.config import load, resolve_settings
+        resolved_config = load(config_path)
         review_settings = resolve_settings("review", config=resolved_config)
         figure_output_root = str(resolved_config["visual_toolkit"]["figure_output_root"])
         if (layout == "sample_neurons_flat" and
@@ -426,12 +418,6 @@ def load_review_jobs(jobs_path: Path, output_root: Path, limit: int | None, all_
         "run_name": run_name,
         "vispa_config": str(config_path),
         "vispa_config_sha256": config_hash,
-        "vispa_base_config_sha256": (
-            resolved_config.get("base_config_sha256") if resolved_config else None),
-        "vispa_config_overlay": (
-            resolved_config.get("config_overlay_path") if resolved_config else None),
-        "vispa_config_overlay_sha256": (
-            resolved_config.get("config_overlay_sha256") if resolved_config else None),
         "output_root": str(output_root),
         "sample_id": sample,
         "requested": len(selected),
@@ -615,18 +601,6 @@ def _settings_sha256(plan: dict) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _config_matches(plan: dict) -> bool:
-    """Compare legacy file hashes or effective base+overlay fingerprints."""
-    from vispa.config import ENV_OVERLAY, config_fingerprint, load
-    config_path = Path(plan["vispa_config"])
-    if (plan.get("output_layout") in {"sample_neurons", "sample_neurons_flat"}
-            or os.environ.get(ENV_OVERLAY, "").strip()):
-        current = config_fingerprint(load(config_path))
-    else:
-        current = _sha256(config_path)
-    return current == plan.get("vispa_config_sha256")
-
-
 def _job_sha256(job: dict) -> str:
     encoded = json.dumps(job, sort_keys=True, default=str).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
@@ -636,7 +610,7 @@ def _current_receipt(job: dict, plan: dict) -> dict | None:
     """Reuse only a complete receipt whose frozen inputs and PNG bytes still match."""
     if not job.get("raw_swc_sha256"):
         return None
-    from vispa.config import config_fingerprint, load
+    from vispa.config import load
     try:
         _verified_raw_path(load(plan["vispa_config"]), job)
         folder = Path(job["output_dir"]).resolve()
@@ -644,11 +618,6 @@ def _current_receipt(job: dict, plan: dict) -> dict | None:
         if (record.get("status") != "rendered_candidate" or record.get("errors") or
             record.get("job_sha256") != _job_sha256(job) or
             record.get("config_sha256") != plan["vispa_config_sha256"] or
-            (plan.get("vispa_config_overlay") is not None and (
-                record.get("base_config_sha256") != plan.get("vispa_base_config_sha256") or
-                record.get("config_overlay") != plan.get("vispa_config_overlay") or
-                record.get("config_overlay_sha256")
-                != plan.get("vispa_config_overlay_sha256"))) or
             record.get("vispa_version") != plan["vispa_version"] or
             record.get("settings_sha256") != _settings_sha256(plan) or
             set(record.get("outputs") or {}) != {"Soma", "Context", "Sagittal", "TrioPlot"}):
@@ -697,7 +666,7 @@ def _run_review_bulk_flat(plan: dict, *, dry_run: bool, renderer=None,
                           resume: bool = False) -> dict:
     """Render into direct neuron folders and keep one animal process log."""
     from uuid import uuid4
-    from vispa.config import config_fingerprint, load
+    from vispa.config import load
     from vispa.render_records import (animal_receipt_path, record_neuron_output,
                                       separate_plot_output_dir, update_animal_batch,
                                       verified_neuron_record)
@@ -714,9 +683,6 @@ def _run_review_bulk_flat(plan: dict, *, dry_run: bool, renderer=None,
              "jobs_path": plan["jobs_path"], "jobs_sha256": plan["jobs_sha256"],
              "vispa_config": plan["vispa_config"],
              "vispa_config_sha256": plan["vispa_config_sha256"],
-             "vispa_base_config_sha256": plan.get("vispa_base_config_sha256"),
-             "vispa_config_overlay": plan.get("vispa_config_overlay"),
-             "vispa_config_overlay_sha256": plan.get("vispa_config_overlay_sha256"),
              "vispa_version": plan["vispa_version"], "output_layout": plan["output_layout"],
              "review_settings": plan["review_settings"],
              "settings_sha256": _settings_sha256(plan),
@@ -751,12 +717,6 @@ def _run_review_bulk_flat(plan: dict, *, dry_run: bool, renderer=None,
                         "vispa_version": plan["vispa_version"],
                         "raw_swc_sha256": job.get("raw_swc_sha256"),
                         "output_dir": str(folder)}
-            if plan.get("vispa_config_overlay") is not None:
-                expected.update({
-                    "base_config_sha256": plan.get("vispa_base_config_sha256"),
-                    "config_overlay": plan.get("vispa_config_overlay"),
-                    "config_overlay_sha256": plan.get("vispa_config_overlay_sha256"),
-                })
             if resume:
                 prior = verified_neuron_record(receipt_path, sample, job["neuron_id"], expected)
                 if prior is not None:
@@ -769,8 +729,7 @@ def _run_review_bulk_flat(plan: dict, *, dry_run: bool, renderer=None,
             with tempfile.TemporaryDirectory(prefix=".stage-neuron-", dir=sample_root) as temporary:
                 stage = Path(temporary)
                 try:
-                    if (config_fingerprint(load(Path(plan["vispa_config"])))
-                            != plan["vispa_config_sha256"]):
+                    if _sha256(Path(plan["vispa_config"])) != plan["vispa_config_sha256"]:
                         raise ValueError("VisPa config changed during rendering")
                     rendered = render(job, stage, Path(plan["vispa_config"]))
                     errors.extend(rendered.get("errors", []))
@@ -874,7 +833,7 @@ def _run_review_bulk(plan: dict, *, dry_run: bool, renderer=None, resume: bool =
         "completed": [],
         "error": None,
     }
-    if not _config_matches(plan):
+    if _sha256(Path(plan["vispa_config"])) != plan["vispa_config_sha256"]:
         raise ValueError("VisPa config changed after job planning")
     if _sha256(Path(plan["jobs_path"])) != plan["jobs_sha256"]:
         raise ValueError("Review jobs changed after planning")
@@ -931,7 +890,7 @@ def _run_review_bulk(plan: dict, *, dry_run: bool, renderer=None, resume: bool =
                     continue
             folder.mkdir(parents=True, exist_ok=True)
             try:
-                if not _config_matches(plan):
+                if _sha256(Path(plan["vispa_config"])) != plan["vispa_config_sha256"]:
                     raise ValueError("VisPa config changed during rendering")
                 rendered = render(job, folder, Path(plan["vispa_config"]))
             except Exception as exc:
@@ -984,9 +943,6 @@ def _run_review_bulk(plan: dict, *, dry_run: bool, renderer=None, resume: bool =
                 "status": status,
                 "job_sha256": _job_sha256(job),
                 "config_sha256": plan["vispa_config_sha256"],
-                "base_config_sha256": plan.get("vispa_base_config_sha256"),
-                "config_overlay": plan.get("vispa_config_overlay"),
-                "config_overlay_sha256": plan.get("vispa_config_overlay_sha256"),
                 "vispa_version": plan["vispa_version"],
                 "settings_sha256": _settings_sha256(plan),
                 "resume_action": "rendered",
@@ -1015,8 +971,6 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     from vispa import __version__
     parser.add_argument("--version", action="version", version=__version__)
-    parser.add_argument("--config-overlay", type=Path,
-                        help="local read-only overlay applied over the base config")
     parser.add_argument("--jobs", type=Path, required=True)
     parser.add_argument("--output-root", type=Path, required=True)
     group = parser.add_mutually_exclusive_group()
@@ -1034,9 +988,6 @@ def main(argv=None) -> int:
     parser.add_argument("--migration-report", type=Path,
                         help="write the folder-migration plan/result JSON here")
     args = parser.parse_args(argv)
-    if args.config_overlay:
-        os.environ["VISPA_CONFIG_OVERLAY"] = str(
-            args.config_overlay.expanduser().resolve())
     try:
         if args.apply_folder_renames and not args.repair_folder_names:
             raise ValueError("--apply-folder-renames requires --repair-folder-names")

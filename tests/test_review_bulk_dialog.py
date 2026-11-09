@@ -12,7 +12,6 @@ import tempfile
 import unittest
 
 from vispa._version import __version__
-from vispa.config import config_fingerprint, load
 from vispa.review_bulk_dialog import BulkReviewDialog, batch_receipt_path, bulk_command
 
 
@@ -70,7 +69,7 @@ class BulkReviewDialogContractTests(unittest.TestCase):
                        "output_layout": "sample_neurons_flat",
                        "figure_output_root": str(output),
                        "cache_root": str(root / "cache"),
-                       "vispa_config_sha256": config_fingerprint(load(config)),
+                       "vispa_config_sha256": hashlib.sha256(config.read_bytes()).hexdigest(),
                        "region_filter": {"labels": ["Iai_41", "M1_79"]}}
             jobs.write_text(json.dumps(payload), encoding="utf-8")
             values = {"sample": "252527", "config": str(config), "jobs": str(jobs),

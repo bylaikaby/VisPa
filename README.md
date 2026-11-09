@@ -385,27 +385,20 @@ for one PowerShell session, set
 source paths separately; this syntax check does not establish anatomical or
 scientific acceptance.
 
-For a temporary local change, do not edit the read-only profile. Create a small
-JSON or YAML overlay containing only the fields to replace, then launch one
-process with `--config-overlay`:
-
-```yaml
-visual_toolkit:
-  output_root: 'D:\local\VisPa_outputs'
-  settings:
-    review:
-      context.width_um: 4000.0
-```
+The active writable profile is the single per-user copy:
 
 ```powershell
-python -m vispa --config-overlay D:\local\vispa-overlay.yaml gui --config PATH_TO_ded_vispa_config_v1.0.11.yaml
-python -m vispa --config-overlay D:\local\vispa-overlay.yaml --version --config PATH_TO_ded_vispa_config_v1.0.11.yaml
+$activeConfig = Join-Path $env:APPDATA 'VisPa\vispa_config.yaml'
+python -m vispa gui --config $activeConfig
 ```
 
-The overlay is merged over the base file in memory. The base file is never
-written. Receipts and version reports include separate base, overlay, and
-effective-config hashes. `VISPA_CONFIG_OVERLAY=PATH` provides the same behavior
-for tools that do not expose the CLI option.
+It is initialized once from the read-only 1.0.11 factory profile. Settings
+changes are saved there and therefore persist across launches. Receipts bind
+that active file's hash. To remove all local changes, open **Settings**, choose
+**Restore factory**, then **Save settings**. Previous versions are retained
+under the adjacent `config_backups/` folder. For a separate experiment, pass
+another local copy with `--config`; the factory and active profiles remain
+untouched.
 
 Create the per-user profile without overwriting an existing file:
 

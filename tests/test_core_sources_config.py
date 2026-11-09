@@ -1,9 +1,9 @@
 """Focused regression checks for the standalone extraction seams.
 
-Version: 1.21.6 (local/unreleased)
+Version: 1.21.4 (local/unreleased)
 Last updated: 2026-11-09
 Change history: ../CHANGELOG.md
-2026-11-09: Cover local overlays and the unified config-controlled output root.
+2026-11-09: Cover the unified config-controlled output root.
 2026-11-08: Verify exact missing Context sample policy and Settings list edits.
 2026-11-08: Cover strict saved-config render resolution and flat review fields.
 2026-11-08: Verify startup follows configured autoload and explicit opt-out.
@@ -503,34 +503,6 @@ class ReviewSettingsTests(unittest.TestCase):
 
 
 class ConfigTests(unittest.TestCase):
-    def test_local_overlay_changes_effective_config_without_touching_base(self):
-        from vispa.config import load, resolve_render_settings
-        base = ROOT / "src/vispa/configs/config_deb.yaml"
-        before = hashlib.sha256(base.read_bytes()).hexdigest()
-        with tempfile.TemporaryDirectory() as temporary:
-            overlay = Path(temporary) / "local-overlay.json"
-            output_root = Path(temporary) / "temporary-output"
-            overlay.write_text(json.dumps({
-                "visual_toolkit": {
-                    "output_root": str(output_root),
-                    "settings": {"review": {"context.width_um": 4000.0}},
-                }
-            }), encoding="utf-8")
-            with mock.patch.dict(os.environ,
-                                 {"VISPA_CONFIG_OVERLAY": str(overlay)}):
-                config = load(base)
-                settings = resolve_render_settings("review", config=base)
-        self.assertEqual(hashlib.sha256(base.read_bytes()).hexdigest(), before)
-        self.assertEqual(config["visual_toolkit"]["output_root"], output_root)
-        self.assertEqual(settings["context"]["width_um"], 4000.0)
-        self.assertEqual(config["config_overlay_path"], str(overlay.resolve()))
-        self.assertEqual(config["config_precedence"], "base_profile_then_local_overlay")
-        self.assertEqual(config["config_origin"], "explicit+local_overlay")
-        self.assertIn("visual_toolkit.output_root", config["config_overlay_fields"])
-        self.assertRegex(config["config_overlay_sha256"], r"^[0-9a-f]{64}$")
-        self.assertNotEqual(config["effective_config_sha256"],
-                            config["base_config_sha256"])
-
     def test_deb_profile_has_one_configured_output_root(self):
         from vispa.config import load
         config = load(ROOT / "src/vispa/configs/config_deb.yaml")

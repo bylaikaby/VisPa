@@ -18,14 +18,12 @@
   `visual_toolkit.output_root`, and `visual_toolkit.figure_output_root` resolve
   to the same configured `fMOST/Vispa_outputs` root. Individual plots remain
   under the configured `plots` subfolder.
-- Add a read-only local config overlay mechanism through `--config-overlay` or
-  `VISPA_CONFIG_OVERLAY`. The base profile remains untouched; effective
-  settings, base hash, overlay hash and effective hash are propagated to GUI
-  status and bulk receipts.
-- Validation: 320 source, 41 batch and 5 cohort-controller tests cover
+- Use one writable per-user working profile initialized from the read-only
+  factory profile. Settings edits persist locally; **Restore factory** followed
+  by **Save settings** resets the working copy, with backups retained beside it.
+- Validation: 319 source, 41 batch and 5 cohort-controller tests cover
   preparation retry, readable-name migration, complete/source-blocked output
-  detection, local overlays, unified output settings, NIfTI sidecars and final
-  paths.
+  detection, unified output settings, NIfTI sidecars and final paths.
 
 ## 1.21.5 — 2026-11-08 (local/unreleased candidate)
 - Fix volume export when its optional region is absent: remove an undefined
