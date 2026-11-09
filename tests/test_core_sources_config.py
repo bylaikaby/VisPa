@@ -774,6 +774,8 @@ class ConfigTests(unittest.TestCase):
             self.assertTrue(reviewer._resolve_launch(parser, args)[2])
             parser, args = reviewer._parse_launch_args(["--no-autoload"])
             self.assertFalse(reviewer._resolve_launch(parser, args)[2])
+            parser, args = reviewer._parse_launch_args(["--settings"])
+            self.assertTrue(args.settings)
 
     def test_null_visual_toolkit_section_keeps_legacy_empty_defaults(self):
         from vispa.dataset_config import load

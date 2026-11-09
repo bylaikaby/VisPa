@@ -4827,6 +4827,8 @@ def _parse_launch_args(argv=None):
     parser.add_argument("--sample", dest="sample_id", help="exact sample ID, including any suffix")
     parser.add_argument("--neuron", dest="neuron_id", help="neuron basename, with or without .swc")
     parser.add_argument("--config", help="explicit dataset and output configuration file")
+    parser.add_argument("--settings", action="store_true",
+                        help="open the configuration editor after launching the GUI")
     parser.add_argument("--test", action="store_true",
                         help="use the selected config's local test-output overrides")
     parser.add_argument("--review-session", metavar="PATH",
@@ -4908,6 +4910,7 @@ def main(argv=None):
             "neuron_id": identity[1],
             "identity_source": identity_source,
             "config": str(config["path"]),
+            "settings_requested": bool(args.settings),
             "review_session": session_event.path if session_event else None,
             "watch_session": args.watch_session,
             "auto_load_soma": effective_auto_load,
@@ -4938,6 +4941,8 @@ def main(argv=None):
                       auto_fill_on_identity=effective_auto_load,
                       test_mode=args.test)
     app.identity_source = identity_source
+    if args.settings:
+        root.after_idle(app._open_config_yaml)
     root.mainloop()
     return 0
 

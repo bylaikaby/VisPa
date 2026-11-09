@@ -400,6 +400,10 @@ under the adjacent `config_backups/` folder. For a separate experiment, pass
 another local copy with `--config`; the factory and active profiles remain
 untouched.
 
+The desktop provides both **VisPa** and **VisPa Settings** shortcuts. The
+Settings shortcut launches `--settings`, which opens the configuration editor
+directly against the writable active copy.
+
 Create the per-user profile without overwriting an existing file:
 
 ```powershell

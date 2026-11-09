@@ -22,6 +22,8 @@
 - Use one writable per-user working profile initialized from the read-only
   factory profile. Settings edits persist locally; **Restore factory** followed
   by **Save settings** resets the working copy, with backups retained beside it.
+- Add `gui --settings` so a desktop shortcut can open the configuration editor
+  directly against the same active working profile.
 - Validation: 319 source, 41 batch and 5 cohort-controller tests cover
   preparation retry, readable-name migration, complete/source-blocked output
   detection, unified output settings, NIfTI sidecars and final paths.
