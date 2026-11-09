@@ -347,7 +347,7 @@ This optional command removes all packages in that environment, including ReMAP.
 
 ## Create or select a configuration
 
-The active local DEB profile is `ded_vispa_config_v1.0.11.yaml`. It declares the
+The active local DEB profile is `ded_vispa_config_v1.0.12.yaml`. It declares the
 shared sample, DS00, 5 µm, raw SWC, processed SWC, mesh, catalog, and IONData
 resources as read-only inputs. Cubes, SWCs and FNT work use
 `\\10.102.8.200\microscopy_data\fMOST\VisPa\cached_data`.
@@ -366,9 +366,9 @@ Package upgrades do not overwrite the local YAML.
 Confirm the package/config pair without launching the GUI:
 
 ```powershell
-python -m vispa --version --config PATH_TO_ded_vispa_config_v1.0.11.yaml
-python -m vispa config-check --validate-only --config PATH_TO_ded_vispa_config_v1.0.11.yaml
-python -m vispa config-check --compare-defaults --config PATH_TO_ded_vispa_config_v1.0.11.yaml
+python -m vispa --version --config PATH_TO_ded_vispa_config_v1.0.12.yaml
+python -m vispa config-check --validate-only --config PATH_TO_ded_vispa_config_v1.0.12.yaml
+python -m vispa config-check --compare-defaults --config PATH_TO_ded_vispa_config_v1.0.12.yaml
 ```
 
 Use `vispa --test` (or `vispa gui --test`) for a local test launch. It loads the
@@ -381,7 +381,7 @@ The GUI title, Version action, and resource-check header show the same current
 identities and config update time. The resource-check window also shows key
 resolved paths above its compact scrollable checklist. To select this profile
 for one PowerShell session, set
-`$env:VISPA_CONFIG='PATH_TO_ded_vispa_config_v1.0.11.yaml'`. Validate configured
+`$env:VISPA_CONFIG='PATH_TO_ded_vispa_config_v1.0.12.yaml'`. Validate configured
 source paths separately; this syntax check does not establish anatomical or
 scientific acceptance.
 
@@ -392,7 +392,7 @@ $activeConfig = Join-Path $env:APPDATA 'VisPa\vispa_config.yaml'
 python -m vispa gui --config $activeConfig
 ```
 
-It is initialized once from the read-only 1.0.11 factory profile. Settings
+It is initialized once from the read-only 1.0.12 factory profile. Settings
 changes are saved there and therefore persist across launches. Receipts bind
 that active file's hash. To remove all local changes, open **Settings**, choose
 **Restore factory**, then **Save settings**. Previous versions are retained

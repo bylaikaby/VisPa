@@ -14,10 +14,11 @@
 - Repair Soma NIfTI export metadata: populate matching qform and sform matrices,
   record the index-to-micrometre affine and unit code in the sidecar, and rewrite
   the sidecar after the staged file is moved to its final neuron folder.
-- Bump the DEB profile to 1.0.11 and make `defaults.output_root`,
+- Bump the DEB profile to 1.0.12 and make `defaults.output_root`,
   `visual_toolkit.output_root`, and `visual_toolkit.figure_output_root` resolve
   to the same configured `fMOST/Vispa_outputs` root. Individual plots remain
-  under the configured `plots` subfolder.
+  under the configured `plots` subfolder. Atlas resources use shared UNC paths
+  and the profile contains no machine-local drive paths.
 - Use one writable per-user working profile initialized from the read-only
   factory profile. Settings edits persist locally; **Restore factory** followed
   by **Save settings** resets the working copy, with backups retained beside it.

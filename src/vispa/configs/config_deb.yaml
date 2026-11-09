@@ -1,4 +1,4 @@
-# ded_vispa_config_v1.0.11.yaml: single canonical DEB VisPa profile. Shared scientific
+# ded_vispa_config_v1.0.12.yaml: single canonical DEB VisPa profile. Shared scientific
 # resources are read-only; downloads and tool caches stay in a managed local
 # directory while figures are written to the approved fMOST output tree.
 # Default DEB-lab VisPa profile. Live neuron IDs use the IONData API;
@@ -6,13 +6,13 @@
 # configured intranet hosts/shares are reachable. No credentials or local tools.
 # Per-sample DS00/5 µm links are inherited source declarations, not validation or
 # anatomical acceptance. Caches and outputs are explicitly isolated by this profile.
-# Config version: 1.0.11 | Updated: 2026-11-09T09:10:30+08:00
+# Config version: 1.0.12 | Updated: 2026-11-09T09:39:55+08:00
 # History: ../../../CHANGELOG.md (Configuration history)
 # Change history: ../../../CHANGELOG.md
 version: 1
 config_name: ded_vispa_config
-config_version: 1.0.11
-config_updated_at: '2026-11-09T09:10:30+08:00'
+config_version: 1.0.12
+config_updated_at: '2026-11-09T09:39:55+08:00'
 # Optional workstation-specific DS00 selections belong in a personal profile.
 base_dir: \\10.102.8.200\microscopy_data\fMOST\VisPa\configs
 defaults:
@@ -254,9 +254,9 @@ sources:
     timeout_seconds: 10
     max_response_bytes: 8388608
   atlas:
-    root: 'D:\projectome_analysis\atlas\ARM_in_NMT_v2.1_sym.nii.gz'
-    key: 'D:\projectome_analysis\atlas\ARM_key_all.txt'
-    hemisphere_mask: 'D:\projectome_analysis\atlas\NMT_v2.1_sym\NMT_v2.1_sym\supplemental_masks\NMT_v2.1_sym_LR_plane.nii.gz'
+    root: '\\10.102.8.200\microscopy_data\fMOST\resources\dependencies\atlas\NMT_v2.1_sym\ARM_in_NMT_v2.1_sym.nii.gz'
+    key: '\\10.102.8.200\microscopy_data\fMOST\resources\dependencies\atlas\NMT_v2.1_sym\ARM_key_all.txt'
+    hemisphere_mask: '\\10.102.8.200\microscopy_data\fMOST\resources\dependencies\atlas\NMT_v2.1_sym\NMT_v2.1_sym_LR_plane.nii.gz'
     version: NMT_v2.1_sym
     coordinate_scale_um: 250.0
   dataset_manifest_relative: manifest.json

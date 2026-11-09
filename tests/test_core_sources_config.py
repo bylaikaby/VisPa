@@ -511,10 +511,13 @@ class ConfigTests(unittest.TestCase):
             str(config["visual_toolkit"]["output_root"]),
             str(config["visual_toolkit"]["figure_output_root"]),
         }
-        self.assertEqual(config["config_version"], "1.0.11")
+        self.assertEqual(config["config_version"], "1.0.12")
         self.assertEqual(roots, {
             r"\\10.102.8.200\microscopy_data\fMOST\Vispa_outputs"})
         self.assertEqual(config["visual_toolkit"]["separate_plot_subfolder"], "plots")
+        for key in ("root", "key", "hemisphere_mask"):
+            self.assertTrue(str(config["sources"]["atlas"][key]).startswith("\\\\"))
+        self.assertNotIn("ds00_registry", config)
 
     @staticmethod
     def _synthetic_correction_policy():
