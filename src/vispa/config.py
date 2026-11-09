@@ -1,8 +1,10 @@
 """Load explicit, portable VisPa dataset configuration.
 
-Version: 1.21.4 (local/unreleased)
-Last updated: 2026-11-08
+Version: 1.21.6 (local/unreleased)
+Last updated: 2026-11-09
 Change history: ../../CHANGELOG.md
+2026-11-09: Merge one optional local base-config overlay in memory and expose
+base, overlay and effective hashes without writing the selected profile.
 2026-11-08: Validate one safe optional plot subfolder; absent key preserves
 legacy root-level single-plot paths.
 2026-11-08: Validate an exact sample allowlist for explicitly unavailable
@@ -38,6 +40,7 @@ from pathlib import Path, PureWindowsPath
 from typing import Any
 
 ENV_VAR = "VISPA_CONFIG"
+ENV_OVERLAY = "VISPA_CONFIG_OVERLAY"
 TEST_MODE_ENV = "VISPA_TEST_MODE"
 COMPAT_ENV_VAR = "VISUAL_TOOLKIT_CONFIG"
 LEGACY_ENV_VAR = "PROJECTOME_DATASETS"
@@ -189,7 +192,6 @@ def config_version_report(path: str | Path | None = None) -> dict:
     loaded = (copy.deepcopy(path) if isinstance(path, Mapping)
               else load(path))
     source = Path(loaded["path"]).resolve()
-    raw = source.read_bytes() if source.is_file() else _template_bytes()
     return {
         "schema": "vispa.runtime-config-identity.v1",
         "vispa_version": __version__,
@@ -198,7 +200,8 @@ def config_version_report(path: str | Path | None = None) -> dict:
         "config_updated_at": loaded.get("config_updated_at"),
         "config_path": str(source),
         "config_origin": loaded.get("config_origin"),
-        "config_sha256": hashlib.sha256(raw).hexdigest(),
+        "config_sha256": config_fingerprint(loaded),
+        "base_config_sha256": loaded.get("base_config_sha256"),
         "config_precedence": loaded.get("config_precedence"),
         "packaged_config_path": str(loaded.get("packaged_config_path") or ""),
         "packaged_config_sha256": loaded.get("packaged_config_sha256"),
@@ -206,6 +209,9 @@ def config_version_report(path: str | Path | None = None) -> dict:
         "packaged_config_version": loaded.get("packaged_config_version"),
         "packaged_config_updated_at": loaded.get("packaged_config_updated_at"),
         "selected_config_present": bool(loaded.get("selected_config_present")),
+        "config_overlay_path": loaded.get("config_overlay_path"),
+        "config_overlay_sha256": loaded.get("config_overlay_sha256"),
+        "config_overlay_fields": loaded.get("config_overlay_fields", []),
         "test_mode": bool(loaded.get("test_mode")),
         "resolved_output_root": (
             str(loaded.get("visual_toolkit", {}).get("output_root"))
@@ -217,6 +223,51 @@ def config_version_report(path: str | Path | None = None) -> dict:
             str(loaded.get("defaults", {}).get("cache_root"))
             if loaded.get("defaults", {}).get("cache_root") is not None else None),
     }
+
+
+def _deep_merge(base, overlay):
+    """Recursively override mappings; replace arrays and scalar values."""
+    result = copy.deepcopy(base)
+    for key, value in overlay.items():
+        if isinstance(value, Mapping) and isinstance(result.get(key), Mapping):
+            result[key] = _deep_merge(result[key], value)
+        else:
+            result[key] = copy.deepcopy(value)
+    return result
+
+
+def _leaf_paths(value, prefix=""):
+    if isinstance(value, Mapping):
+        paths = []
+        for key, item in value.items():
+            child = f"{prefix}.{key}" if prefix else str(key)
+            paths.extend(_leaf_paths(item, child))
+        return paths
+    return [prefix]
+
+
+def _effective_config_sha256(raw: dict) -> str:
+    encoded = json.dumps(raw, sort_keys=True, separators=(",", ":"),
+                         ensure_ascii=False, default=str).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def config_fingerprint(config: Mapping) -> str:
+    """Return the base-file hash or the effective base+overlay identity."""
+    selected = config.get("path")
+    if not config.get("config_overlay_path"):
+        if selected is not None and Path(selected).is_file():
+            return hashlib.sha256(Path(selected).read_bytes()).hexdigest()
+        value = config.get("effective_config_sha256")
+        if isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value):
+            return value
+        raise ValueError("selected configuration has no stable base fingerprint")
+    value = config.get("effective_config_sha256")
+    if isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value):
+        return value
+    if selected is not None and Path(selected).is_file():
+        return hashlib.sha256(Path(selected).read_bytes()).hexdigest()
+    raise ValueError("selected configuration has no stable effective fingerprint")
 
 
 def _config_metadata(raw: dict, source: Path) -> dict:
@@ -478,6 +529,31 @@ def load(path: str | Path | None = None, base_dir: str | Path | None = None) -> 
     selected_config_present = source != packaged_source and source.is_file()
     if not isinstance(raw, dict):
         raise ValueError(f"{source}: top level must be a mapping")
+    overlay_path = None
+    overlay_sha256 = None
+    overlay_fields = []
+    overlay_env = os.environ.get(ENV_OVERLAY, "").strip()
+    if overlay_env:
+        overlay_path = Path(overlay_env).expanduser().resolve()
+        if not overlay_path.is_file():
+            raise ValueError(f"config overlay does not exist: {overlay_path}")
+        overlay_bytes = overlay_path.read_bytes()
+        overlay = _parse_config_bytes(overlay_bytes, overlay_path)
+        if not isinstance(overlay, dict):
+            raise ValueError(f"{overlay_path}: top level must be a mapping")
+        overlay_unknown = set(overlay) - {
+            "version", "config_name", "config_version", "config_updated_at",
+            "base_dir", "defaults", "samples", "visual_toolkit", "sources",
+            "dataset_manifest", "legacy_raw_swc_root", "ds00_registry"}
+        if overlay_unknown:
+            raise ValueError(
+                f"{overlay_path}: unknown top-level keys {sorted(overlay_unknown)}")
+        if overlay.get("version", SCHEMA_VERSION) != SCHEMA_VERSION:
+            raise ValueError(
+                f"{overlay_path}: unsupported version {overlay.get('version')!r}")
+        raw = _deep_merge(raw, overlay)
+        overlay_sha256 = hashlib.sha256(overlay_bytes).hexdigest()
+        overlay_fields = sorted(_leaf_paths(overlay))
     unknown = set(raw) - {"version", "config_name", "config_version", "config_updated_at",
                           "base_dir", "defaults", "samples", "visual_toolkit", "sources",
                           "dataset_manifest", "legacy_raw_swc_root", "ds00_registry"}
@@ -778,10 +854,19 @@ def load(path: str | Path | None = None, base_dir: str | Path | None = None) -> 
         brain_view["settings"] = dict(settings)
         sources["brain_view"] = brain_view
     metadata = _config_metadata(raw, source)
+    effective_sha256 = _effective_config_sha256(raw)
     result = {"path": source, "base_dir": configured_base, **metadata, "defaults": defaults,
               "samples": samples, "visual_toolkit": visual_toolkit, "sources": sources,
-              "config_origin": origin, "test_mode": test_mode_enabled(),
-              "config_precedence": "packaged_default_then_explicit_profile",
+              "config_origin": (f"{origin}+local_overlay" if overlay_path else origin),
+              "test_mode": test_mode_enabled(),
+              "config_precedence": (
+                  "base_profile_then_local_overlay" if overlay_path
+                  else "packaged_default_then_explicit_profile"),
+              "effective_config_sha256": effective_sha256,
+              "base_config_sha256": hashlib.sha256(content).hexdigest(),
+              "config_overlay_path": str(overlay_path) if overlay_path else None,
+              "config_overlay_sha256": overlay_sha256,
+              "config_overlay_fields": overlay_fields,
               "packaged_config_path": packaged_source,
               "packaged_config_sha256": hashlib.sha256(packaged_content).hexdigest(),
               "packaged_config_name": packaged_raw.get("config_name"),

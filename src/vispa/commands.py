@@ -1,8 +1,10 @@
 """Bounded command line for VisPa review renders and source acquisition.
 
-Version: 1.21.3 (local/unreleased)
-Last updated: 2026-11-08
+Version: 1.21.6 (local/unreleased)
+Last updated: 2026-11-09
 Change history: ../../CHANGELOG.md
+2026-11-09: Accept a global local-config overlay option without changing the
+base profile.
 2026-11-08: Resolve render styles from selected saved config, reject strict
 one-off conflicts, and record/check config hashes before receipts.
 2026-11-08: Require both parsed atlas region and side for a portal-derived
@@ -851,6 +853,8 @@ def _parser():
                         help="show VisPa and active configuration versions")
     parser.add_argument("--test", action="store_true",
                         help="launch the GUI with local test output/cache overrides")
+    parser.add_argument("--config-overlay", metavar="PATH",
+                        help="local read-only overlay applied over the selected base config")
     commands = parser.add_subparsers(dest="command")
     commands.add_parser("gui", help="open the VisPa review GUI")
     example = commands.add_parser(
@@ -1005,8 +1009,37 @@ def _selected_config_arg(argv):
     return None
 
 
+def _consume_config_overlay(argv):
+    """Apply one local config overlay option before any subcommand imports config."""
+    result = []
+    overlay = None
+    index = 0
+    while index < len(argv):
+        value = argv[index]
+        if value == "--config-overlay":
+            if index + 1 >= len(argv):
+                raise ValueError("--config-overlay requires PATH")
+            overlay = argv[index + 1]
+            index += 2
+            continue
+        if value.startswith("--config-overlay="):
+            overlay = value.partition("=")[2]
+            index += 1
+            continue
+        result.append(value)
+        index += 1
+    return result, overlay
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
+    try:
+        argv, config_overlay = _consume_config_overlay(argv)
+        if config_overlay is not None:
+            os.environ["VISPA_CONFIG_OVERLAY"] = str(
+                Path(config_overlay).expanduser().resolve())
+    except ValueError as exc:
+        raise SystemExit(f"vispa: error: {exc}") from exc
     if argv and argv[0] == "gui":
         from .reviewer import main as gui_main
         return gui_main(argv[1:])
@@ -1023,10 +1056,12 @@ def main(argv=None):
             from .config import config_version_report
             report = config_version_report(_selected_config_arg(argv))
             mode = " [TEST]" if report["test_mode"] else ""
+            overlay = report.get("config_overlay_path")
+            suffix = f" | overlay {overlay}" if overlay else ""
             print(
                 f"VisPa {report['vispa_version']} | "
                 f"config {report['config_name']} {report['config_version']}{mode} | "
-                f"updated {report['config_updated_at']} | {report['config_path']}")
+                f"updated {report['config_updated_at']} | {report['config_path']}{suffix}")
             return 0
         except (OSError, RuntimeError, ValueError, KeyError, TypeError) as exc:
             raise SystemExit(f"vispa: error: {exc}") from exc

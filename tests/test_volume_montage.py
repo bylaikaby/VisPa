@@ -1,9 +1,11 @@
 """Tests for the extracted volume-rendering API.
 
-Version: 1.21.0 (local/unreleased)
-Last updated: 2026-11-08
+Version: 1.21.6 (local/unreleased)
+Last updated: 2026-11-09
 Change history: vispa/CHANGELOG.md
 Status: candidate
+
+2026-11-09: Isolate CLI override tests with a non-strict temporary profile.
 """
 
 import hashlib
@@ -15,11 +17,13 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 import nibabel as nib
 import numpy as np
 from PIL import Image
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 if os.environ.get("VISPA_TEST_INSTALLED") != "1":
@@ -50,6 +54,14 @@ def _synthetic_lps_nifti(path: Path) -> None:
 
 
 class VolumeMontageTests(unittest.TestCase):
+    def _override_config(self, root: Path) -> Path:
+        template = ROOT / "src/vispa/configs/config_deb.yaml"
+        config = yaml.safe_load(template.read_text(encoding="utf-8"))
+        config["visual_toolkit"]["enforce_render_config"] = False
+        path = root / "montage-test-config.yaml"
+        path.write_text(yaml.safe_dump(config), encoding="utf-8")
+        return path
+
     def test_synthetic_lps_render_covers_full_input_extent(self):
         with tempfile.TemporaryDirectory() as folder:
             source = Path(folder) / "synthetic.nii.gz"
@@ -122,7 +134,9 @@ class VolumeMontageTests(unittest.TestCase):
             output = root / "new-folder" / "montage.png"
             _synthetic_lps_nifti(source)
             stream = io.StringIO()
-            with contextlib.redirect_stdout(stream):
+            config = self._override_config(root)
+            with mock.patch.dict(os.environ, {"VISPA_CONFIG": str(config)}), \
+                    contextlib.redirect_stdout(stream):
                 code = cli.main(["montage", "--input", str(source), "--output", str(output),
                                  "--units", "mm", "--set", "max_dimension=100", "--dry-run"])
             plan = json.loads(stream.getvalue())
@@ -146,9 +160,13 @@ class VolumeMontageTests(unittest.TestCase):
             output = root / "result" / "montage.png"
             _synthetic_lps_nifti(source)
             original_input_hash = hashlib.sha256(source.read_bytes()).hexdigest()
-            self.assertEqual(cli.main(["montage", "--input", str(source), "--output", str(output),
-                                       "--units", "mm", "--set", "figure_size_inches=[8,2]",
-                                       "--set", "figure_dpi=72"]), 0)
+            config = self._override_config(root)
+            with mock.patch.dict(os.environ, {"VISPA_CONFIG": str(config)}):
+                code = cli.main([
+                    "montage", "--input", str(source), "--output", str(output),
+                    "--units", "mm", "--set", "figure_size_inches=[8,2]",
+                    "--set", "figure_dpi=72"])
+            self.assertEqual(code, 0)
             receipt_path = output.with_suffix(".json")
             receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
             self.assertEqual(receipt["schema"], "visual-toolkit.montage.v2")

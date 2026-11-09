@@ -1,7 +1,7 @@
 """Shared OS ownership for regional production and candidate manifest replacement.
 
-Version: 1.21.0 (local/unreleased)
-Last updated: 2026-11-08
+Version: 1.21.6 (local/unreleased)
+Last updated: 2026-11-09
 Change history: ../../CHANGELOG.md
 """
 from contextlib import contextmanager
@@ -30,6 +30,10 @@ def exclusive_batch(path):
         finally:
             stream.seek(0)
             if os.name == "nt":
-                msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+                try:
+                    msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+                except OSError:
+                    # Closing the handle still releases the Windows file lock.
+                    pass
             else:
                 fcntl.flock(stream.fileno(), fcntl.LOCK_UN)

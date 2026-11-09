@@ -1,4 +1,4 @@
-# ded_vispa_config_v1.0.10.yaml: single canonical DEB VisPa profile. Shared scientific
+# ded_vispa_config_v1.0.11.yaml: single canonical DEB VisPa profile. Shared scientific
 # resources are read-only; downloads and tool caches stay in a managed local
 # directory while figures are written to the approved fMOST output tree.
 # Default DEB-lab VisPa profile. Live neuron IDs use the IONData API;
@@ -6,13 +6,13 @@
 # configured intranet hosts/shares are reachable. No credentials or local tools.
 # Per-sample DS00/5 µm links are inherited source declarations, not validation or
 # anatomical acceptance. Caches and outputs are explicitly isolated by this profile.
-# Config version: 1.0.10 | Updated: 2026-11-08T17:15:45+08:00
+# Config version: 1.0.11 | Updated: 2026-11-09T09:10:30+08:00
 # History: ../../../CHANGELOG.md (Configuration history)
 # Change history: ../../../CHANGELOG.md
 version: 1
 config_name: ded_vispa_config
-config_version: 1.0.10
-config_updated_at: '2026-11-08T17:15:45+08:00'
+config_version: 1.0.11
+config_updated_at: '2026-11-09T09:10:30+08:00'
 # Optional workstation-specific DS00 selections belong in a personal profile.
 base_dir: \\10.102.8.200\microscopy_data\fMOST\VisPa\configs
 defaults:
@@ -21,7 +21,7 @@ defaults:
   swc_cache_root: \\10.102.8.200\microscopy_data\fMOST\VisPa\cached_data\swc
   swc_root: null
   cache_root: \\10.102.8.200\microscopy_data\fMOST\VisPa\cached_data
-  output_root: \\10.102.8.200\microscopy_data\fMOST\VisPa\outputs
+  output_root: '\\10.102.8.200\microscopy_data\fMOST\Vispa_outputs'
 samples:
   '250432':
     monkey: '747'
@@ -113,7 +113,7 @@ samples:
     ds00_sha256: aad63119f6d26b4f8c0e4a1e5616f7801077f3ca1411747d654de7dfce150678
     resample_5um: 252790-CH1_resample/resample_5um
 visual_toolkit:
-  output_root: \\10.102.8.200\microscopy_data\fMOST\VisPa\outputs
+  output_root: '\\10.102.8.200\microscopy_data\fMOST\Vispa_outputs'
   figure_output_root: \\10.102.8.200\microscopy_data\fMOST\Vispa_outputs
   auto_reload: true
   worker_python: null

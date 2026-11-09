@@ -1,8 +1,9 @@
 """Bounded GUI bulk command and receipt-path contracts.
 
-Version: 1.21.3 (local/unreleased)
-Last updated: 2026-11-08
+Version: 1.21.6 (local/unreleased)
+Last updated: 2026-11-09
 Change history: ../CHANGELOG.md
+2026-11-09: Use effective config fingerprints in frozen-job checks.
 """
 import hashlib
 import json
@@ -11,15 +12,23 @@ import tempfile
 import unittest
 
 from vispa._version import __version__
+from vispa.config import config_fingerprint, load
 from vispa.review_bulk_dialog import BulkReviewDialog, batch_receipt_path, bulk_command
 
 
 class BulkReviewDialogContractTests(unittest.TestCase):
+    @staticmethod
+    def _write_profile(path: Path, version: str) -> None:
+        path.write_text(json.dumps({
+            "version": 1, "config_name": "test", "config_version": version,
+            "config_updated_at": "2026-11-09T09:00:00+08:00",
+        }), encoding="utf-8")
+
     def test_explicit_scope_and_receipt_location(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             config = root / "profile.yaml"
-            config.write_text("profile: test\n", encoding="utf-8")
+            self._write_profile(config, "1")
             jobs = root / "jobs.json"
             jobs.write_text(json.dumps({"sample_id": "252527", "output_layout": "sample_neurons",
                                         "vispa_config": str(config)}),
@@ -54,14 +63,14 @@ class BulkReviewDialogContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             config = root / "profile.yaml"
-            config.write_text("profile: test\n", encoding="utf-8")
+            self._write_profile(config, "1")
             output = root / "figures"
             jobs = root / "jobs.json"
             payload = {"sample_id": "252527", "vispa_config": str(config),
                        "output_layout": "sample_neurons_flat",
                        "figure_output_root": str(output),
                        "cache_root": str(root / "cache"),
-                       "vispa_config_sha256": hashlib.sha256(config.read_bytes()).hexdigest(),
+                       "vispa_config_sha256": config_fingerprint(load(config)),
                        "region_filter": {"labels": ["Iai_41", "M1_79"]}}
             jobs.write_text(json.dumps(payload), encoding="utf-8")
             values = {"sample": "252527", "config": str(config), "jobs": str(jobs),
@@ -75,7 +84,7 @@ class BulkReviewDialogContractTests(unittest.TestCase):
             BulkReviewDialog._validate_jobs(jobs, values, require_exists=True)
             with self.assertRaisesRegex(ValueError, "region selection"):
                 BulkReviewDialog._validate_jobs(jobs, {**values, "regions": []})
-            config.write_text("profile: revised\n", encoding="utf-8")
+            self._write_profile(config, "2")
             with self.assertRaisesRegex(ValueError, "older profile revision"):
                 BulkReviewDialog._validate_jobs(jobs, values)
             BulkReviewDialog._validate_jobs(jobs, values, view_only=True)

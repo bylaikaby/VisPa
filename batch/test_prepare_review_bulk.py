@@ -1,10 +1,11 @@
 """Bounded job-preparation tests for exact animal identities and raw cache.
 
-Version: 1.21.5 (local/unreleased)
-Last updated: 2026-11-08
+Version: 1.21.6 (local/unreleased)
+Last updated: 2026-11-09
 Change history: ../CHANGELOG.md
 Status: candidate
 2026-11-08: Isolate synthetic raw-source fixtures from the live shared cache.
+2026-11-09: Cover exact failure reporting and retry of partial prepared jobs.
 """
 from __future__ import annotations
 
@@ -23,7 +24,7 @@ from vispa.review_bulk_dialog import BulkReviewDialog
 from vispa.config import load as load_config
 from vispa.review_bulk_render import (
     _region_display_value, load_review_jobs, neuron_folder_name, run_folder_name, run_review_bulk,
-    validate_run_name,
+    skip_complete_existing_outputs, validate_run_name,
 )
 
 
@@ -115,8 +116,7 @@ class PrepareReviewBulkTests(unittest.TestCase):
             self.assertEqual(jobs["jobs"][0]["soma_region"], "Right INS")
             self.assertEqual(jobs["jobs"][0]["soma_region_source"]["field"], "checked_region")
             self.assertEqual(jobs["jobs"][1]["soma_region"], "M1_79")
-            self.assertEqual(jobs["jobs"][0]["neuron_folder"], "001_R_Right_INS_" +
-                             hashlib.sha256("001_R_Right INS".encode()).hexdigest()[:8])
+            self.assertEqual(jobs["jobs"][0]["neuron_folder"], "001_R_Right-INS")
             self.assertEqual(jobs["jobs"][1]["neuron_folder"], "002_R_M1")
             self.assertEqual(jobs["output_layout"], "sample_neurons_flat")
             self.assertIsNone(jobs["jobs"][0]["source_acquisition_date"])
@@ -134,6 +134,36 @@ class PrepareReviewBulkTests(unittest.TestCase):
             self.assertEqual(render_plan["jobs"][0]["vispa_region"]["status"], "verified")
             self.assertEqual(hashlib.sha256((cache / "251637/001.swc").read_bytes()).hexdigest(),
                              jobs["jobs"][0]["raw_swc_sha256"])
+
+    def test_partial_preparation_reports_and_can_retry_existing_jobs(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            identities = root / "identities.csv"
+            identities.write_text("sample,neuron_id,portal_region\n"
+                                  "251637,001.swc,M1_79\n", encoding="utf-8")
+            config = self._local_config(root)
+            cache = root / "cache" / "swc_raw"
+            jobs_path = root / "jobs" / "prepared.json"
+
+            plan = plan_jobs(config, "251637", identities, False, [], cache,
+                             None, None, True)
+            result = prepare_jobs(plan, jobs_path, dry_run=False, allow_download=False)
+            self.assertEqual(result["status"], "partial")
+            self.assertEqual(result["failed_count"], 1)
+            self.assertEqual(result["failure_summary"][0]["neuron_ids"], ["001.swc"])
+            self.assertIn("raw SWC unavailable", result["failure_summary"][0]["error"])
+
+            sources = root / "sources" / "251637"
+            sources.mkdir(parents=True)
+            (sources / "001.swc").write_text("1 1 1 2 3 1 -1\n", encoding="utf-8")
+            retry_plan = plan_jobs(config, "251637", identities, False, [sources.parent],
+                                   cache, None, None, True)
+            retried = prepare_jobs(retry_plan, jobs_path, dry_run=False,
+                                   allow_download=False, replace_existing=True)
+            self.assertEqual(retried["status"], "prepared")
+            self.assertEqual(retried["failed_count"], 0)
+            self.assertTrue(json.loads(jobs_path.read_text(encoding="utf-8"))
+                            ["jobs"][0]["render_ready"])
 
     def test_missing_cache_only_job_is_explicitly_partial(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -250,7 +280,108 @@ class PrepareReviewBulkTests(unittest.TestCase):
         self.assertEqual(neuron_folder_name("252527", "011.swc", "PMdc_82", side="Left"), "011_L_PMdc")
         self.assertEqual(neuron_folder_name("252527", "011.swc", "area_7a_122"), "011_area_7a")
         self.assertEqual(neuron_folder_name("252527", "011.swc", None), "011_Unassigned")
+        self.assertEqual(neuron_folder_name("251637", "468.swc", "Ia/Id_228", side="Left"),
+                         "468_L_Ia-Id")
+        self.assertEqual(neuron_folder_name("252527", "033.swc", "area_3a/b_74", side="Right"),
+                         "033_R_area_3a-b")
+        self.assertEqual(neuron_folder_name("251637", "001.swc", "Right INS", side="Right"),
+                         "001_R_Right-INS")
         self.assertNotIn("/", neuron_folder_name("252527", "011.swc", "../../region"))
+
+    def test_existing_complete_outputs_are_skipped_by_neuron_identity(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output_root = Path(temporary)
+            sample_root = output_root / "251637" / "neurons"
+            complete = sample_root / "001_L_Ia-Id"
+            partial = sample_root / "002_R_M1"
+            plots = complete / "plots"
+            plots.mkdir(parents=True)
+            partial.mkdir(parents=True)
+            for name in ("001_TriPlot.png", "001_Soma.nii.gz"):
+                (complete / name).write_bytes(b"fixture")
+            (complete / "001_Soma.nii.gz.json").write_text(json.dumps({
+                "output_file": str(complete / ".stage-neuron-old" / "001_Soma.nii.gz"),
+                "center_xyz_um": [1, 2, 3],
+            }), encoding="utf-8")
+            for name in ("001_Soma_Plot.png", "001_Context_Plot.png",
+                         "001_Sagittal_Plot.png"):
+                (plots / name).write_bytes(b"fixture")
+            (partial / "002_TriPlot.png").write_bytes(b"fixture")
+            plan = {
+                "output_root": str(output_root),
+                "sample_id": "251637",
+                "jobs": [{"neuron_id": "001.swc"}, {"neuron_id": "002.swc"}],
+            }
+            filtered = skip_complete_existing_outputs(plan)
+            self.assertEqual([job["neuron_id"] for job in filtered["jobs"]], ["002.swc"])
+            self.assertEqual(filtered["requested"], 1)
+            self.assertEqual(filtered["total_requested"], 2)
+            self.assertEqual(filtered["skipped_existing"][0]["neuron_id"], "001.swc")
+            sidecar = json.loads((complete / "001_Soma.nii.gz.json").read_text())
+            self.assertEqual(sidecar["output_file"],
+                             str((complete / "001_Soma.nii.gz").resolve()))
+            self.assertIn(".stage-neuron-old", sidecar["staged_output_file"])
+
+    def test_readable_folder_migration_updates_receipt_paths(self):
+        from vispa.review_bulk_render import (apply_folder_migrations,
+                                             build_folder_migrations)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            old = root / "251637" / "neurons" / "468_L_Ia_Id_5a4ec48e"
+            old.mkdir(parents=True)
+            (old / "fixture.txt").write_text("fixture", encoding="utf-8")
+            jobs = root / "jobs.json"
+            jobs.write_text(json.dumps({"jobs": [{
+                "neuron_id": "468.swc", "neuron_folder": "468_L_Ia-Id",
+                "soma_region": "Ia/Id_228", "vispa_region": {"side": "Left"},
+            }]}), encoding="utf-8")
+            receipt_path = root / "251637" / "process_log.json"
+            receipt_path.write_text(json.dumps({"neurons": {"468.swc": {"current": {
+                "neuron_folder": old.name,
+                "outputs": {"TriPlot": {"path": str(old / "fixture.txt")}},
+            }}}}), encoding="utf-8")
+            migrations = build_folder_migrations(root, "251637", jobs)
+            self.assertEqual(migrations[0]["new_name"], "468_L_Ia-Id")
+            result = apply_folder_migrations(root, "251637", migrations)
+            self.assertEqual(result["renamed"], 1)
+            self.assertFalse(old.exists())
+            receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+            self.assertEqual(receipt["neurons"]["468.swc"]["current"]["neuron_folder"],
+                             "468_L_Ia-Id")
+            self.assertIn("468_L_Ia-Id", receipt["neurons"]["468.swc"]["current"]
+                          ["outputs"]["TriPlot"]["path"])
+
+    def test_source_blocked_partial_output_is_not_retried_repeatedly(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output_root = Path(temporary)
+            sample_root = output_root / "252385" / "neurons"
+            partial = sample_root / "002_L_M1"
+            partial.mkdir(parents=True)
+            (partial / "002_Context_Plot.png").write_bytes(b"fixture")
+            (partial / "002_Sagittal_Plot.png").write_bytes(b"fixture")
+            receipt = {
+                "neurons": {"002.swc": {"current": {
+                    "neuron_folder": partial.name,
+                    "outputs": {
+                        "Context": {"path": str(partial / "002_Context_Plot.png")},
+                        "Sagittal": {"path": str(partial / "002_Sagittal_Plot.png")},
+                    },
+                    "errors": [
+                        "Soma: Soma's central high-resolution cube is unavailable; "
+                        "HTTP Error 404: Not Found"
+                    ],
+                }}}
+            }
+            (output_root / "252385" / "process_log.json").write_text(
+                json.dumps(receipt), encoding="utf-8")
+            plan = {
+                "output_root": str(output_root),
+                "sample_id": "252385",
+                "jobs": [{"neuron_id": "002.swc"}],
+            }
+            filtered = skip_complete_existing_outputs(plan)
+            self.assertEqual(filtered["jobs"], [])
+            self.assertEqual(filtered["skipped_source_blocked"][0]["neuron_id"], "002.swc")
 
     def test_canonical_gui_cache_and_figure_root_round_trip(self):
         with tempfile.TemporaryDirectory() as temporary:

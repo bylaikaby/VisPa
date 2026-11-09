@@ -1,7 +1,7 @@
 """Freeze one animal of exact raw-SWC review jobs with a managed byte cache.
 
-Version: 1.21.4 (local/unreleased)
-Last updated: 2026-11-08
+Version: 1.21.6 (local/unreleased)
+Last updated: 2026-11-09
 Change history: ../CHANGELOG.md
 Status: candidate
 
@@ -9,6 +9,11 @@ Operator: python -m vispa.review_bulk_prepare --config PATH --sample SAMPLE
           (--identities CSV | --catalog) --output-jobs PATH --cache-root PATH
           (--limit N | --all) [--raw-root PATH ...] [--source-receipt PATH]
           [--allow-download] [--run-name NAME] [--dry-run]
+
+The preparation result reports exact failed neuron IDs and grouped source errors.
+Callers may atomically replace a matching partial jobs file when retrying.
+The local `--config-overlay` layer changes only the effective render settings;
+the base profile is never written.
 """
 from __future__ import annotations
 
@@ -18,11 +23,12 @@ from datetime import datetime, timezone
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import re
 from zoneinfo import ZoneInfo
 
-from vispa.config import load
+from vispa.config import config_fingerprint, load
 from vispa.data_input_adaptor import (
     PortalSWCProvider, _guard_managed_cache, _publish_swc_versioned,
     acquire_neuron_sides, list_neurons, read_swc,
@@ -252,7 +258,11 @@ def plan_jobs(config_path: Path, sample: str, identities: Path | None, catalog: 
                      "soma_error": None if digest else "raw SWC absent from declared roots; download requires --allow-download"})
     return {"schema": "vispa.review_bulk.prepare.v1", "sample_id": sample,
             "run_name": run_name,
-            "vispa_config": str(config_path), "vispa_config_sha256": _sha256(config_path),
+            "vispa_config": str(config_path),
+            "vispa_config_sha256": config_fingerprint(config),
+            "vispa_base_config_sha256": config.get("base_config_sha256"),
+            "vispa_config_overlay": config.get("config_overlay_path"),
+            "vispa_config_overlay_sha256": config.get("config_overlay_sha256"),
             "figure_output_root": str(config["visual_toolkit"]["figure_output_root"]),
             "identity_source": identity_source, "expected_source": expected_source,
             "vispa_region_lookup": {"status": side_batch.get("status"),
@@ -267,17 +277,18 @@ def plan_jobs(config_path: Path, sample: str, identities: Path | None, catalog: 
             "allow_all": all_jobs, "jobs": jobs}
 
 
-def prepare_jobs(plan: dict, output_jobs: Path, *, dry_run: bool, allow_download: bool) -> dict:
+def prepare_jobs(plan: dict, output_jobs: Path, *, dry_run: bool, allow_download: bool,
+                 replace_existing: bool = False) -> dict:
     result = {**plan, "output_jobs": str(output_jobs.resolve()), "dry_run": dry_run,
               "allow_download": allow_download, "status": "dry_run" if dry_run else "in_progress"}
     if dry_run:
         return result
     output_jobs = output_jobs.resolve()
-    if output_jobs.exists():
+    if output_jobs.exists() and not replace_existing:
         raise FileExistsError(f"Jobs file already exists: {output_jobs}")
-    if _sha256(Path(plan["vispa_config"])) != plan["vispa_config_sha256"]:
-        raise ValueError("VisPa config changed after preparation plan")
     config = load(plan["vispa_config"])
+    if config_fingerprint(config) != plan["vispa_config_sha256"]:
+        raise ValueError("VisPa config changed after preparation plan")
     cache_root = Path(plan["cache_root"])
     portal = PortalSWCProvider(config, cache_root=cache_root) if allow_download else None
     jobs = []
@@ -333,6 +344,9 @@ def prepare_jobs(plan: dict, output_jobs: Path, *, dry_run: bool, allow_download
                "run_name": plan["run_name"],
                "vispa_config": plan["vispa_config"],
                "vispa_config_sha256": plan["vispa_config_sha256"],
+               "vispa_base_config_sha256": plan.get("vispa_base_config_sha256"),
+               "vispa_config_overlay": plan.get("vispa_config_overlay"),
+               "vispa_config_overlay_sha256": plan.get("vispa_config_overlay_sha256"),
                "figure_output_root": plan["figure_output_root"],
                "allow_all": plan["allow_all"],
                "output_layout": "sample_neurons_flat", "identity_source": plan["identity_source"],
@@ -343,9 +357,20 @@ def prepare_jobs(plan: dict, output_jobs: Path, *, dry_run: bool, allow_download
                "jobs": jobs}
     output_jobs.parent.mkdir(parents=True, exist_ok=True)
     _atomic_json(output_jobs, payload)
-    result["status"] = "prepared" if all(job["render_ready"] for job in jobs) else "partial"
-    result["prepared_count"] = sum(job["render_ready"] for job in jobs)
-    result["failed_count"] = sum(not job["render_ready"] for job in jobs)
+    failures = [{"neuron_id": job["neuron_id"], "error": job.get("soma_error")}
+                for job in jobs if not job["render_ready"]]
+    grouped = {}
+    for failure in failures:
+        entry = grouped.setdefault(failure["error"], {
+            "error": failure["error"], "count": 0, "neuron_ids": []})
+        entry["count"] += 1
+        entry["neuron_ids"].append(failure["neuron_id"])
+    result["status"] = "prepared" if not failures else "partial"
+    result["prepared_count"] = len(jobs) - len(failures)
+    result["failed_count"] = len(failures)
+    result["failures"] = failures
+    result["failure_summary"] = sorted(
+        grouped.values(), key=lambda item: (-item["count"], str(item["error"])))
     return result
 
 
@@ -354,6 +379,8 @@ def main(argv=None) -> int:
     from vispa import __version__
     parser.add_argument("--version", action="version", version=__version__)
     parser.add_argument("--config", type=Path, required=True)
+    parser.add_argument("--config-overlay", type=Path,
+                        help="local read-only overlay applied over the base config")
     parser.add_argument("--sample", required=True)
     selection = parser.add_mutually_exclusive_group(required=True)
     selection.add_argument("--identities", type=Path)
@@ -371,6 +398,9 @@ def main(argv=None) -> int:
     parser.add_argument("--allow-download", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
+    if args.config_overlay:
+        os.environ["VISPA_CONFIG_OVERLAY"] = str(
+            args.config_overlay.expanduser().resolve())
     try:
         plan = plan_jobs(args.config, args.sample, args.identities, args.catalog,
                          args.raw_root, args.cache_root, args.source_receipt,

@@ -1,8 +1,8 @@
 """
 vispa.py - Macaque Brain Hybrid-Resolution Visualization Toolkit
 
-Version: 1.21.5 (local/unreleased)
-Last updated: 2026-11-08
+Version: 1.21.6 (local/unreleased)
+Last updated: 2026-11-09
 Change history: ../../../CHANGELOG.md
 2026-11-08: Fix optional-region volume export without referencing plot-only state.
 2026-11-08: Add a config-authorized empty Context panel for declared missing
@@ -999,6 +999,8 @@ class VisPa:
             except ImportError as exc:
                 raise RuntimeError("NIfTI export requires nibabel; install vispa[nifti]") from exc
             image = nib.Nifti1Image(vol_xyz, affine)
+            image.set_qform(affine, code=2)
+            image.set_sform(affine, code=2)
             image.header.set_xyzt_units('micron')
             image.header['descrip'] = b'Native microscopy XYZ; anatomical orientation unverified'
             nib.save(image, full_path)
@@ -1026,6 +1028,10 @@ class VisPa:
             metadata['nifti_axis_order'] = 'XYZ'
             metadata['array_axis_order'] = 'XYZ'
             metadata['shape_xyz'] = [int(volume.shape[2]), int(volume.shape[1]), int(volume.shape[0])]
+            metadata['nifti_affine_ijk_to_xyz_um'] = np.asarray(affine).tolist()
+            metadata['nifti_form_codes'] = {'qform_code': 2, 'sform_code': 2,
+                                            'status': 'both forms populated'}
+            metadata['nifti_xyzt_units'] = 'micrometre'
         else:
             metadata['source_array_axis_order'] = 'YX'
             metadata['array_axis_order'] = 'YX'

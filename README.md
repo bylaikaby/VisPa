@@ -1,7 +1,7 @@
 # VisPa — Visual Projectome Analysis tool
 
 VisPa reviews macaque neuron and microscopy data configured by the DEB lab.
-This checkout identifies as **1.21.5**. VisPa is a
+This checkout identifies as **1.21.6**. VisPa is a
 Python package inside a Conda environment. Launch the GUI directly from this
 checkout with `python run_vispa.py`.
 
@@ -347,17 +347,15 @@ This optional command removes all packages in that environment, including ReMAP.
 
 ## Create or select a configuration
 
-The existing shared 1.0.6 profile is
-`\\10.102.8.200\microscopy_data\fMOST\VisPa\configs\ded_vispa_config_v1.0.6.yaml`.
-It declares the shared sample, DS00,
-5 µm, raw SWC, processed SWC, mesh, catalog, and IONData resources as read-only
-inputs. Cubes, SWCs and FNT work use
-`\\10.102.8.200\microscopy_data\fMOST\VisPa\cached_data`. That profile writes
-figures under `\\10.102.8.200\microscopy_data\fMOST\VisPa\outputs`. The
-packaged DEB 1.0.8 profile routes GUI Render figures to
-`\\10.102.8.200\microscopy_data\fMOST\Vispa_outputs/<sample>/neurons/<neuron>/`.
-An existing profile can set `visual_toolkit.figure_output_root` to choose the
-same root without changing its general output directory.
+The active local DEB profile is `ded_vispa_config_v1.0.11.yaml`. It declares the
+shared sample, DS00, 5 µm, raw SWC, processed SWC, mesh, catalog, and IONData
+resources as read-only inputs. Cubes, SWCs and FNT work use
+`\\10.102.8.200\microscopy_data\fMOST\VisPa\cached_data`.
+`defaults.output_root`, `visual_toolkit.output_root`, and
+`visual_toolkit.figure_output_root` all resolve to
+`\\10.102.8.200\microscopy_data\fMOST\Vispa_outputs`. New figures use
+`<sample>/neurons/<neuron>/`; single panels use the configured
+`visual_toolkit.separate_plot_subfolder` (`plots` in the DEB profile).
 
 The YAML contains only `config_name`, `config_version`, and
 `config_updated_at` (an ISO-8601 timestamp with offset). Configuration history
@@ -368,9 +366,9 @@ Package upgrades do not overwrite the local YAML.
 Confirm the package/config pair without launching the GUI:
 
 ```powershell
-python -m vispa --version --config \\10.102.8.200\microscopy_data\fMOST\VisPa\configs\ded_vispa_config_v1.0.6.yaml
-python -m vispa config-check --validate-only --config \\10.102.8.200\microscopy_data\fMOST\VisPa\configs\ded_vispa_config_v1.0.6.yaml
-python -m vispa config-check --compare-defaults --config \\10.102.8.200\microscopy_data\fMOST\VisPa\configs\ded_vispa_config_v1.0.6.yaml
+python -m vispa --version --config PATH_TO_ded_vispa_config_v1.0.11.yaml
+python -m vispa config-check --validate-only --config PATH_TO_ded_vispa_config_v1.0.11.yaml
+python -m vispa config-check --compare-defaults --config PATH_TO_ded_vispa_config_v1.0.11.yaml
 ```
 
 Use `vispa --test` (or `vispa gui --test`) for a local test launch. It loads the
@@ -383,9 +381,31 @@ The GUI title, Version action, and resource-check header show the same current
 identities and config update time. The resource-check window also shows key
 resolved paths above its compact scrollable checklist. To select this profile
 for one PowerShell session, set
-`$env:VISPA_CONFIG='\\10.102.8.200\microscopy_data\fMOST\VisPa\configs\ded_vispa_config_v1.0.6.yaml'`. Validate configured
+`$env:VISPA_CONFIG='PATH_TO_ded_vispa_config_v1.0.11.yaml'`. Validate configured
 source paths separately; this syntax check does not establish anatomical or
 scientific acceptance.
+
+For a temporary local change, do not edit the read-only profile. Create a small
+JSON or YAML overlay containing only the fields to replace, then launch one
+process with `--config-overlay`:
+
+```yaml
+visual_toolkit:
+  output_root: 'D:\local\VisPa_outputs'
+  settings:
+    review:
+      context.width_um: 4000.0
+```
+
+```powershell
+python -m vispa --config-overlay D:\local\vispa-overlay.yaml gui --config PATH_TO_ded_vispa_config_v1.0.11.yaml
+python -m vispa --config-overlay D:\local\vispa-overlay.yaml --version --config PATH_TO_ded_vispa_config_v1.0.11.yaml
+```
+
+The overlay is merged over the base file in memory. The base file is never
+written. Receipts and version reports include separate base, overlay, and
+effective-config hashes. `VISPA_CONFIG_OVERLAY=PATH` provides the same behavior
+for tools that do not expose the CLI option.
 
 Create the per-user profile without overwriting an existing file:
 

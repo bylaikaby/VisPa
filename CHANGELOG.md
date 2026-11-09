@@ -1,5 +1,32 @@
 # VisPa change log
 
+## 1.21.6 — 2026-11-09 (local/unreleased candidate)
+- Make raw-SWC preparation resumable: retry a matching partial frozen-jobs file
+  atomically when downloads are allowed, and accept explicitly declared local
+  raw-source roots in the temporary cohort controller.
+- Record exact failed neuron IDs and grouped source errors in preparation
+  results and cohort progress instead of reducing source failures to `partial`.
+- In the existing cohort controller, add receipt-aware migration of legacy
+  hash-suffixed folders to readable names and automatic detection of complete
+  existing neuron outputs. A resumed animal renders only its missing neurons.
+- Treat Windows lock-release cleanup as non-fatal after a completed render;
+  closing the retained lock handle still releases ownership.
+- Repair Soma NIfTI export metadata: populate matching qform and sform matrices,
+  record the index-to-micrometre affine and unit code in the sidecar, and rewrite
+  the sidecar after the staged file is moved to its final neuron folder.
+- Bump the DEB profile to 1.0.11 and make `defaults.output_root`,
+  `visual_toolkit.output_root`, and `visual_toolkit.figure_output_root` resolve
+  to the same configured `fMOST/Vispa_outputs` root. Individual plots remain
+  under the configured `plots` subfolder.
+- Add a read-only local config overlay mechanism through `--config-overlay` or
+  `VISPA_CONFIG_OVERLAY`. The base profile remains untouched; effective
+  settings, base hash, overlay hash and effective hash are propagated to GUI
+  status and bulk receipts.
+- Validation: 320 source, 41 batch and 5 cohort-controller tests cover
+  preparation retry, readable-name migration, complete/source-blocked output
+  detection, local overlays, unified output settings, NIfTI sidecars and final
+  paths.
+
 ## 1.21.5 — 2026-11-08 (local/unreleased candidate)
 - Fix volume export when its optional region is absent: remove an undefined
   plot-only variable exposed by PC2's real GUI Soma export. Bulk exports with

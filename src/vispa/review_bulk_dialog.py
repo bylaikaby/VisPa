@@ -1,9 +1,10 @@
 """Tk controls for packaged, receipt-backed whole-animal review rendering.
 
-Version: 1.21.3 (local/unreleased)
-Last updated: 2026-11-08
+Version: 1.21.6 (local/unreleased)
+Last updated: 2026-11-09
 Change history: ../../CHANGELOG.md
 Status: candidate
+2026-11-09: Track effective base+local-overlay hashes for frozen bulk jobs.
 """
 from __future__ import annotations
 
@@ -17,7 +18,7 @@ import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from .config import load
+from .config import config_fingerprint, load
 from .data_input_adaptor import list_neurons
 from ._version import __version__
 
@@ -135,7 +136,7 @@ class BulkReviewDialog:
         if not resolved:
             raise ValueError("Bulk review needs a saved VisPa profile")
         self.config_path = str(Path(resolved).resolve(strict=True))
-        self._config_sha = hashlib.sha256(Path(self.config_path).read_bytes()).hexdigest()[:8]
+        self._config_sha = config_fingerprint(config)[:8]
         self._jobs_manual = False
         cache = Path(config["defaults"]["cache_root"]) / "swc_raw"
         jobs = (Path(config["defaults"]["cache_root"]) / "review_jobs" /
@@ -383,7 +384,7 @@ class BulkReviewDialog:
                 Path(payload["cache_root"]).resolve() != Path(values["cache"]).resolve()):
             raise ValueError("Prepared jobs use another managed raw cache")
         if not view_only and payload.get("vispa_config_sha256") and (
-                hashlib.sha256(Path(values["config"]).read_bytes()).hexdigest()
+                config_fingerprint(load(values["config"]))
                 != payload["vispa_config_sha256"]):
             raise ValueError("Prepared jobs use an older profile revision; prepare new jobs")
 
@@ -396,7 +397,7 @@ class BulkReviewDialog:
 
     def _snapshot(self):
         config = load(self.config_path)
-        current_sha = hashlib.sha256(Path(self.config_path).read_bytes()).hexdigest()[:8]
+        current_sha = config_fingerprint(config)[:8]
         if current_sha != self._config_sha:
             self._config_sha = current_sha
             self._jobs_root = Path(config["defaults"]["cache_root"]) / "review_jobs"

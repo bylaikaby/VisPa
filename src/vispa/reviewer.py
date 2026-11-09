@@ -1,9 +1,10 @@
 """
 vispa_gui.py - GUI for NeuroVis Visual Toolkit
 
-Version: 1.21.5 (local/unreleased)
-Last updated: 2026-11-08
+Version: 1.21.6 (local/unreleased)
+Last updated: 2026-11-09
 Change history: ../../CHANGELOG.md
+2026-11-09: Show and fingerprint an optional read-only local config overlay.
 2026-11-08: Include native soma coordinates and region in Soma volume export.
 Status: candidate (GUI layout reviewed; scientific review pending)
 2026-11-08: Resolve saved review and Brain View folders from the active profile and
@@ -395,15 +396,17 @@ def read_review_session(path):
 
 
 def _bootstrap_config_override(argv=None):
-    """Honor ``--config`` before importing toolkit modules that cache settings."""
+    """Honor base config and local overlay before toolkit modules cache settings."""
     args = list(sys.argv[1:] if argv is None else argv)
     for index, value in enumerate(args):
         if value == "--config" and index + 1 < len(args):
             os.environ["VISPA_CONFIG"] = args[index + 1]
-            return
-        if value.startswith("--config="):
+        elif value.startswith("--config="):
             os.environ["VISPA_CONFIG"] = value.partition("=")[2]
-            return
+        elif value == "--config-overlay" and index + 1 < len(args):
+            os.environ["VISPA_CONFIG_OVERLAY"] = args[index + 1]
+        elif value.startswith("--config-overlay="):
+            os.environ["VISPA_CONFIG_OVERLAY"] = value.partition("=")[2]
 
 
 _bootstrap_config_override()
@@ -474,11 +477,11 @@ class NeuroVisGUI:
                  auto_load=None, review_session=None, watch_session=False,
                  config_path=None, auto_fill_on_identity=True, test_mode=False):
         """Initialize GUI window and widgets."""
-        from .config import config_version_report, load
+        from .config import config_fingerprint, config_version_report, load
         configuration = load(config_path)
         from .config import resolve_settings
         self._profile_review_settings = resolve_settings('review', config=configuration)
-        self._profile_config_sha256 = self._file_sha256(Path(configuration['path']))
+        self._profile_config_sha256 = config_fingerprint(configuration)
         self.version_report = config_version_report(configuration)
         (sample_id, neuron_id), identity_source, auto_load = resolve_gui_launch_defaults(
             configuration, sample_id, neuron_id, auto_load)
@@ -486,10 +489,12 @@ class NeuroVisGUI:
         self.root = root
         self.test_mode = bool(test_mode)
         mode_label = " · TEST OUTPUT" if self.test_mode else ""
+        overlay_label = (" · LOCAL CONFIG OVERLAY"
+                         if self.version_report.get("config_overlay_path") else "")
         self.root.title(
             f"VisPa {__version__} · "
             f"{self.version_report['config_name']} {self.version_report['config_version']}"
-            f"{mode_label} · local review")
+            f"{mode_label}{overlay_label} · local review")
         _apply_window_icon(self.root)
         # Design sizes below are quoted in 96-dpi pixels. Tk fonts follow the
         # display DPI, so the container geometry must follow the same factor or
@@ -709,14 +714,19 @@ class NeuroVisGUI:
         def worker():
             staging = None
             try:
-                from .config import config_version_report, load, resolve_render_settings
+                from .config import (
+                    config_fingerprint, config_version_report, load, resolve_render_settings,
+                )
                 before = profile_path.read_bytes()
                 config = load(profile_path)
+                effective_sha = config_fingerprint(config)
                 settings = resolve_render_settings('review', config=config)
                 if profile_path.read_bytes() != before:
                     raise ValueError('Active profile changed during refresh; reopen Settings')
+                if config_fingerprint(load(profile_path)) != effective_sha:
+                    raise ValueError('Active config overlay changed during refresh; reopen Settings')
                 self._ui_call(self._apply_profile_fields, config, settings,
-                              hashlib.sha256(before).hexdigest(),
+                              effective_sha,
                               config_version_report(config))
             except Exception as exc:
                 self._ui_call(self.update_status, f'Could not refresh plot settings: {exc}')
@@ -4827,6 +4837,8 @@ def _parse_launch_args(argv=None):
     parser.add_argument("--sample", dest="sample_id", help="exact sample ID, including any suffix")
     parser.add_argument("--neuron", dest="neuron_id", help="neuron basename, with or without .swc")
     parser.add_argument("--config", help="explicit dataset and output configuration file")
+    parser.add_argument("--config-overlay", metavar="PATH",
+                        help="local read-only overlay applied over the base config")
     parser.add_argument("--test", action="store_true",
                         help="use the selected config's local test-output overrides")
     parser.add_argument("--review-session", metavar="PATH",
@@ -4893,6 +4905,9 @@ def main(argv=None):
     identity, identity_source, effective_auto_load, config, session_event, session_payload = _resolve_launch(parser, args)
     if args.config:
         os.environ["VISPA_CONFIG"] = str(Path(args.config).expanduser().resolve())
+    if args.config_overlay:
+        os.environ["VISPA_CONFIG_OVERLAY"] = str(
+            Path(args.config_overlay).expanduser().resolve())
     if args.dry_run:
         from .config import config_version_report
         version_report = config_version_report(config)
@@ -4903,6 +4918,8 @@ def main(argv=None):
             "config_name": version_report["config_name"],
             "config_version": version_report["config_version"],
             "config_sha256": version_report["config_sha256"],
+            "config_overlay_path": version_report.get("config_overlay_path"),
+            "config_overlay_sha256": version_report.get("config_overlay_sha256"),
             "test_mode": bool(args.test),
             "sample_id": identity[0],
             "neuron_id": identity[1],

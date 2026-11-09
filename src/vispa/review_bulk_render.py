@@ -1,7 +1,7 @@
 """Render one VisPa review set per published region/FNT job.
 
-Version: 1.21.4 (local/unreleased)
-Last updated: 2026-11-08
+Version: 1.21.6 (local/unreleased)
+Last updated: 2026-11-09
 Change history: ../CHANGELOG.md
 Status: candidate
 
@@ -11,6 +11,9 @@ as the VisPa GUI. The command does not discover cohorts or rewrite SWCs.
 
 Operator:
   python -m vispa.review_bulk_render --jobs PATH --output-root PATH --limit 1 --dry-run
+
+Use `--config-overlay PATH` for one local temporary profile revision. Existing
+complete and source-blocked neurons can be skipped without rewriting products.
 """
 from __future__ import annotations
 
@@ -58,13 +61,175 @@ def neuron_folder_name(sample_id: str, neuron_id: str, region: str | None,
     if side not in (None, "Left", "Right"):
         raise ValueError("side must be verified Left, Right, or unknown")
     side_token = {"Left": "L", "Right": "R", None: None}[side]
-    original = "_".join(part for part in (neuron_id[:-4], side_token, label) if part)
-    if _RUN_NAME.fullmatch(original):
-        return original
     stem = re.sub(r"[^A-Za-z0-9_-]+", "_", neuron_id[:-4]).strip("_")[:20] or "neuron"
-    safe_label = re.sub(r"[^A-Za-z0-9_-]+", "_", label).strip("_")[:24] or "region"
+    readable_label = label.replace("/", "-").replace("\\", "-")
+    readable_label = re.sub(r"[^A-Za-z0-9_-]+", "-", readable_label)
+    readable_label = re.sub(r"-+", "-", readable_label).strip("-_") or "region"
+    readable = "_".join(
+        part for part in (neuron_id[:-4], side_token, readable_label) if part)
+    if _RUN_NAME.fullmatch(readable) and readable_label == label:
+        return readable
+    if _RUN_NAME.fullmatch(readable) and len(readable_label) <= 48:
+        return readable
+    original = "_".join(part for part in (neuron_id[:-4], side_token, label) if part)
     suffix = hashlib.sha256(original.encode("utf-8")).hexdigest()[:8]
+    safe_label = re.sub(r"[^A-Za-z0-9_-]+", "_", label).strip("_")[:24] or "region"
     return "_".join(part for part in (stem, side_token, safe_label, suffix) if part)
+
+
+def _complete_existing_outputs(plan: dict) -> dict[str, str]:
+    """Map neuron IDs to existing folders that contain every required product."""
+    sample_root = Path(plan["output_root"]) / plan["sample_id"] / "neurons"
+    if not sample_root.is_dir():
+        return {}
+    by_stem = {}
+    for folder in sample_root.iterdir():
+        if folder.is_dir():
+            by_stem.setdefault(folder.name.split("_", 1)[0], []).append(folder)
+    patterns = ("*_TriPlot.png", "*_Soma_Plot.png", "*_Context_Plot.png",
+                "*_Sagittal_Plot.png", "*_Soma.nii.gz")
+    complete = {}
+    for job in plan["jobs"]:
+        stem = job["neuron_id"][:-4]
+        for folder in by_stem.get(stem, []):
+            if all(any(path.is_file() and path.stat().st_size > 0
+                       for path in folder.rglob(pattern))
+                   for pattern in patterns):
+                for sidecar in folder.glob("*_Soma.nii.gz.json"):
+                    try:
+                        repair_nifti_sidecar(sidecar)
+                    except (OSError, ValueError, KeyError, TypeError):
+                        pass
+                complete[job["neuron_id"]] = str(folder)
+                break
+    return complete
+
+
+def skip_complete_existing_outputs(plan: dict) -> dict:
+    """Keep only jobs whose complete output set is absent."""
+    complete = _complete_existing_outputs(plan)
+    receipt_path = (Path(plan["output_root"]) / plan["sample_id"] / "process_log.json")
+    receipt = (json.loads(receipt_path.read_text(encoding="utf-8"))
+               if receipt_path.is_file() else {})
+    source_blocked = {}
+    for job in plan["jobs"]:
+        if job["neuron_id"] in complete:
+            continue
+        record = (((receipt.get("neurons") or {}).get(job["neuron_id"]) or {})
+                  .get("current") or {})
+        errors = " ".join(str(item) for item in record.get("errors") or [])
+        outputs = set((record.get("outputs") or {}).keys())
+        if ("Soma's central high-resolution cube" in errors
+                and {"Context", "Sagittal"}.issubset(outputs)):
+            source_blocked[job["neuron_id"]] = {
+                "neuron_id": job["neuron_id"],
+                "path": str(Path(plan["output_root"]) / plan["sample_id"] / "neurons"
+                            / record.get("neuron_folder", "")),
+                "error": next((item for item in record.get("errors") or []
+                               if "Soma's central high-resolution cube" in item), errors),
+            }
+    remaining = [job for job in plan["jobs"]
+                 if job["neuron_id"] not in complete
+                 and job["neuron_id"] not in source_blocked]
+    return {
+        **plan,
+        "jobs": remaining,
+        "requested": len(remaining),
+        "total_requested": len(plan["jobs"]),
+        "skipped_existing": [
+            {"neuron_id": neuron_id, "path": complete[neuron_id]}
+            for neuron_id in sorted(complete)
+        ],
+        "skipped_source_blocked": [
+            source_blocked[neuron_id] for neuron_id in sorted(source_blocked)
+        ],
+    }
+
+
+def _replace_path_strings(value, replacements: dict[str, str]):
+    if isinstance(value, str):
+        for old, new in replacements.items():
+            value = value.replace(old, new)
+        return value
+    if isinstance(value, list):
+        return [_replace_path_strings(item, replacements) for item in value]
+    if isinstance(value, dict):
+        return {key: _replace_path_strings(item, replacements)
+                for key, item in value.items()}
+    return value
+
+
+def build_folder_migrations(output_root: Path, sample: str,
+                            jobs_path: Path) -> list[dict]:
+    """Plan readable renames for legacy hash-suffixed neuron folders."""
+    payload = json.loads(jobs_path.read_text(encoding="utf-8"))
+    neurons_root = output_root / sample / "neurons"
+    if not neurons_root.is_dir():
+        return []
+    jobs_by_id = {job["neuron_id"]: job for job in payload.get("jobs", [])}
+    receipt_path = output_root / sample / "process_log.json"
+    receipt = (json.loads(receipt_path.read_text(encoding="utf-8"))
+               if receipt_path.is_file() else {})
+    migrations = []
+    seen_old_names = set()
+
+    def add_migration(neuron_id, old_name):
+        if old_name in seen_old_names or neuron_id not in jobs_by_id:
+            return
+        job = jobs_by_id[neuron_id]
+        side = (job.get("vispa_region") or {}).get("side")
+        new_name = neuron_folder_name(
+            sample, neuron_id, job.get("soma_region"), side=side)
+        old_path = neurons_root / old_name
+        new_path = neurons_root / new_name
+        if old_name == new_name or not old_path.is_dir():
+            return
+        seen_old_names.add(old_name)
+        migrations.append({
+            "sample": sample, "neuron_id": neuron_id,
+            "old_name": old_name, "new_name": new_name,
+            "old_path": str(old_path), "new_path": str(new_path),
+            "destination_exists": new_path.exists(),
+        })
+
+    for job in payload.get("jobs", []):
+        old_name = job.get("neuron_folder")
+        if isinstance(old_name, str) and re.search(r"_[0-9a-f]{8}$", old_name):
+            add_migration(job["neuron_id"], old_name)
+    for neuron_id, slot in (receipt.get("neurons") or {}).items():
+        old_name = ((slot or {}).get("current") or {}).get("neuron_folder")
+        if isinstance(old_name, str) and re.search(r"_[0-9a-f]{8}$", old_name):
+            add_migration(neuron_id, old_name)
+    return migrations
+
+
+def apply_folder_migrations(output_root: Path, sample: str,
+                            migrations: list[dict]) -> dict:
+    """Apply planned renames and rewrite animal receipt path strings."""
+    applicable = [item for item in migrations if not item["destination_exists"]]
+    conflicts = [item for item in migrations if item["destination_exists"]]
+    for item in applicable:
+        old_path = Path(item["old_path"])
+        new_path = Path(item["new_path"])
+        if not old_path.is_dir() or new_path.exists():
+            raise FileExistsError(f"Rename target changed during migration: {new_path}")
+        old_path.rename(new_path)
+    receipt_path = output_root / sample / "process_log.json"
+    if applicable and receipt_path.is_file():
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        receipt = _replace_path_strings(
+            receipt, {item["old_name"]: item["new_name"] for item in applicable})
+        receipt["folder_name_migrations"] = [
+            *receipt.get("folder_name_migrations", []),
+            {
+                "applied_at_utc": datetime.now(timezone.utc).isoformat(),
+                "policy": "readable punctuation; no hash for unsafe-character substitution",
+                "mappings": applicable,
+            },
+        ]
+        _atomic_json(receipt_path, receipt)
+    return {"sample": sample, "renamed": len(applicable),
+            "conflicts": conflicts, "mappings": applicable}
 
 
 def _sha256(path: Path) -> str:
@@ -76,6 +241,7 @@ def _sha256(path: Path) -> str:
 
 
 def _atomic_json(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".part", dir=path.parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as stream:
@@ -85,6 +251,29 @@ def _atomic_json(path: Path, payload: dict) -> None:
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
+
+
+def repair_nifti_sidecar(sidecar_path: Path, image_path: Path | None = None) -> bool:
+    """Point one moved NIfTI sidecar at its final image and preserve the stage path."""
+    sidecar_path = Path(sidecar_path)
+    if not sidecar_path.name.endswith(".nii.gz.json"):
+        raise ValueError("Expected a NIfTI sidecar ending in .nii.gz.json")
+    image_path = Path(image_path) if image_path else sidecar_path.with_name(
+        sidecar_path.name[:-5])
+    if not image_path.is_file() or image_path.stat().st_size <= 0:
+        raise FileNotFoundError(f"Final NIfTI image is unavailable: {image_path}")
+    payload = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    final_path = str(image_path.resolve())
+    old_path = payload.get("output_file")
+    if old_path == final_path:
+        return False
+    if old_path and old_path != final_path:
+        payload.setdefault("staged_output_file", old_path)
+    payload["output_file"] = final_path
+    payload["output_path_status"] = "final path verified after staged-file move"
+    payload["metadata_repaired_at_utc"] = datetime.now(timezone.utc).isoformat()
+    _atomic_json(sidecar_path, payload)
+    return True
 
 
 def _finite_xyz(value, label: str) -> list[float]:
@@ -118,16 +307,21 @@ def load_review_jobs(jobs_path: Path, output_root: Path, limit: int | None, all_
     config_path = config_path.resolve(strict=True)
     if not config_path.is_file():
         raise ValueError("vispa_config must be a file")
-    config_hash = _sha256(config_path)
+    layout = payload.get("output_layout", "legacy")
+    if layout not in {"legacy", "sample_neurons", "sample_neurons_flat"}:
+        raise ValueError("output_layout must be legacy, sample_neurons or sample_neurons_flat")
+    from vispa.config import ENV_OVERLAY, config_fingerprint, load, resolve_settings
+    needs_config = layout in {"sample_neurons", "sample_neurons_flat"} or bool(
+        os.environ.get(ENV_OVERLAY, "").strip())
+    resolved_config = load(config_path) if needs_config else None
+    config_hash = (config_fingerprint(resolved_config) if resolved_config is not None
+                   else _sha256(config_path))
     if payload.get("vispa_config_sha256") and payload["vispa_config_sha256"] != config_hash:
         raise ValueError("Prepared VisPa config hash differs from current config")
     output_root = Path(output_root).expanduser().resolve()
     if output_root == jobs_path.parent or jobs_path.parent in output_root.parents:
         raise ValueError("Output root must be separate from the jobs file")
     ready, skipped = [], []
-    layout = payload.get("output_layout", "legacy")
-    if layout not in {"legacy", "sample_neurons", "sample_neurons_flat"}:
-        raise ValueError("output_layout must be legacy, sample_neurons or sample_neurons_flat")
     region_filter = payload.get("region_filter")
     if region_filter is not None:
         if (not isinstance(region_filter, dict) or
@@ -217,8 +411,8 @@ def load_review_jobs(jobs_path: Path, output_root: Path, limit: int | None, all_
     from vispa import __version__
     review_settings, figure_output_root = {}, None
     if layout in {"sample_neurons", "sample_neurons_flat"}:
-        from vispa.config import load, resolve_settings
-        resolved_config = load(config_path)
+        if resolved_config is None:
+            resolved_config = load(config_path)
         review_settings = resolve_settings("review", config=resolved_config)
         figure_output_root = str(resolved_config["visual_toolkit"]["figure_output_root"])
         if (layout == "sample_neurons_flat" and
@@ -232,6 +426,12 @@ def load_review_jobs(jobs_path: Path, output_root: Path, limit: int | None, all_
         "run_name": run_name,
         "vispa_config": str(config_path),
         "vispa_config_sha256": config_hash,
+        "vispa_base_config_sha256": (
+            resolved_config.get("base_config_sha256") if resolved_config else None),
+        "vispa_config_overlay": (
+            resolved_config.get("config_overlay_path") if resolved_config else None),
+        "vispa_config_overlay_sha256": (
+            resolved_config.get("config_overlay_sha256") if resolved_config else None),
         "output_root": str(output_root),
         "sample_id": sample,
         "requested": len(selected),
@@ -415,6 +615,18 @@ def _settings_sha256(plan: dict) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _config_matches(plan: dict) -> bool:
+    """Compare legacy file hashes or effective base+overlay fingerprints."""
+    from vispa.config import ENV_OVERLAY, config_fingerprint, load
+    config_path = Path(plan["vispa_config"])
+    if (plan.get("output_layout") in {"sample_neurons", "sample_neurons_flat"}
+            or os.environ.get(ENV_OVERLAY, "").strip()):
+        current = config_fingerprint(load(config_path))
+    else:
+        current = _sha256(config_path)
+    return current == plan.get("vispa_config_sha256")
+
+
 def _job_sha256(job: dict) -> str:
     encoded = json.dumps(job, sort_keys=True, default=str).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
@@ -424,7 +636,7 @@ def _current_receipt(job: dict, plan: dict) -> dict | None:
     """Reuse only a complete receipt whose frozen inputs and PNG bytes still match."""
     if not job.get("raw_swc_sha256"):
         return None
-    from vispa.config import load
+    from vispa.config import config_fingerprint, load
     try:
         _verified_raw_path(load(plan["vispa_config"]), job)
         folder = Path(job["output_dir"]).resolve()
@@ -432,6 +644,11 @@ def _current_receipt(job: dict, plan: dict) -> dict | None:
         if (record.get("status") != "rendered_candidate" or record.get("errors") or
             record.get("job_sha256") != _job_sha256(job) or
             record.get("config_sha256") != plan["vispa_config_sha256"] or
+            (plan.get("vispa_config_overlay") is not None and (
+                record.get("base_config_sha256") != plan.get("vispa_base_config_sha256") or
+                record.get("config_overlay") != plan.get("vispa_config_overlay") or
+                record.get("config_overlay_sha256")
+                != plan.get("vispa_config_overlay_sha256"))) or
             record.get("vispa_version") != plan["vispa_version"] or
             record.get("settings_sha256") != _settings_sha256(plan) or
             set(record.get("outputs") or {}) != {"Soma", "Context", "Sagittal", "TrioPlot"}):
@@ -457,7 +674,16 @@ def _current_receipt(job: dict, plan: dict) -> dict | None:
         return None
 
 
-def run_review_bulk(plan: dict, *, dry_run: bool, renderer=None, resume: bool = False) -> dict:
+def run_review_bulk(plan: dict, *, dry_run: bool, renderer=None, resume: bool = False,
+                    skip_existing: bool = False) -> dict:
+    if skip_existing:
+        plan = skip_complete_existing_outputs(plan)
+        if not plan["jobs"]:
+            blocked = bool(plan.get("skipped_source_blocked"))
+            status = "partial_or_failed" if blocked else (
+                "dry_run" if dry_run else "pass")
+            return {**plan, "status": status,
+                    "completed": [], "error": None}
     if dry_run:
         return _run_review_bulk(plan, dry_run=True, renderer=renderer, resume=resume)
     from vispa.batch_run_lock import exclusive_batch
@@ -471,7 +697,7 @@ def _run_review_bulk_flat(plan: dict, *, dry_run: bool, renderer=None,
                           resume: bool = False) -> dict:
     """Render into direct neuron folders and keep one animal process log."""
     from uuid import uuid4
-    from vispa.config import load
+    from vispa.config import config_fingerprint, load
     from vispa.render_records import (animal_receipt_path, record_neuron_output,
                                       separate_plot_output_dir, update_animal_batch,
                                       verified_neuron_record)
@@ -488,6 +714,9 @@ def _run_review_bulk_flat(plan: dict, *, dry_run: bool, renderer=None,
              "jobs_path": plan["jobs_path"], "jobs_sha256": plan["jobs_sha256"],
              "vispa_config": plan["vispa_config"],
              "vispa_config_sha256": plan["vispa_config_sha256"],
+             "vispa_base_config_sha256": plan.get("vispa_base_config_sha256"),
+             "vispa_config_overlay": plan.get("vispa_config_overlay"),
+             "vispa_config_overlay_sha256": plan.get("vispa_config_overlay_sha256"),
              "vispa_version": plan["vispa_version"], "output_layout": plan["output_layout"],
              "review_settings": plan["review_settings"],
              "settings_sha256": _settings_sha256(plan),
@@ -522,6 +751,12 @@ def _run_review_bulk_flat(plan: dict, *, dry_run: bool, renderer=None,
                         "vispa_version": plan["vispa_version"],
                         "raw_swc_sha256": job.get("raw_swc_sha256"),
                         "output_dir": str(folder)}
+            if plan.get("vispa_config_overlay") is not None:
+                expected.update({
+                    "base_config_sha256": plan.get("vispa_base_config_sha256"),
+                    "config_overlay": plan.get("vispa_config_overlay"),
+                    "config_overlay_sha256": plan.get("vispa_config_overlay_sha256"),
+                })
             if resume:
                 prior = verified_neuron_record(receipt_path, sample, job["neuron_id"], expected)
                 if prior is not None:
@@ -534,7 +769,8 @@ def _run_review_bulk_flat(plan: dict, *, dry_run: bool, renderer=None,
             with tempfile.TemporaryDirectory(prefix=".stage-neuron-", dir=sample_root) as temporary:
                 stage = Path(temporary)
                 try:
-                    if _sha256(Path(plan["vispa_config"])) != plan["vispa_config_sha256"]:
+                    if (config_fingerprint(load(Path(plan["vispa_config"])))
+                            != plan["vispa_config_sha256"]):
                         raise ValueError("VisPa config changed during rendering")
                     rendered = render(job, stage, Path(plan["vispa_config"]))
                     errors.extend(rendered.get("errors", []))
@@ -583,6 +819,11 @@ def _run_review_bulk_flat(plan: dict, *, dry_run: bool, renderer=None,
                             other_outputs[target.name] = item
                         else:
                             outputs[role] = item
+                    for item in other_outputs.values():
+                        sidecar = Path(item["path"])
+                        if sidecar.name.endswith(".nii.gz.json"):
+                            if repair_nifti_sidecar(sidecar):
+                                item["sha256"] = _sha256(sidecar)
                 except Exception as exc:
                     errors.append(str(exc))
             missing = sorted(roles - set(outputs))
@@ -615,7 +856,8 @@ def _run_review_bulk_flat(plan: dict, *, dry_run: bool, renderer=None,
             update_animal_batch(receipt_path, sample, batch)
         result["status"] = ("pass" if result["completed"] and all(
             item["status"] == "rendered_candidate" for item in result["completed"])
-            and not (plan["all_jobs"] and plan["skipped_not_ready"]) else "partial_or_failed")
+            and not (plan["all_jobs"] and plan["skipped_not_ready"])
+            and not plan.get("skipped_source_blocked") else "partial_or_failed")
     except Exception as exc:
         result["status"], result["error"] = "partial_or_failed", str(exc)
     batch["status"] = result["status"]
@@ -632,7 +874,7 @@ def _run_review_bulk(plan: dict, *, dry_run: bool, renderer=None, resume: bool =
         "completed": [],
         "error": None,
     }
-    if _sha256(Path(plan["vispa_config"])) != plan["vispa_config_sha256"]:
+    if not _config_matches(plan):
         raise ValueError("VisPa config changed after job planning")
     if _sha256(Path(plan["jobs_path"])) != plan["jobs_sha256"]:
         raise ValueError("Review jobs changed after planning")
@@ -689,7 +931,7 @@ def _run_review_bulk(plan: dict, *, dry_run: bool, renderer=None, resume: bool =
                     continue
             folder.mkdir(parents=True, exist_ok=True)
             try:
-                if _sha256(Path(plan["vispa_config"])) != plan["vispa_config_sha256"]:
+                if not _config_matches(plan):
                     raise ValueError("VisPa config changed during rendering")
                 rendered = render(job, folder, Path(plan["vispa_config"]))
             except Exception as exc:
@@ -742,6 +984,9 @@ def _run_review_bulk(plan: dict, *, dry_run: bool, renderer=None, resume: bool =
                 "status": status,
                 "job_sha256": _job_sha256(job),
                 "config_sha256": plan["vispa_config_sha256"],
+                "base_config_sha256": plan.get("vispa_base_config_sha256"),
+                "config_overlay": plan.get("vispa_config_overlay"),
+                "config_overlay_sha256": plan.get("vispa_config_overlay_sha256"),
                 "vispa_version": plan["vispa_version"],
                 "settings_sha256": _settings_sha256(plan),
                 "resume_action": "rendered",
@@ -756,6 +1001,7 @@ def _run_review_bulk(plan: dict, *, dry_run: bool, renderer=None, resume: bool =
             "pass" if result["completed"] and all(
                 item["status"] == "rendered_candidate" for item in result["completed"])
                 and not (plan["all_jobs"] and plan["skipped_not_ready"])
+                and not plan.get("skipped_source_blocked")
             else "partial_or_failed")
     except Exception as exc:
         result["status"] = "partial_or_failed"
@@ -769,18 +1015,57 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     from vispa import __version__
     parser.add_argument("--version", action="version", version=__version__)
+    parser.add_argument("--config-overlay", type=Path,
+                        help="local read-only overlay applied over the base config")
     parser.add_argument("--jobs", type=Path, required=True)
     parser.add_argument("--output-root", type=Path, required=True)
-    group = parser.add_mutually_exclusive_group(required=True)
+    group = parser.add_mutually_exclusive_group()
     group.add_argument("--limit", type=int)
     group.add_argument("--all", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--resume", action="store_true",
                         help="verify and skip complete neuron receipts, retry incomplete neurons")
+    parser.add_argument("--skip-existing", action="store_true",
+                        help="skip neurons whose required products already exist in output")
+    parser.add_argument("--repair-folder-names", action="store_true",
+                        help="plan readable names for legacy hash-suffixed neuron folders")
+    parser.add_argument("--apply-folder-renames", action="store_true",
+                        help="apply folder renames and update the animal receipt")
+    parser.add_argument("--migration-report", type=Path,
+                        help="write the folder-migration plan/result JSON here")
     args = parser.parse_args(argv)
+    if args.config_overlay:
+        os.environ["VISPA_CONFIG_OVERLAY"] = str(
+            args.config_overlay.expanduser().resolve())
     try:
+        if args.apply_folder_renames and not args.repair_folder_names:
+            raise ValueError("--apply-folder-renames requires --repair-folder-names")
+        if args.repair_folder_names:
+            payload = json.loads(args.jobs.read_text(encoding="utf-8"))
+            sample = payload.get("sample_id")
+            if not isinstance(sample, str):
+                raise ValueError("Jobs file has no sample_id")
+            migrations = build_folder_migrations(args.output_root, sample, args.jobs)
+            if args.apply_folder_renames:
+                result = apply_folder_migrations(args.output_root, sample, migrations)
+            else:
+                result = {"sample": sample, "renamed": 0,
+                          "planned": len(migrations), "mappings": migrations}
+            if args.migration_report:
+                _atomic_json(args.migration_report, {
+                    "schema": "vispa.folder_name_migration.v1",
+                    "applied": bool(args.apply_folder_renames),
+                    "output_root": str(args.output_root),
+                    "results": [result],
+                })
+            print(json.dumps({"folder_name_migration": result},
+                             indent=2, sort_keys=True, default=str))
+            return 0 if not result.get("conflicts") else 2
+        if not args.limit and not args.all:
+            raise ValueError("Use --limit for bounded work, or explicitly opt in to --all")
         plan = load_review_jobs(args.jobs, args.output_root, args.limit, args.all)
-        result = run_review_bulk(plan, dry_run=args.dry_run, resume=args.resume)
+        result = run_review_bulk(plan, dry_run=args.dry_run, resume=args.resume,
+                                 skip_existing=args.skip_existing)
     except (OSError, RuntimeError, TypeError, ValueError, KeyError) as exc:
         result = {"status": "failed", "error": str(exc)}
     print(json.dumps(result, indent=2, sort_keys=True, default=str))

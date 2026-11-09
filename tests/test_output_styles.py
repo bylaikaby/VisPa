@@ -1,7 +1,7 @@
 """Synthetic render-style regression checks.
 
-Version: 1.21.5 (local/unreleased)
-Last updated: 2026-11-08
+Version: 1.21.6 (local/unreleased)
+Last updated: 2026-11-09
 Change history: ../CHANGELOG.md
 2026-11-08: Exercise real optional-region exports and GUI Soma export provenance.
 2026-11-08: Validate configured absent-source Context panel and TrioPlot.
@@ -13,6 +13,7 @@ fingerprint with a legacy 60-pixel profile.
 2026-11-08: Check thinner shared cross stroke and exposed figure style.
 2026-11-08: Check combined selected/VisPa atlas Region title and no separate
 sagittal hemisphere clause.
+2026-11-09: Validate NIfTI affine, forms, units, and sidecar geometry metadata.
 """
 import unittest
 import sys
@@ -49,12 +50,22 @@ class OutputStyleTests(unittest.TestCase):
                 with self.subTest(region=region):
                     path = tool.export_data(volume, (10, 20, 30), (1, 2, 3),
                                             '004.swc', soma_region=region)
-                    np.testing.assert_array_equal(nib.load(path).get_fdata(),
+                    image = nib.load(path)
+                    np.testing.assert_array_equal(image.get_fdata(),
                                                   volume.transpose(2, 1, 0))
+                    expected_affine = np.diag([1.0, 2.0, 3.0, 1.0])
+                    expected_affine[:3, 3] = [10, 20, 30]
+                    np.testing.assert_allclose(image.affine, expected_affine)
+                    self.assertEqual(int(image.header['qform_code']), 2)
+                    self.assertEqual(int(image.header['sform_code']), 2)
+                    self.assertEqual(int(image.header['xyzt_units']) & 0x07, 3)
                     metadata = json.loads(Path(path + '.json').read_text())
                     self.assertIsNone(metadata['center_xyz_um'])
+                    self.assertEqual(metadata['nifti_affine_ijk_to_xyz_um'],
+                                     expected_affine.tolist())
 
     def test_gui_soma_export_preserves_native_root_and_region(self):
+        import nibabel as nib
         with tempfile.TemporaryDirectory(dir=os.environ.get('VISPA_TEST_ROOT')) as directory:
             tool = object.__new__(VisPa)
             tool.sample_id = '251637'
@@ -74,6 +85,10 @@ class OutputStyleTests(unittest.TestCase):
             metadata = json.loads(Path(path + '.json').read_text())
             self.assertEqual(metadata['center_xyz_um'], [11, 22, 33])
             self.assertEqual(metadata['origin_xyz_um'], [10, 20, 30])
+            image = nib.load(path)
+            soma_voxel = (np.linalg.inv(image.affine)
+                          @ np.asarray([11, 22, 33, 1.0]))
+            np.testing.assert_allclose(soma_voxel[:3], [1, 1, 1])
 
     def test_declared_missing_context_renders_empty_panel_and_trio(self):
         from vispa.renderers import microscopy_panels as panels
