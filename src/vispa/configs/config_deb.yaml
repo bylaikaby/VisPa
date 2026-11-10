@@ -1,4 +1,4 @@
-# ded_vispa_config_v1.0.12.yaml: single canonical DEB VisPa profile. Shared scientific
+# ded_vispa_config_v1.0.14.yaml: single canonical DEB VisPa profile. Shared scientific
 # resources are read-only; downloads and tool caches stay in a managed local
 # directory while figures are written to the approved fMOST output tree.
 # Default DEB-lab VisPa profile. Live neuron IDs use the IONData API;
@@ -6,13 +6,13 @@
 # configured intranet hosts/shares are reachable. No credentials or local tools.
 # Per-sample DS00/5 µm links are inherited source declarations, not validation or
 # anatomical acceptance. Caches and outputs are explicitly isolated by this profile.
-# Config version: 1.0.12 | Updated: 2026-11-09T09:39:55+08:00
+# Config version: 1.0.14 | Updated: 2026-11-09T12:15:00+08:00
 # History: ../../../CHANGELOG.md (Configuration history)
 # Change history: ../../../CHANGELOG.md
 version: 1
 config_name: ded_vispa_config
-config_version: 1.0.12
-config_updated_at: '2026-11-09T09:39:55+08:00'
+config_version: 1.0.14
+config_updated_at: '2026-11-09T12:15:00+08:00'
 # Optional workstation-specific DS00 selections belong in a personal profile.
 base_dir: \\10.102.8.200\microscopy_data\fMOST\VisPa\configs
 defaults:
@@ -122,6 +122,7 @@ visual_toolkit:
   auto_load: true
   enforce_render_config: true
   separate_plot_subfolder: plots
+  filename_template: '{sample}_{neuron}_{region_source}_{role}'
   missing_context_samples: ['252383', '252718']
   startup_mode: configured
   fnt_tracer:
@@ -262,6 +263,9 @@ sources:
   dataset_manifest_relative: manifest.json
   brain_view:
     mesh_path: '\\10.102.8.200\microscopy_data\fMOST\resources\dependencies\brain_view\macaqueallobj\root.obj'
+    region_mesh_root: '\\10.102.8.200\microscopy_data\fMOST\resources\dependencies\brain_view\macaqueallobj'
+    region_manifest: '\\10.102.8.200\microscopy_data\fMOST\resources\dependencies\brain_view\macaqueallobj\region_mesh_manifest.json'
+    region_color: [0.3, 0.7, 1.0]
     processed_swc_root: '\\10.102.8.200\microscopy_data\fMOST\resources\dependencies\brain_view\processed_swc'
     coordinate_frame: legacy-neuronvis-template-as-stored
     coordinate_units: stored

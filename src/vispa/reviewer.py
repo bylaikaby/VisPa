@@ -1,9 +1,10 @@
 """
 vispa_gui.py - GUI for NeuroVis Visual Toolkit
 
-Version: 1.21.6 (local/unreleased)
+Version: 1.21.7 (local/unreleased)
 Last updated: 2026-11-09
 Change history: ../../CHANGELOG.md
+2026-11-09: Keep GUI region text compact with full Left/Right and omit atlas source tokens.
 2026-11-08: Include native soma coordinates and region in Soma volume export.
 Status: candidate (GUI layout reviewed; scientific review pending)
 2026-11-08: Resolve saved review and Brain View folders from the active profile and
@@ -2550,8 +2551,8 @@ class NeuroVisGUI:
         display_region = (display_region_name(region, strip_numeric_suffix=True)
                           if region else None)
         self._set_region_status(
-            (f"Region: {verified_side} {display_region}" if verified_side else
-             f"Region: {display_region} · side unverified") if region else
+            ((f"Region: {verified_side} {display_region}" if verified_side else
+              f"Region: {display_region} · side unverified")) if region else
             "Region: unavailable" if state == "not_found" else "Region: checking")
         if state == "found":
             cache_status = getattr(self, '_cache_status', '')
@@ -2809,8 +2810,9 @@ class NeuroVisGUI:
         def worker():
             try:
                 self._ui_call(self._show_progress)
-                from .config import load
+                from .config import load, output_filename
                 from .render_records import animal_receipt_path, record_neuron_product
+                from .renderers.microscopy_panels import VisPa
                 from .renderers.swc_brain_view import render_configured_snapshot
                 config = load(self.config_path)
                 region = self._resolve_plot_region(
@@ -2827,9 +2829,14 @@ class NeuroVisGUI:
                     staging = (Path(tempfile.gettempdir()) / 'visual_toolkit_preview' /
                                re.sub(r'[^A-Za-z0-9_.-]', '_', f'{sample}_{neuron}'))
                     staging.mkdir(parents=True, exist_ok=True)
+                region_source = VisPa._filename_region_source(
+                    region.get("display_label") or portal_region)
                 snapshot = staging / (
-                    f"{sample}_{neuron.removesuffix('.swc')}_{_stamp()}_"
-                    f"{time.time_ns() % 1000000:06d}_3D_SWC.png")
+                    output_filename(
+                        sample=sample, neuron=neuron,
+                        region_source=region_source, role="SWC3D",
+                        template=config.get("visual_toolkit", {}).get(
+                            "filename_template")) + ".png")
                 receipt = render_configured_snapshot(
                     sample, neuron, str(snapshot),
                     portal_region=portal_region, config_path=self.config_path)

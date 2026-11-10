@@ -1,7 +1,7 @@
 """Bounded command line for VisPa review renders and source acquisition.
 
-Version: 1.21.3 (local/unreleased)
-Last updated: 2026-11-08
+Version: 1.21.7 (local/unreleased)
+Last updated: 2026-11-09
 Change history: ../../CHANGELOG.md
 2026-11-08: Resolve render styles from selected saved config, reject strict
 one-off conflicts, and record/check config hashes before receipts.
@@ -843,6 +843,13 @@ def _updates(args):
     return 0
 
 
+def _install_shortcuts(args):
+    from .shortcuts import install_desktop_shortcuts
+    result = install_desktop_shortcuts(args.config, dry_run=args.dry_run)
+    print(json.dumps(result, indent=2, ensure_ascii=False, sort_keys=True))
+    return 0
+
+
 def _parser():
     parser = argparse.ArgumentParser(
         prog="vispa", description=f"VisPa {VERSION} command line",
@@ -954,6 +961,12 @@ def _parser():
     data_check.add_argument("--sample", help="exact sample ID; defaults to the configured startup sample")
     data_check.add_argument("--neuron", help="exact neuron ID; defaults to the configured startup neuron")
     data_check.add_argument("--json", action="store_true", help="emit the complete machine-readable report")
+    shortcuts = commands.add_parser(
+        "install-shortcuts", aliases=["desktop-shortcuts"],
+        help="install VisPa and Settings desktop launchers using the packaged icon")
+    shortcuts.add_argument("--config", help="active VisPa profile; defaults to VISPA_CONFIG")
+    shortcuts.add_argument("--dry-run", action="store_true",
+                           help="show the target executable, arguments and packaged icon without writing")
     updates = commands.add_parser(
         "updates",
         help="parse local or plain HTTP(S) release notes without Git authentication")
@@ -1150,6 +1163,11 @@ def main(argv=None):
     if args.command in {"check", "data-check"}:
         try:
             return _data_check(args)
+        except (OSError, RuntimeError, ValueError, KeyError, TypeError) as exc:
+            parser.error(str(exc))
+    if args.command in {"install-shortcuts", "desktop-shortcuts"}:
+        try:
+            return _install_shortcuts(args)
         except (OSError, RuntimeError, ValueError, KeyError, TypeError) as exc:
             parser.error(str(exc))
     if args.command == "updates":

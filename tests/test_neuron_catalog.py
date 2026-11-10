@@ -366,7 +366,7 @@ class NeuronCatalogTests(unittest.TestCase):
         with mock.patch("vispa.sources.catalog_snapshot_unchanged", return_value=False):
             self.assertEqual(gui._current_portal_region("252384", "008.swc"), "")
 
-    def test_portal_suffix_with_internal_underscore_requires_hierarchy_map(self):
+    def test_portal_suffix_with_internal_underscore_uses_unique_exact_acronym(self):
         from vispa.renderers.swc_brain_view import _plan_region
 
         with tempfile.TemporaryDirectory() as temp:
@@ -375,17 +375,17 @@ class NeuronCatalogTests(unittest.TestCase):
             selected, resolution, _ = _plan_region(
                 {"region_mesh_root": temp, "region_color": [0.2, 0.4, 0.8]},
                 None, "area_7a_122")
-            self.assertIsNone(selected)
-            self.assertEqual(resolution["status"], "unmatched")
-            self.assertIn("region_hierarchy_map", resolution["reason"])
+            self.assertEqual(selected["filename"], filename)
+            self.assertEqual(resolution["status"], "selected")
+            self.assertEqual(resolution["match_kind"], "portal_suffix_exact_acronym")
+            self.assertEqual(resolution["normalized_query"], "area_7a")
             (Path(temp) / "second_area (area_7a).obj").write_text(
                 "v 0 0 0\n", encoding="utf-8")
             selected, resolution, _ = _plan_region(
                 {"region_mesh_root": temp, "region_color": [0.2, 0.4, 0.8]},
                 None, "area_7a_122")
             self.assertIsNone(selected)
-            self.assertEqual(resolution["status"], "unmatched")
-            self.assertIn("region_hierarchy_map", resolution["reason"])
+            self.assertEqual(resolution["status"], "ambiguous")
 
 
 if __name__ == "__main__":

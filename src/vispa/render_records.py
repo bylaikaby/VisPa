@@ -1,6 +1,6 @@
 """One animal-level history and verified figure cache for GUI and bulk review.
 
-Version: 1.21.4 (local/unreleased)
+Version: 1.21.7 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../../CHANGELOG.md
 Status: candidate
@@ -137,19 +137,32 @@ def update_animal_batch(path, sample: str, batch: dict) -> dict:
     return animal
 
 
-def verified_neuron_record(path, sample: str, neuron: str, expected: dict) -> dict | None:
+def verified_neuron_record(path, sample: str, neuron: str, expected: dict,
+                           *, expected_outputs=None,
+                           expected_products=None) -> dict | None:
     """Return a complete current result only when inputs and PNG bytes still match."""
     try:
         animal = load_animal_receipt(path, sample)
         record = animal["neurons"][neuron]["current"]
+        required_outputs = set(expected_outputs or {
+            "Soma", "Context", "Sagittal", "TrioPlot"})
+        required_products = set(expected_products or ())
         if (record.get("status") != "rendered_candidate" or record.get("errors") or
                 any(record.get(key) != value for key, value in expected.items()) or
-                set(record.get("outputs") or {}) != {"Soma", "Context", "Sagittal", "TrioPlot"}):
+                set(record.get("outputs") or {}) != required_outputs or
+                set(record.get("products") or {}) != required_products):
             return None
         from PIL import Image
+        outputs = dict(record["outputs"])
+        for product_name in required_products:
+            product = (record.get("products") or {}).get(product_name) or {}
+            output = product.get("output")
+            if not isinstance(output, dict):
+                return None
+            outputs[product_name] = output
         folder = Path(record["output_dir"]).resolve(strict=True)
         seen = set()
-        for output in record["outputs"].values():
+        for output in outputs.values():
             candidate = Path(output["path"]).resolve(strict=True)
             if (not candidate.is_relative_to(folder) or candidate in seen or
                     not candidate.stat().st_size):

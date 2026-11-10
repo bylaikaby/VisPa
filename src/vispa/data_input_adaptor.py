@@ -1,8 +1,9 @@
 """Explicit data-input adaptor for local SWCs and source-tree providers.
 
-Version: 1.21.3 (local/unreleased)
-Last updated: 2026-11-08
+Version: 1.21.7 (local/unreleased)
+Last updated: 2026-11-09
 Change history: ../../CHANGELOG.md
+2026-11-09: Add one bracket-free atlas_<region> source token shared by GUI and filenames.
 2026-11-08: Shorten atlas hemisphere ID prefixes in display labels only;
 source atlas identifiers remain unchanged in acquisition records.
 """
@@ -228,6 +229,19 @@ def display_region_name(region: str, side: str | None = None,
     return text
 
 
+def atlas_source_token(vispa_region=None) -> str:
+    """Return one bracket-free atlas source token such as ``atlas_CR_M1``."""
+    value = vispa_region
+    if isinstance(vispa_region, dict):
+        value = (vispa_region.get("source") or {}).get("atlas_region")
+    text = str(value or "").strip()
+    text = re.sub(r"^(Left|Right)\s+", "", text, flags=re.IGNORECASE)
+    if text.casefold().startswith("atlas_"):
+        text = text[6:]
+    token = re.sub(r"[^A-Za-z0-9_]+", "_", text).strip("_")
+    return f"atlas_{token or 'unavailable'}"
+
+
 def region_display_label(portal_region, vispa_region, *, selected_region=None,
                          selected_source=None) -> str | None:
     """Build one GUI/bulk plot label from frozen source and VisPa atlas results."""
@@ -237,8 +251,10 @@ def region_display_label(portal_region, vispa_region, *, selected_region=None,
         source = vispa_region.get("source") or {}
         atlas_region = source.get("atlas_region") if isinstance(source, dict) else None
         side = vispa_region.get("side") if vispa_region.get("status") == "verified" else None
-        atlas = f"{side} {display_region_name(atlas_region, side)}" if side and atlas_region else "unavailable"
-        parsed = f"Portal: {portal} | Atlas: {atlas}"
+        atlas = (f"{side} {display_region_name(atlas_region, side)}"
+                 if side and atlas_region else "unavailable")
+        parsed = (f"Portal: {portal} | Atlas: {atlas} · "
+                  f"{atlas_source_token(atlas_region)}")
         if selected and selected_source in {"checked_region", "soma_region.checked_region"}:
             return f"checked_region={selected} | {parsed}"
         if selected and selected_source in {"ion_atlas", "soma_region.ion_atlas"}:

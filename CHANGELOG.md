@@ -1,5 +1,47 @@
 # VisPa change log
 
+## 1.21.7 — 2026-11-09 (local/unreleased candidate)
+- Add the packaged `SWC3D` Brain View screenshot to bulk review as a fifth
+  optional role. The GUI enables it by default, retains one default-off CLI
+  opt-in, routes the PNG beside the TrioPlot, and stores it as an ancillary
+  product in the animal process log so later review rerenders preserve it.
+- Add `--brain-view-only` for an existing full cohort: verify and preserve the
+  four core panels while adding the missing SWC product, avoiding expensive
+  rerendering of unchanged neurons.
+- Add explicit plot selection to preparation and rendering with
+  `--somaplot`, `--contextplot`, `--sagittalplot`, `--triplot`, `--swcplot`,
+  repeatable `--plot ROLE`, and `--full`. TrioPlot-only computes its three
+  source panels internally without saving unrequested individual outputs.
+- Allow SWC-only production to include raw-SWC preparation failures when the
+  portal's separate processed-SWC route is usable. The failed core source
+  status remains unchanged while the Brain View product is produced.
+- Replace temporary-file replacement for Brain View receipts with exclusive
+  direct writes, avoiding Windows SMB `WinError 5` failures inside staged
+  output folders.
+- Standardize output identity tokens on single-letter `L`/`R` and one
+  `atlas_<side>_<region>` source token. Add the saved
+  `visual_toolkit.filename_template` field, defaulting to
+  `{sample}_{neuron}_{region_source}_{role}`, and remove `.swc` from generated
+  filenames. Keep full `Left`/`Right` only in rendered titles and GUI status.
+- Standardize new review filenames and GUI region status on a bracket-free
+  `atlas_<atlas_region>` source token, such as `atlas_CR_M1`. New Soma and panel
+  names reduce the prior portal/atlas sentence to
+  `<region>_<atlas_source>_<role>`.
+- Restore the shared-server bilateral region mesh root and manifest in the
+  default profile. A numeric portal label such as `M1_79` resolves only through
+  its unique exact `M1` OBJ acronym and remains unavailable when ambiguous.
+- Prefer the active interpreter, and fully probe packaged Brain View plus its
+  legacy-GL dependencies before accepting a configured or ambient worker.
+  Stale `VISPA_PYTHON` paths can no longer override the installed runtime.
+- Require the fifth product for receipt-verified bulk resume when prepared jobs
+  request it; existing four-panel jobs remain readable and can be prepared anew.
+- Add `vispa install-shortcuts` (alias `desktop-shortcuts`) to create and verify
+  the VisPa and Settings desktop launchers from the wheel's packaged `.ico`.
+- Validation: 322 source, 45 batch and 5 cohort-controller tests pass; a real
+  `252527/011` full five-role render and an SMB snapshot/receipt write passed.
+  The final cohort audit records `1,498/1,498` SWC products with zero legacy
+  `_3D_SWC` names remaining.
+
 ## 1.21.6 — 2026-11-09 (local/unreleased candidate)
 - Make raw-SWC preparation resumable: retry a matching partial frozen-jobs file
   atomically when downloads are allowed, and accept explicitly declared local

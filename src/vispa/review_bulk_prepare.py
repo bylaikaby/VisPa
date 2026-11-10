@@ -1,6 +1,6 @@
 """Freeze one animal of exact raw-SWC review jobs with a managed byte cache.
 
-Version: 1.21.6 (local/unreleased)
+Version: 1.21.7 (local/unreleased)
 Last updated: 2026-11-09
 Change history: ../CHANGELOG.md
 Status: candidate
@@ -136,7 +136,9 @@ def _expected_hashes(path: Path | None, sample: str) -> tuple[dict[str, str], di
 def plan_jobs(config_path: Path, sample: str, identities: Path | None, catalog: bool,
               raw_roots: list[Path], cache_root: Path, source_receipt: Path | None,
               limit: int | None, all_jobs: bool, run_name: str | None = None,
-              *, regions: list[str] | None = None) -> dict:
+              *, regions: list[str] | None = None,
+              brain_view: bool = False,
+              review_roles: list[str] | None = None) -> dict:
     if run_name is None:
         run_name = datetime.now(ZoneInfo("Asia/Shanghai")).strftime("review_%Y-%m-%d_%H-%M-%S")
     run_name = validate_run_name(run_name)
@@ -253,10 +255,17 @@ def plan_jobs(config_path: Path, sample: str, identities: Path | None, catalog: 
                      "cache_path": str(cache_root / sample / name),
                      "render_ready": bool(digest),
                      "soma_error": None if digest else "raw SWC absent from declared roots; download requires --allow-download"})
+    from .review_bulk_render import normalize_review_roles
+    selected_roles = set(review_roles) if review_roles is not None else set(
+        ("Soma", "Context", "Sagittal", "TrioPlot"))
+    if brain_view:
+        selected_roles.add("SWC3D")
+    selected_roles = normalize_review_roles(selected_roles)
     return {"schema": "vispa.review_bulk.prepare.v1", "sample_id": sample,
             "run_name": run_name,
             "vispa_config": str(config_path), "vispa_config_sha256": _sha256(config_path),
             "figure_output_root": str(config["visual_toolkit"]["figure_output_root"]),
+            "review_roles": selected_roles,
             "identity_source": identity_source, "expected_source": expected_source,
             "vispa_region_lookup": {"status": side_batch.get("status"),
                                     "source": side_batch.get("source"),
@@ -332,12 +341,17 @@ def prepare_jobs(plan: dict, output_jobs: Path, *, dry_run: bool, allow_download
             jobs.append({"sample_id": item["sample_id"], "neuron_id": item["neuron_id"],
                          "context_source_status": item["context_source_status"],
                          "neuron_folder": item["neuron_folder"],
+                         "soma_region": item["soma_region"],
+                         "soma_region_entries": item["soma_region_entries"],
+                         "soma_region_source": item["soma_region_source"],
+                         "vispa_region": item["vispa_region"],
                          "render_ready": False, "soma_error": str(exc)})
     payload = {"schema": "vispa.review_bulk.v1", "sample_id": plan["sample_id"],
                "run_name": plan["run_name"],
                "vispa_config": plan["vispa_config"],
                "vispa_config_sha256": plan["vispa_config_sha256"],
                "figure_output_root": plan["figure_output_root"],
+               "review_roles": plan["review_roles"],
                "allow_all": plan["allow_all"],
                "output_layout": "sample_neurons_flat", "identity_source": plan["identity_source"],
                "vispa_region_lookup": plan["vispa_region_lookup"],
@@ -364,6 +378,22 @@ def prepare_jobs(plan: dict, output_jobs: Path, *, dry_run: bool, allow_download
     return result
 
 
+def _roles_from_args(args) -> list[str]:
+    from .review_bulk_render import BASE_REVIEW_ROLES, REVIEW_ROLES, normalize_review_roles
+    selected = set(args.plot or [])
+    for flag, role in (
+            ("somaplot", "Soma"), ("contextplot", "Context"),
+            ("sagittalplot", "Sagittal"), ("triplot", "TrioPlot"),
+            ("swcplot", "SWC3D"), ("brain_view", "SWC3D")):
+        if getattr(args, flag, False):
+            selected.add(role)
+    if args.full:
+        selected.update(REVIEW_ROLES)
+    if not selected:
+        selected.update(BASE_REVIEW_ROLES)
+    return normalize_review_roles(selected)
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     from vispa import __version__
@@ -380,6 +410,18 @@ def main(argv=None) -> int:
     parser.add_argument("--run-name", help="path-safe readable name for this new review run")
     parser.add_argument("--region", action="append", default=[],
                         help="exact IONData atlas region; repeat to include several regions")
+    parser.add_argument("--plot", action="append", choices=(
+        "Soma", "Context", "Sagittal", "TrioPlot", "SWC3D"),
+        help="include one exact output role; repeatable")
+    parser.add_argument("--somaplot", action="store_true")
+    parser.add_argument("--contextplot", action="store_true")
+    parser.add_argument("--sagittalplot", action="store_true")
+    parser.add_argument("--triplot", action="store_true")
+    parser.add_argument("--swcplot", action="store_true")
+    parser.add_argument("--full", action="store_true",
+                        help="render every individual panel, TrioPlot and SWC3D")
+    parser.add_argument("--brain-view", action="store_true",
+                        help="legacy alias that includes the SWC3D screenshot")
     scope = parser.add_mutually_exclusive_group(required=True)
     scope.add_argument("--limit", type=int)
     scope.add_argument("--all", action="store_true")
@@ -387,9 +429,11 @@ def main(argv=None) -> int:
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
     try:
-        plan = plan_jobs(args.config, args.sample, args.identities, args.catalog,
-                         args.raw_root, args.cache_root, args.source_receipt,
-                         args.limit, args.all, args.run_name, regions=args.region)
+        plan = plan_jobs(
+            args.config, args.sample, args.identities, args.catalog,
+            args.raw_root, args.cache_root, args.source_receipt,
+            args.limit, args.all, args.run_name, regions=args.region,
+            review_roles=_roles_from_args(args))
         result = prepare_jobs(plan, args.output_jobs,
                               dry_run=args.dry_run, allow_download=args.allow_download)
     except (OSError, RuntimeError, TypeError, ValueError, KeyError) as exc:

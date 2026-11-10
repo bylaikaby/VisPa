@@ -1,7 +1,7 @@
 """Explicit local-input launcher for the isolated legacy OpenGL viewer.
 
-Version: 1.21.3 (local/unreleased)
-Last updated: 2026-11-08
+Version: 1.21.7 (local/unreleased)
+Last updated: 2026-11-09
 Change history: ../../../CHANGELOG.md
 Status: candidate
 2026-11-02: Resolve side-collapsed cortical portal keys to bilateral OBJs;
@@ -287,47 +287,60 @@ def _plan_region(source: dict, requested: str | None, portal_region: str) -> tup
     query = raw_query
     normalized = False
     if not explicit:
-        if _PORTAL_SUFFIX.fullmatch(query) and source.get("region_hierarchy_map") is None:
-            resolution.update(status="unmatched",
-                              reason="numeric portal region requires sources.brain_view.region_hierarchy_map for atlas index and OBJ identity validation")
+        suffix = _PORTAL_SUFFIX.fullmatch(query)
+        direct_suffix = (
+            _region_matches(region_mesh_inventory(root), suffix.group("acronym"))
+            if suffix is not None and source.get("region_hierarchy_map") is None
+            else [])
+        if len(direct_suffix) == 1:
+            entry, match_kind = direct_suffix[0], "portal_suffix_exact_acronym"
+            query = suffix.group("acronym")
+            normalized = True
+            resolution["suffix_policy"] = (
+                "numeric portal suffix removed only for exact acronym OBJ lookup")
+        elif len(direct_suffix) > 1:
+            resolution.update(
+                status="ambiguous",
+                reason="numeric portal suffix maps to multiple exact region OBJ acronyms",
+                normalized_query=suffix.group("acronym"))
             return None, resolution, manifest_info
-        mapped, map_resolution = _hierarchy_region(source, query, manifest_info)
-        if map_resolution is not None and mapped is None:
-            resolution.update(map_resolution)
-            return None, resolution, manifest_info
-        if mapped is not None:
-            entry, match_kind = resolve_region_mesh(root, mapped["file"])
-            if (entry["filename"] != mapped["file"] or
-                    manifest_files is None or
-                    manifest_files.get(mapped["file"].casefold(), {}).get("sha256") != mapped["sha256"].lower()):
-                raise ValueError("mapped region OBJ differs from dependency manifest")
-            resolution.update(map_resolution)
-            resolution["portal_namespace"] = "side-collapsed CHARM cortical key"
-            resolution["neuron_side"] = "unverified by this worker"
         else:
-            direct = _region_matches(region_mesh_inventory(root), query)
-            if len(direct) == 1:
-                entry, match_kind = direct[0], "portal_exact"
-            elif len(direct) > 1:
-                resolution.update(status="ambiguous", reason="portal region matches multiple OBJ files")
+            mapped, map_resolution = _hierarchy_region(source, query, manifest_info)
+            if map_resolution is not None and mapped is None:
+                resolution.update(map_resolution)
                 return None, resolution, manifest_info
+            if mapped is not None:
+                entry, match_kind = resolve_region_mesh(root, mapped["file"])
+                if (entry["filename"] != mapped["file"] or
+                        manifest_files is None or
+                        manifest_files.get(mapped["file"].casefold(), {}).get("sha256") != mapped["sha256"].lower()):
+                    raise ValueError("mapped region OBJ differs from dependency manifest")
+                resolution.update(map_resolution)
+                resolution["portal_namespace"] = "side-collapsed CHARM cortical key"
+                resolution["neuron_side"] = "unverified by this worker"
             else:
-                suffix = _PORTAL_SUFFIX.fullmatch(query)
-                if suffix is None:
+                direct = _region_matches(region_mesh_inventory(root), query)
+                if len(direct) == 1:
+                    entry, match_kind = direct[0], "portal_exact"
+                elif len(direct) > 1:
+                    resolution.update(status="ambiguous", reason="portal region matches multiple OBJ files")
+                    return None, resolution, manifest_info
+                elif suffix is None:
                     resolution.update(status="unmatched", reason="portal region has no exact OBJ match")
                     return None, resolution, manifest_info
-                query = suffix.group("acronym")
-                normalized = True
-                try:
-                    entry, match_kind = resolve_region_mesh(root, query)
-                except ValueError as exc:
-                    resolution.update(status="unmatched", reason=str(exc), normalized_query=query)
-                    return None, resolution, manifest_info
-                if match_kind != "acronym":
-                    resolution.update(status="unmatched",
-                                      reason="normalized portal region did not match an exact acronym",
-                                      normalized_query=query)
-                    return None, resolution, manifest_info
+                else:
+                    query = suffix.group("acronym")
+                    normalized = True
+                    try:
+                        entry, match_kind = resolve_region_mesh(root, query)
+                    except ValueError as exc:
+                        resolution.update(status="unmatched", reason=str(exc), normalized_query=query)
+                        return None, resolution, manifest_info
+                    if match_kind != "acronym":
+                        resolution.update(status="unmatched",
+                                          reason="normalized portal region did not match an exact acronym",
+                                          normalized_query=query)
+                        return None, resolution, manifest_info
     else:
         entry, match_kind = resolve_region_mesh(root, query)
     path = Path(entry["path"])
@@ -454,10 +467,10 @@ def plan_configured_view(sample_id: str, neuron_id: str, portal_region: str = ""
     if snapshot_path and (snapshot_path.exists() or receipt_path.exists()):
         raise FileExistsError("snapshot PNG or receipt already exists; choose a new path")
     candidates = (
-        os.environ.get("VISPA_PYTHON"),
-        os.environ.get("VISUAL_TOOLKIT_PYTHON"),
         config.get("visual_toolkit", {}).get("worker_python"),
         sys.executable,
+        os.environ.get("VISPA_PYTHON"),
+        os.environ.get("VISUAL_TOOLKIT_PYTHON"),
         *DEFAULT_WORKER_CANDIDATES,
     )
     worker = None
@@ -529,14 +542,18 @@ def plan_configured_view(sample_id: str, neuron_id: str, portal_region: str = ""
 
 
 def _worker_entry(worker_python: str) -> list[str]:
-    """Bind an isolated worker to this checkout, or verify its installed source."""
+    """Bind an isolated worker after verifying source and legacy-GL imports."""
     checkout_entry = Path(__file__).resolve().parents[3] / "run_vispa.py"
-    if checkout_entry.is_file():
-        return [worker_python, "-I", str(checkout_entry)]
-    probe_code = ("import json, vispa.renderers.swc_brain_view as m; "
-                  "print(json.dumps([m.__version__, m.__file__]))")
+    source_root = Path(__file__).resolve().parents[2]
+    source_bootstrap = (f"import sys; sys.path.insert(0, {str(source_root)!r}); "
+                        if checkout_entry.is_file() else "")
+    probe_code = (
+        source_bootstrap +
+        "import json, glfw, glm, OpenGL, vispy, trimesh, "
+        "vispa.renderers.swc_brain_view as m; "
+        "print(json.dumps([m.__version__, m.__file__]))")
     probe = subprocess.run([worker_python, "-I", "-c", probe_code],
-                           capture_output=True, text=True, timeout=15,
+                           capture_output=True, text=True, timeout=30,
                            stdin=subprocess.DEVNULL, shell=False)
     expected = [__version__, str(Path(__file__).resolve())]
     try:
@@ -546,8 +563,10 @@ def _worker_entry(worker_python: str) -> list[str]:
     if probe.returncode != 0 or observed != expected:
         diagnostic = (probe.stderr or probe.stdout or "unknown worker package").strip()
         raise RuntimeError("configured worker Python does not resolve this VisPa candidate "
-                           f"({diagnostic[-500:]}); choose a compatible worker")
-    return [worker_python, "-I", "-m", "vispa"]
+                           f"or its legacy-GL dependencies ({diagnostic[-500:]}); "
+                           "choose a compatible worker")
+    return ([worker_python, "-I", str(checkout_entry)] if checkout_entry.is_file()
+            else [worker_python, "-I", "-m", "vispa"])
 
 
 def launch_configured_view(sample_id: str, neuron_id: str, portal_region: str = "",
@@ -713,7 +732,9 @@ def _run_view(plan: dict) -> int:
         from ..legacy_gl.GeometryAdapter import GeometryAdapter
         from ..legacy_gl.RenderGL import RenderGL
     except ImportError as exc:
-        raise RuntimeError("legacy OpenGL dependencies are missing; install vispa[legacy-gl] in the configured worker") from exc
+        raise RuntimeError(
+            "legacy OpenGL dependencies are missing; install vispa[3d] "
+            "in the configured worker") from exc
 
     mesh = Path(plan["mesh"]["path"])
     swc = Path(plan["processed_swc"]["path"])
@@ -803,9 +824,9 @@ def _snapshot(viewer, plan: dict, before: dict) -> int:
                                "renderer_sha256": _sha256(Path(render_module.__file__).resolve()),
                                "opengl_version": getattr(viewer, "gl_version", None)},
                    "status": "rendered_candidate"}
-        temp = receipt_path.with_name(f".{receipt_path.name}.{os.getpid()}.part")
-        temp.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        os.replace(temp, receipt_path)
+        with receipt_path.open("w", encoding="utf-8") as stream:
+            json.dump(receipt, stream, indent=2, sort_keys=True)
+            stream.write("\n")
         print(json.dumps({"snapshot_png": str(output), "receipt": str(receipt_path)}, indent=2))
         return 0
     except Exception:
@@ -1022,13 +1043,21 @@ def _write_session_receipt(viewer, plan: dict) -> None:
                            "opengl_version": getattr(viewer, "gl_version", None)},
                "interaction_note": "Receipt records the initial fitted pose; later user camera gestures are not captured.",
                "status": "interactive_started"}
-    fd, temporary = tempfile.mkstemp(prefix=f".{target.name}.", suffix=".part", dir=target.parent)
+    fd = None
+    created = False
     try:
+        fd = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        created = True
         with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            fd = None
             json.dump(receipt, stream, indent=2, sort_keys=True)
             stream.write("\n")
-        os.link(temporary, target)
     except FileExistsError as exc:
         raise FileExistsError(f"session receipt already exists: {target}") from exc
+    except Exception:
+        if created:
+            target.unlink(missing_ok=True)
+        raise
     finally:
-        Path(temporary).unlink(missing_ok=True)
+        if fd is not None:
+            os.close(fd)

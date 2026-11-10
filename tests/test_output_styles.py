@@ -1,6 +1,6 @@
 """Synthetic render-style regression checks.
 
-Version: 1.21.6 (local/unreleased)
+Version: 1.21.7 (local/unreleased)
 Last updated: 2026-11-09
 Change history: ../CHANGELOG.md
 2026-11-08: Exercise real optional-region exports and GUI Soma export provenance.
@@ -33,7 +33,8 @@ from PIL import Image
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from vispa.renderers.microscopy_panels import VisPa
 from vispa.config import REVIEW_SETTINGS, review_settings_schema
-from vispa.data_input_adaptor import display_region_name, region_display_label
+from vispa.data_input_adaptor import (atlas_source_token, display_region_name,
+                                     region_display_label)
 from vispa.reviewer import NeuroVisGUI, FIXED_CROSSHAIR_NOTICE
 from vispa.renderers.swc_brain_view import TRACE_LABEL, _legend_texture
 
@@ -81,7 +82,9 @@ class OutputStyleTests(unittest.TestCase):
                                       save_soma_nifti=True)
             panel = gui._render_soma(tool, request, directory)
             path = panel['_soma_nifti']
-            self.assertIn('Right PrCO', Path(path).name)
+            self.assertIn('atlas_R_PrCO', Path(path).name)
+            self.assertNotIn('(', Path(path).name)
+            self.assertNotIn('[', Path(path).name)
             metadata = json.loads(Path(path + '.json').read_text())
             self.assertEqual(metadata['center_xyz_um'], [11, 22, 33])
             self.assertEqual(metadata['origin_xyz_um'], [10, 20, 30])
@@ -133,7 +136,8 @@ class OutputStyleTests(unittest.TestCase):
         native = {'status': 'verified', 'side': 'Right',
                   'source': {'atlas_region': 'CR_M1'}}
         self.assertEqual(region_display_label('M1_79', native),
-                         'Portal: M1_79 | Atlas: Right M1')
+                         'Portal: M1_79 | Atlas: Right M1 · atlas_CR_M1')
+        self.assertEqual(atlas_source_token(native), 'atlas_CR_M1')
         self.assertEqual(display_region_name('CL_M1', 'Left'), 'M1')
         self.assertEqual(display_region_name('CR_M1', 'Left'), 'CR_M1')
         self.assertEqual(display_region_name('microCR_M1', 'Right'), 'microCR_M1')
@@ -148,23 +152,23 @@ class OutputStyleTests(unittest.TestCase):
                 (8000, 8000), 30)
             self.assertEqual(title.count("Region:"), 1)
             self.assertNotIn("| Atlas:", title)
-            self.assertIn("Region: nmt_portal=Left background", title)
+            self.assertIn("Region: atlas_background", title)
             self.assertNotIn("nmt_corrected", title)
             corrected = tool._title_text(
                 "003.swc", suffix, combined, (46139, 18014, 37393),
                 (8000, 8000), 30, nmt_corrected="  Right   PrCO  ")
             self.assertIn(
-                "Region: nmt_portal=Left background · nmt_corrected=Right PrCO",
+                "Region: atlas_background · nmt_corrected=Right PrCO",
                 corrected)
             self.assertNotIn("  ", corrected.splitlines()[1])
         simple = tool._title_text(
             "003.swc", "Context", "PrCO_49", (46139, 18014, 37393),
             (8000, 8000), 30)
-        self.assertIn("Region: nmt_portal=PrCO_49", simple)
+        self.assertIn("Region: atlas_PrCO_49", simple)
         sourced = tool._title_text(
             "011.swc", "Sagittal", "ion_atlas=M1_79", (1, 2, 3),
             (57870, 49300), 100)
-        self.assertIn("Region: ion_atlas=M1_79", sourced)
+        self.assertIn("Region: atlas_M1_79", sourced)
         self.assertNotIn("nmt_portal=", sourced)
         checked = tool._title_text(
             "011.swc", "Context", "checked_region=M1_79", (1, 2, 3),
@@ -173,23 +177,27 @@ class OutputStyleTests(unittest.TestCase):
         vispa = tool._title_text(
             "011.swc", "Sagittal", "Portal: M1_79 | Atlas: Right CR_M1",
             (1, 2, 3), (57870, 49300), 100, hemisphere="Right")
-        self.assertIn("Region: nmt_portal=Right M1", vispa)
+        self.assertIn("Region: atlas_CR_M1", vispa)
         self.assertNotIn("Right_hemisphere", vispa)
         combined = tool._title_text(
             "011.swc", "Soma", "checked_region=M1_79 | Portal: M1_79 | Atlas: Right CR_M1",
             (1, 2, 3), (351, 351), 270)
-        self.assertIn("Region: checked_region=M1_79 · nmt_portal=Right M1", combined)
+        self.assertIn("Region: checked_region=M1_79 · atlas_CR_M1", combined)
         self.assertEqual(tool._region_title_value("nmt_portal=Left CL_M1"),
-                         "nmt_portal=Left M1")
+                         "atlas_CL_M1")
         self.assertEqual(tool._region_title_value("nmt_portal=Right microCR_M1"),
-                         "nmt_portal=Right microCR_M1")
+                         "atlas_microCR_M1")
         self.assertEqual(tool._region_title_value("nmt_portal=Right CR_M1",
                                                    "Left CL_PrCO"),
-                         "nmt_portal=Right M1 · nmt_corrected=Left PrCO")
+                         "atlas_CR_M1 · nmt_corrected=Left PrCO")
         unknown = tool._title_text(
             "011.swc", "Context", "Portal: M1_79 | Atlas: unavailable",
             (1, 2, 3), (8000, 8000), 30)
-        self.assertIn("nmt_portal=unavailable · portal_region=M1_79", unknown)
+        self.assertIn("atlas_unavailable · portal_region=M1_79", unknown)
+        self.assertEqual(
+            VisPa._filename_region_source(
+                "Portal: Ial_42 | Atlas: Right Ial · atlas_Ial"),
+            "atlas_R_Ial")
 
     def test_gui_fingerprint_records_requested_and_effective_crosshair(self):
         self.assertIn('marker.crosshair_px', FIXED_CROSSHAIR_NOTICE)
@@ -376,7 +384,9 @@ class OutputStyleTests(unittest.TestCase):
                               {'min_px': 12, 'crosshair_px': 16})]}
         with tempfile.TemporaryDirectory(dir=os.environ.get('VISPA_TEST_ROOT')) as output:
             with mock.patch.object(tool, '_draw_target_marker', wraps=tool._draw_target_marker) as marker:
-                result = tool._save_panel_plot(panel, '001', 'Soma', output_dir=output)
+                with mock.patch.object(tool, '_assert_render_config'):
+                    result = tool._save_panel_plot(
+                        panel, '001', 'Soma', output_dir=output)
             self.assertEqual(marker.call_args.args[0].figure.dpi, 123)
             self.assertEqual(marker.call_args.args[0].figure.get_size_inches().tolist(), [6., 4.])
             with Image.open(result['output_png']) as png:

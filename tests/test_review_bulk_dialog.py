@@ -1,6 +1,6 @@
 """Bounded GUI bulk command and receipt-path contracts.
 
-Version: 1.21.6 (local/unreleased)
+Version: 1.21.7 (local/unreleased)
 Last updated: 2026-11-09
 Change history: ../CHANGELOG.md
 2026-11-09: Use effective config fingerprints in frozen-job checks.
@@ -43,6 +43,10 @@ class BulkReviewDialogContractTests(unittest.TestCase):
             prepared = bulk_command("prepare_all", values)
             self.assertEqual(prepared[-1], "--all")
             self.assertNotIn("--dry-run", prepared)
+            self.assertNotIn("--brain-view", prepared)
+            values["brain_view"] = True
+            with_brain_view = bulk_command("prepare_all", values)
+            self.assertIn("--brain-view", with_brain_view)
             render = bulk_command("render_all", values)
             self.assertIn("vispa.review_bulk_render", render)
             self.assertEqual(render[-2:], ["--all", "--resume"])

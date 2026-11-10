@@ -1,10 +1,10 @@
 """Contract tests for the lazy original-engine OpenGL worker.
 
-Version: 1.21.3 (local/unreleased)
-Last updated: 2026-11-08
+Version: 1.21.7 (local/unreleased)
+Last updated: 2026-11-09
 Change history: ../CHANGELOG.md
 Status: candidate
-2026-11-02: Cover portal numeric key refusal without a verified hierarchy map.
+2026-11-09: Cover active-runtime worker selection and exact acronym region fallback.
 """
 import contextlib
 import io
@@ -181,13 +181,16 @@ class LegacyOpenGLPlanningTests(unittest.TestCase):
         self.assertEqual(plan["region_manifest"]["schema"],
                          "vispa-region-mesh-dependency-manifest-v1")
 
-    def test_numeric_portal_suffix_requires_hierarchy_map(self):
+    def test_numeric_portal_suffix_uses_unique_exact_acronym_by_default(self):
         self._configure_regions(["precentral_opercular_cortex (PrCO).obj"])
         selected = opengl.plan_configured_view(
             "251637", "001.swc", "PrCO_49", self.config)
-        self.assertIsNone(selected["region_mesh"])
-        self.assertEqual(selected["region_resolution"]["status"], "unmatched")
-        self.assertIn("region_hierarchy_map", selected["region_resolution"]["reason"])
+        self.assertEqual(selected["region_mesh"]["filename"],
+                         "precentral_opercular_cortex (PrCO).obj")
+        self.assertEqual(selected["region_resolution"]["status"], "selected")
+        self.assertEqual(selected["region_resolution"]["match_kind"],
+                         "portal_suffix_exact_acronym")
+        self.assertEqual(selected["region_resolution"]["normalized_query"], "PrCO")
         unmatched = opengl.plan_configured_view(
             "251637", "001.swc", "Unknown_49", self.config)
         self.assertIsNone(unmatched["region_mesh"])
@@ -352,7 +355,10 @@ class LegacyOpenGLPlanningTests(unittest.TestCase):
                          & (set(sys.modules) - before_modules))
 
     def test_launcher_uses_isolated_absolute_worker_and_no_mesh_cwd(self):
-        with mock.patch.object(opengl.subprocess, "Popen", return_value="process") as popen:
+        worker_command = [sys.executable, "-I",
+                          str(Path(opengl.__file__).resolve().parents[3] / "run_vispa.py")]
+        with mock.patch.object(opengl, "_worker_entry", return_value=worker_command), \
+             mock.patch.object(opengl.subprocess, "Popen", return_value="process") as popen:
             result = opengl.launch_configured_view("251637", "001.swc", "insula", self.config)
         self.assertEqual(result, "process")
         command, kwargs = popen.call_args.args[0], popen.call_args.kwargs
@@ -369,15 +375,18 @@ class LegacyOpenGLPlanningTests(unittest.TestCase):
     def test_portal_region_stays_automatic_in_worker_command_and_explicit_cli_is_forwarded(self):
         self._configure_regions(["precentral_operular_area (PrCO).obj"])
         process = mock.Mock()
-        with mock.patch.object(opengl.subprocess, "Popen", return_value=process) as popen:
+        worker_command = [sys.executable, "-I", "-m", "vispa"]
+        with mock.patch.object(opengl, "_worker_entry", return_value=worker_command), \
+             mock.patch.object(opengl.subprocess, "Popen", return_value=process) as popen:
             result = opengl.launch_configured_view(
                 "251637", "001.swc", "PrCO_49", self.config)
         portal_command = popen.call_args.args[0]
         self.assertFalse(any(argument.startswith("--region=") for argument in portal_command))
-        self.assertIsNone(result.vispa_plan["region_mesh"])
-        self.assertIn("region_hierarchy_map", result.vispa_plan["region_resolution"]["reason"])
+        self.assertEqual(result.vispa_plan["region_mesh"]["acronym"], "PrCO")
+        self.assertEqual(result.vispa_plan["region_resolution"]["status"], "selected")
 
-        with mock.patch.object(opengl.subprocess, "Popen", return_value=mock.Mock()) as popen:
+        with mock.patch.object(opengl, "_worker_entry", return_value=worker_command), \
+             mock.patch.object(opengl.subprocess, "Popen", return_value=mock.Mock()) as popen:
             opengl.launch_configured_view(
                 "251637", "001.swc", config_path=self.config, region="PrCO")
         explicit_command = popen.call_args.args[0]
@@ -404,15 +413,22 @@ class LegacyOpenGLPlanningTests(unittest.TestCase):
         self.assertEqual(actual.returncode, 0, actual.stderr)
         self.assertEqual(json.loads(actual.stdout), [opengl.__version__, str(Path(opengl.__file__).resolve())])
 
-    def test_selected_older_worker_binary_still_runs_candidate_entry(self):
+    def test_invalid_ambient_worker_falls_back_to_active_interpreter(self):
         older = self.root / "older-dev11" / "python.exe"
         older.parent.mkdir()
         older.write_bytes(b"synthetic worker binary")
+        def probe(command, **_kwargs):
+            if Path(command[0]) == older.resolve():
+                return opengl.subprocess.CompletedProcess(command, 1, "", "invalid worker")
+            return opengl.subprocess.CompletedProcess(
+                command, 0,
+                json.dumps([opengl.__version__, str(Path(opengl.__file__).resolve())]), "")
         with mock.patch.dict(os.environ, {"VISPA_PYTHON": str(older)}):
-            with mock.patch.object(opengl.subprocess, "Popen", return_value="process") as popen:
+            with mock.patch.object(opengl.subprocess, "run", side_effect=probe), \
+                 mock.patch.object(opengl.subprocess, "Popen", return_value="process") as popen:
                 opengl.launch_configured_view("251637", "001.swc", config_path=self.config)
         command = popen.call_args.args[0]
-        self.assertEqual(command[0], str(older.resolve()))
+        self.assertEqual(Path(command[0]), Path(sys.executable).resolve())
         self.assertEqual(Path(command[2]), Path(opengl.__file__).resolve().parents[3] / "run_vispa.py")
 
     def test_installed_plan_skips_stale_ambient_worker_for_configured_runtime(self):
@@ -433,7 +449,7 @@ class LegacyOpenGLPlanningTests(unittest.TestCase):
                     plan = opengl.plan_configured_view("251637", "001.swc", config_path=self.config)
         self.assertEqual(Path(plan["worker_python"]), Path(sys.executable).resolve())
         self.assertEqual(plan["worker_entry"], [str(Path(sys.executable).resolve()), "-I", "-m", "vispa"])
-        self.assertEqual(run.call_count, 2)
+        self.assertEqual(run.call_count, 1)
 
     def test_stale_environment_worker_falls_back_to_configured_python(self):
         stale = self.root / "retired-runtime" / "python.exe"
@@ -449,6 +465,11 @@ class LegacyOpenGLPlanningTests(unittest.TestCase):
 
         def fake_run(command, **kwargs):
             commands.append(command)
+            if "--snapshot" not in command:
+                return opengl.subprocess.CompletedProcess(
+                    command, 0,
+                    json.dumps([opengl.__version__, str(Path(opengl.__file__).resolve())]),
+                    "")
             output = Path(command[command.index("--snapshot") + 1])
             output.write_bytes(b"synthetic-png")
             output.with_suffix(".json").write_text(json.dumps({
@@ -464,14 +485,21 @@ class LegacyOpenGLPlanningTests(unittest.TestCase):
                 config_path=self.config, mesh_path=self.mesh, mesh_label="-h")
         self.assertEqual(receipt["status"], "rendered_candidate")
         self.assertTrue(snapshot.is_file())
-        self.assertIn("--portal-region=-x", commands[0])
-        self.assertIn(f"--mesh-path={self.mesh.resolve()}", commands[0])
-        self.assertIn("--mesh-label=-h", commands[0])
+        render_command = next(command for command in commands if "--snapshot" in command)
+        self.assertIn("--portal-region=-x", render_command)
+        self.assertIn(f"--mesh-path={self.mesh.resolve()}", render_command)
+        self.assertIn("--mesh-label=-h", render_command)
 
     def test_snapshot_worker_failure_uses_preview_label(self):
         snapshot = self.root / "failed-snapshot.png"
-        with mock.patch.object(opengl.subprocess, "run", return_value=
-                               opengl.subprocess.CompletedProcess([], 2, "", "worker failed")):
+        def fake_run(command, **_kwargs):
+            if "--snapshot" not in command:
+                return opengl.subprocess.CompletedProcess(
+                    command, 0,
+                    json.dumps([opengl.__version__, str(Path(opengl.__file__).resolve())]),
+                    "")
+            return opengl.subprocess.CompletedProcess(command, 2, "", "worker failed")
+        with mock.patch.object(opengl.subprocess, "run", side_effect=fake_run):
             with self.assertRaisesRegex(RuntimeError, "SWC Brain View worker exited"):
                 opengl.render_configured_snapshot(
                     "251637", "001.swc", snapshot, config_path=self.config)

@@ -650,7 +650,7 @@ class ProgressBarTests(unittest.TestCase):
             render.assert_called_once()
             args, kwargs = render.call_args
             self.assertEqual(args[:2], ("251637", "004.swc"))
-            self.assertTrue(args[2].endswith("_3D_SWC.png"))
+            self.assertTrue(args[2].endswith("_SWC3D.png"))
             self.assertEqual(kwargs, {"portal_region": "PrCO_49",
                                       "config_path": "fixture.yaml"})
             final = Path(folder) / '251637' / 'neurons' / '004_R_PrCO' / Path(args[2]).name

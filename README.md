@@ -1,7 +1,7 @@
 # VisPa — Visual Projectome Analysis tool
 
 VisPa reviews macaque neuron and microscopy data configured by the DEB lab.
-This checkout identifies as **1.21.6**. VisPa is a
+This checkout identifies as **1.21.7**. VisPa is a
 Python package inside a Conda environment. Launch the GUI directly from this
 checkout with `python run_vispa.py`.
 
@@ -9,7 +9,35 @@ checkout with `python run_vispa.py`.
 
 ## Batch review
 
-Use **Bulk review…** beside Render for one-animal preparation, raw SWC caching, four-role rendering and receipt-verified resume. The dialog launches the packaged `vispa.review_bulk_prepare` and `vispa.review_bulk_render` modules, which also run with `python -m` from an installed wheel. Start with a dry run and one neuron; see the [batch guide](batch/MODULE.md) for source, output and review controls. Existing `batch.prepare_review_bulk` and `batch.render_review_bulk` imports remain compatibility entry points. The checkout-only `batch.remap_stepwise` bridge supplies ReMAP inputs and saved FNT scores to the same jobs contract. Figure completion and anatomical acceptance have separate review records.
+Use **Bulk review…** beside Render for one-animal preparation, raw SWC caching, four core review figures plus one SWC Brain View screenshot, and receipt-verified resume. The dialog launches the packaged `vispa.review_bulk_prepare` and `vispa.review_bulk_render` modules, which also run with `python -m` from an installed wheel. Start with a dry run and one neuron; see the [batch guide](batch/MODULE.md) for source, output and review controls. Existing `batch.prepare_review_bulk` and `batch.render_review_bulk` imports remain compatibility entry points. The checkout-only `batch.remap_stepwise` bridge supplies ReMAP inputs and saved FNT scores to the same jobs contract. Figure completion and anatomical acceptance have separate review records.
+
+For an existing four-panel cohort, add only the missing Brain View products with
+`python -m vispa.review_bulk_render --jobs PATH --output-root PATH --all
+--resume --brain-view-only`. This verifies existing product files and never
+replaces the current core review outputs.
+
+Plot selection is explicit for prepared or existing jobs. Convenience flags are
+`--somaplot`, `--contextplot`, `--sagittalplot`, `--triplot`, and `--swcplot`;
+repeatable `--plot ROLE` accepts the same role names, and `--full` selects every
+output. `--swcplot` uses the safe product-only path and preserves existing core
+panels.
+
+Generated filenames follow the saved
+`visual_toolkit.filename_template`. The default is
+`{sample}_{neuron}_{region_source}_{role}`, where `.swc` is removed and
+`region_source` is a single token such as `atlas_R_PrCO` or `atlas_L_G`.
+Neuron folders use single-letter `L/R`; rendered titles and the GUI status use
+full `Left/Right`.
+
+Add `--include-unready` when a raw-SWC preparation failure still has a valid
+portal processed SWC. This affects only SWC-only mode and never relabels the
+failed core review as complete.
+
+New GUI and batch review filenames use one bracket-free source token derived
+from the atlas label. For example, `Atlas: Right CR_M1` is recorded and shown
+as `atlas_CR_M1`, and a Soma volume stem becomes
+`<sample>_<neuron>_<region>_atlas_CR_M1_Soma`. Existing historical files keep
+their original names.
 
 ## Code layout and responsibilities
 
@@ -24,7 +52,7 @@ src/vispa/
 ├── reviewer.py                       interactive review and preview orchestration
 ├── review_bulk_dialog.py             Bulk review dialog and background job control
 ├── review_bulk_prepare.py            whole-animal identities and managed raw cache
-├── review_bulk_render.py             four-role rendering and verified resume
+├── review_bulk_render.py             four core figures, SWC Brain View and verified resume
 ├── render_records.py                 shared animal process log and verified figure records
 ├── commands.py                       command routing; installed vispa command
 ├── input_resource_check.py           availability checks, not image/anatomy acceptance
@@ -276,6 +304,16 @@ For a Python environment that already has the declared VisPa dependencies, insta
 ```
 
 `--no-deps` leaves other installed packages unchanged; use the Conda workflow above for a fresh environment that needs dependencies.
+
+Install the two desktop launchers after the package is installed with:
+
+```powershell
+& 'C:\path\to\env\python.exe' -m vispa install-shortcuts
+```
+
+The command uses the `vispa.ico` packaged inside the wheel, creates **VisPa**
+and **VisPa Settings**, and reads back both `.lnk` targets before reporting
+success. Use `--dry-run` to inspect the resolved interpreter, profile and icon.
 
 `python run_vispa.py check` verifies configured files and server/cache access. A disconnected lab share can make this check fail after a successful installation. TIFF support is included through the declared package extras.
 

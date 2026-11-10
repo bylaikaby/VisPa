@@ -1,6 +1,6 @@
 # VisPa batch review
 
-Version 1.21.4. The Bulk review dialog and the packaged commands share one implementation. The ReMAP/FNT bridge and the whole-animal workflow both produce
+Version 1.21.7. The Bulk review dialog and the packaged commands share one implementation. The ReMAP/FNT bridge and the whole-animal workflow both produce
 a frozen review jobs file.
 
 The chart shows calls and data flow. The IONData catalog and declared raw
@@ -117,9 +117,42 @@ anatomical acceptance.
 2. Repeat without `--dry-run` to prepare the jobs file. Use the profile's shared `defaults.cache_root/swc_raw` cache, or a separate managed staging cache. Arbitrary overlap with scientific source roots is rejected. `--allow-download` explicitly allows fetching missing raw SWCs. Check the jobs file for unready IDs and reasons.
 3. Run `python -m vispa.review_bulk_render --jobs <jobs.json> --output-root <configured-root> --limit 1 --dry-run`, then repeat without `--dry-run`. The destination must match the saved profile for flat jobs. Inspect the four plots and process log.
 4. For an animal run, prepare a new jobs file with `--all` and explicitly render with `--all`. GUI and bulk use the same configured sample/neuron folders without an extra run directory.
+
+The GUI's **SWC Brain View shot** option is enabled by default. Prepared jobs
+record `SWC3D` in `review_roles`; the renderer writes `<sample>_<folder>_3D_SWC.png`
+and records it as an ancillary product beside the four core outputs. Region OBJ
+lookup uses the shared server's configured region mesh root and manifest.
+
+To add this product to an already complete cohort without rerendering the four
+core panels, use:
+
+```powershell
+python -m vispa.review_bulk_render --jobs <jobs.json> \
+  --output-root <configured-root> --all --resume --brain-view-only
+```
+
+Existing product PNG and receipt hashes are verified and skipped on repeated
+runs. A partial or source-blocked core review remains intact while its SWC
+product is added if the processed SWC is available.
+
+For a raw-SWC preparation failure whose separate processed-SWC route still
+works, add `--include-unready` to `--brain-view-only`. The product is created
+from the verified processed cache or `getSWC` receipt while the raw-core failure
+remains recorded.
+
+Choose any output subset with `--somaplot`, `--contextplot`, `--sagittalplot`,
+`--triplot`, `--swcplot`, repeatable `--plot ROLE`, or `--full`. A TrioPlot-only
+request computes the three source panels internally but writes only the TrioPlot
+unless the individual roles are also selected.
 5. Use `--resume` with the same jobs file and destination after an interruption. Inspect the process log for reused, rendered and unready neurons. Resume reuses a result only if the input identity and four verified PNGs match.
 
 New prepared jobs use a readable run name such as `review_2026-11-08_15-45-00` (Asia/Shanghai creation time). The dry run and frozen jobs file show the resolved name; `--run-name` can set a path-safe name explicitly. Figures go directly in `<root>/<sample>/neurons/<SWC ID>_<verified side>_<region name>/` (for example `252527/neurons/001_R_M1/`); unknown side is omitted. Only a final underscore plus numeric atlas ID is removed from the folder label (`M1_79` → `M1`); full source labels and side provenance remain in the jobs and the sole per-animal `<root>/<sample>/process_log.json`. That log records source identities, checksums, config/settings, figure paths/hashes, and prior render history. Unknown acquisition dates remain explicitly unknown; retrieval and filesystem times have separate provenance labels. The neuron folder name is frozen in the jobs file; missing region uses `Unassigned`, and unsafe or long labels receive a short hash suffix. Existing jobs keep their original numeric neuron and `bulk_<jobs hash prefix>` paths and receipts when resumed. Resume checks the frozen SWC, profile, settings and PNG bytes.
+
+Output filenames use `visual_toolkit.filename_template`, defaulting to
+`{sample}_{neuron}_{region_source}_{role}`. `.swc` is omitted from the neuron
+field, and `region_source` is one compact token such as `atlas_R_PrCO` or
+`atlas_L_G`. Example: `252385_031_atlas_L_G_TrioPlot.png`. Full
+`Left`/`Right` remains in rendered titles and the GUI status.
 
 The DEB GUI figure root is `X:/fMOST/Vispa_outputs`. Individual Soma, Context
 and Sagittal PNGs go in the configured `separate_plot_subfolder` (`plots/`);

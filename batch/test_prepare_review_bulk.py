@@ -1,6 +1,6 @@
 """Bounded job-preparation tests for exact animal identities and raw cache.
 
-Version: 1.21.6 (local/unreleased)
+Version: 1.21.7 (local/unreleased)
 Last updated: 2026-11-09
 Change history: ../CHANGELOG.md
 Status: candidate
@@ -16,6 +16,7 @@ import tempfile
 import unittest
 import yaml
 from unittest import mock
+from types import SimpleNamespace
 
 from batch.prepare_review_bulk import plan_jobs, prepare_jobs
 from vispa.review_bulk_prepare import _region_entries, _selected_region
@@ -29,6 +30,62 @@ from vispa.review_bulk_render import (
 
 
 class PrepareReviewBulkTests(unittest.TestCase):
+    def test_cli_plot_roles_support_individual_trio_swc_and_full(self):
+        from vispa.review_bulk_prepare import _roles_from_args
+
+        def roles(**values):
+            defaults = {
+                "plot": None, "somaplot": False, "contextplot": False,
+                "sagittalplot": False, "triplot": False, "swcplot": False,
+                "brain_view": False, "full": False,
+            }
+            defaults.update(values)
+            return _roles_from_args(SimpleNamespace(**defaults))
+
+        self.assertEqual(roles(), ["Soma", "Context", "Sagittal", "TrioPlot"])
+        self.assertEqual(roles(swcplot=True), ["SWC3D"])
+        self.assertEqual(roles(plot=["Context", "TrioPlot"]),
+                         ["Context", "TrioPlot"])
+        self.assertEqual(roles(full=True),
+                         ["Soma", "Context", "Sagittal", "TrioPlot", "SWC3D"])
+
+    def test_swc_only_plan_can_include_raw_source_failures(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / "figures"
+            config = root / "profile.yaml"
+            config.write_text(json.dumps({
+                "version": 1,
+                "visual_toolkit": {
+                    "figure_output_root": str(output),
+                    "enforce_render_config": False,
+                },
+            }), encoding="utf-8")
+            jobs = root / "jobs" / "jobs.json"
+            jobs.parent.mkdir()
+            jobs.write_text(json.dumps({
+                "schema": "vispa.review_bulk.v1",
+                "sample_id": "252385",
+                "vispa_config": str(config),
+                "output_layout": "sample_neurons_flat",
+                "allow_all": True,
+                "review_roles": ["SWC3D"],
+                "jobs": [
+                    {"sample_id": "252385", "neuron_id": "001.swc",
+                     "neuron_folder": "001_R_M1", "render_ready": True,
+                     "soma_xyz": [1, 2, 3]},
+                    {"sample_id": "252385", "neuron_id": "d001.swc",
+                     "neuron_folder": "d001_Unassigned", "render_ready": False,
+                     "soma_error": "raw HTTP 500"},
+                ],
+            }), encoding="utf-8")
+            plan = load_review_jobs(jobs, output, None, True,
+                                    include_unready=True)
+            self.assertEqual([job["neuron_id"] for job in plan["jobs"]],
+                             ["001.swc", "d001.swc"])
+            self.assertEqual(len(plan["included_unready"]), 1)
+            self.assertFalse(plan["jobs"][1]["render_ready"])
+
     def _local_config(self, root):
         template = Path(__file__).parents[1] / "src/vispa/configs/config_deb.yaml"
         config = yaml.safe_load(template.read_text(encoding="utf-8"))
@@ -116,7 +173,7 @@ class PrepareReviewBulkTests(unittest.TestCase):
             self.assertEqual(jobs["jobs"][0]["soma_region"], "Right INS")
             self.assertEqual(jobs["jobs"][0]["soma_region_source"]["field"], "checked_region")
             self.assertEqual(jobs["jobs"][1]["soma_region"], "M1_79")
-            self.assertEqual(jobs["jobs"][0]["neuron_folder"], "001_R_Right-INS")
+            self.assertEqual(jobs["jobs"][0]["neuron_folder"], "001_R_INS")
             self.assertEqual(jobs["jobs"][1]["neuron_folder"], "002_R_M1")
             self.assertEqual(jobs["output_layout"], "sample_neurons_flat")
             self.assertIsNone(jobs["jobs"][0]["source_acquisition_date"])
@@ -130,7 +187,7 @@ class PrepareReviewBulkTests(unittest.TestCase):
             self.assertEqual(render_plan["jobs"][0]["soma_region"], "Right INS")
             self.assertEqual(render_plan["jobs"][0]["soma_region_entries"]["ion_atlas"], "M1_79")
             self.assertEqual(_region_display_value(render_plan["jobs"][0]),
-                             "checked_region=Right INS | Portal: M1_79 | Atlas: Right M1")
+                             "checked_region=Right INS | Portal: M1_79 | Atlas: Right M1 · atlas_CR_M1")
             self.assertEqual(render_plan["jobs"][0]["vispa_region"]["status"], "verified")
             self.assertEqual(hashlib.sha256((cache / "251637/001.swc").read_bytes()).hexdigest(),
                              jobs["jobs"][0]["raw_swc_sha256"])
@@ -202,7 +259,7 @@ class PrepareReviewBulkTests(unittest.TestCase):
                                     None, 1, False)
             self.assertEqual(offline["jobs"][0]["vispa_region"]["status"], "error")
             self.assertEqual(_region_display_value(offline["jobs"][0]),
-                             "Portal: M1_79 | Atlas: unavailable")
+                             "Portal: M1_79 | Atlas: unavailable · atlas_unavailable")
 
     def test_region_union_filters_before_limit_and_unknown_fails(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -259,13 +316,13 @@ class PrepareReviewBulkTests(unittest.TestCase):
                                                 "soma_region_source": {"field": "portal_region"},
                                                 "vispa_region": {"status": "verified", "side": "Right",
                                                                  "source": {"atlas_region": "CR_M1"}}}),
-                     "Portal: M1_79 | Atlas: Right M1")
+                     "Portal: M1_79 | Atlas: Right M1 · atlas_CR_M1")
         self.assertEqual(region_display_label("M1_79", {"status": "verified", "side": "Right",
                                                          "source": {"atlas_region": "CR_M1"}}),
-                     "Portal: M1_79 | Atlas: Right M1")
+                     "Portal: M1_79 | Atlas: Right M1 · atlas_CR_M1")
         self.assertEqual(region_display_label("M1_79", {"status": "error", "side": None,
                                                          "source": None}),
-                         "Portal: M1_79 | Atlas: unavailable")
+                         "Portal: M1_79 | Atlas: unavailable · atlas_unavailable")
         with self.assertRaisesRegex(ValueError, "must be a string"):
             _selected_region(_region_entries({"soma_region": {"checked_region": ["M1_79"]}}))
 
@@ -285,7 +342,7 @@ class PrepareReviewBulkTests(unittest.TestCase):
         self.assertEqual(neuron_folder_name("252527", "033.swc", "area_3a/b_74", side="Right"),
                          "033_R_area_3a-b")
         self.assertEqual(neuron_folder_name("251637", "001.swc", "Right INS", side="Right"),
-                         "001_R_Right-INS")
+                         "001_R_INS")
         self.assertNotIn("/", neuron_folder_name("252527", "011.swc", "../../region"))
 
     def test_existing_complete_outputs_are_skipped_by_neuron_identity(self):
@@ -401,14 +458,18 @@ class PrepareReviewBulkTests(unittest.TestCase):
             jobs_path = root / "jobs" / "prepared.json"
             with mock.patch("batch.prepare_review_bulk.load", return_value=config):
                 plan = plan_jobs(config_path, "251637", identities, False, [], cache,
-                                 None, 1, False)
+                                 None, 1, False, brain_view=True)
                 result = prepare_jobs(plan, jobs_path, dry_run=False, allow_download=False)
             self.assertEqual(result["status"], "prepared")
             self.assertEqual(hashlib.sha256(swc.read_bytes()).hexdigest(), before)
-            self.assertEqual(json.loads(jobs_path.read_text())["figure_output_root"], str(root / "figures"))
+            prepared = json.loads(jobs_path.read_text())
+            self.assertEqual(prepared["figure_output_root"], str(root / "figures"))
+            self.assertEqual(prepared["review_roles"],
+                             ["Soma", "Context", "Sagittal", "TrioPlot", "SWC3D"])
             BulkReviewDialog._validate_jobs(jobs_path, {
                 "config": str(config_path), "sample": "251637", "regions": [],
                 "cache": str(cache), "output": str(root / "figures"),
+                "brain_view": True,
             }, require_exists=True)
             config["defaults"]["cache_root"] = root / "different-managed"
             with mock.patch("batch.prepare_review_bulk.load", return_value=config):
@@ -449,6 +510,7 @@ class PrepareReviewBulkTests(unittest.TestCase):
                 "vispa_config": str(config), "output_layout": "sample_neurons_flat",
                 "run_name": "review_fixture", "allow_all": False,
                 "figure_output_root": str(root / "figures"),
+                "review_roles": ["Soma", "Context", "Sagittal", "TrioPlot", "SWC3D"],
                 "jobs": [{"sample_id": "251637", "neuron_id": "001.swc",
                           "neuron_folder": "001_R_M1", "soma_xyz": [1, 2, 3],
                           "render_ready": True}],
@@ -461,7 +523,7 @@ class PrepareReviewBulkTests(unittest.TestCase):
                 plan = load_review_jobs(jobs_path, output_root, 1, False)
             def render(_job, folder, _config):
                 paths = {}
-                for role in ("Soma", "Context", "Sagittal", "TrioPlot"):
+                for role in ("Soma", "Context", "Sagittal", "TrioPlot", "SWC3D"):
                     path = folder / f"{role}.png"
                     Image.new("RGB", (2, 2), "red").save(path)
                     paths[role] = str(path)
@@ -478,12 +540,15 @@ class PrepareReviewBulkTests(unittest.TestCase):
                 record = json.loads(log_path.read_text(encoding="utf-8"))
                 self.assertEqual(record["current_batch"]["source_jobs"][0]["neuron_id"], "001.swc")
                 self.assertEqual(len(record["neurons"]["001.swc"]["current"]["outputs"]), 4)
+                self.assertIn("SWC3D",
+                              record["neurons"]["001.swc"]["current"]["products"])
                 self.assertEqual(record["neurons"]["001.swc"]["current"]["role_availability"]
                                  ["Context"]["status"], "intentionally_unavailable")
                 folder = Path(plan["jobs"][0]["output_dir"])
                 self.assertEqual(folder.name, "001_R_M1")
                 self.assertTrue((folder / "SomaBlock.nii.gz").is_file())
                 self.assertTrue((folder / "TrioPlot.png").is_file())
+                self.assertTrue((folder / "SWC3D.png").is_file())
                 for role in ("Soma", "Context", "Sagittal"):
                     self.assertTrue((folder / "plots" / f"{role}.png").is_file())
                 self.assertFalse((folder / "review_receipt.json").exists())
@@ -520,6 +585,75 @@ class PrepareReviewBulkTests(unittest.TestCase):
             self.assertEqual(slot["current"]["products"]["SWC3D"]["path"], "brain-view.png")
             self.assertEqual(slot["current"]["outputs"]["Soma"]["path"], "new-fixture")
             self.assertEqual(len(slot["history"]), 2)
+
+    def test_brain_view_only_adds_product_without_replacing_existing_review(self):
+        from PIL import Image
+        from vispa.render_records import animal_receipt_path, record_neuron_output
+        from vispa.review_bulk_render import _sha256, run_brain_view_products
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            config = root / "profile.yaml"
+            config.write_text("config_name: fixture\n", encoding="utf-8")
+            jobs = root / "jobs.json"
+            jobs.write_text(json.dumps({"sample_id": "251637"}), encoding="utf-8")
+            folder = root / "figures" / "251637" / "neurons" / "001_R_M1"
+            folder.mkdir(parents=True)
+            old = folder / "Context.png"
+            Image.new("RGB", (2, 2), "red").save(old)
+            receipt = animal_receipt_path(root / "figures", "251637")
+            record_neuron_output(receipt, "251637", "001.swc", {
+                "sample_id": "251637",
+                "neuron_id": "001.swc",
+                "status": "partial",
+                "errors": ["known source block"],
+                "outputs": {"Context": {"path": str(old), "sha256": _sha256(old)}},
+            })
+
+            def render(_job, stage, _config):
+                snapshot = stage / "brain.png"
+                snapshot_receipt = stage / "brain.json"
+                Image.new("RGB", (3, 2), "blue").save(snapshot)
+                snapshot_receipt.write_text(
+                    json.dumps({"status": "rendered_candidate",
+                                "region_resolution": {"status": "selected"}}),
+                    encoding="utf-8")
+                return {
+                    "snapshot_png": str(snapshot),
+                    "receipt": str(snapshot_receipt),
+                    "renderer": {
+                        "status": "rendered_candidate",
+                        "region_resolution": {"status": "selected"},
+                        "region_mesh": {"acronym": "M1"},
+                        "processed_swc": {"sha256": "a" * 64},
+                        "worker_python": "fixture-python",
+                        "config_sha256": _sha256(config),
+                    },
+                }
+
+            plan = {
+                "vispa_config": str(config),
+                "vispa_config_sha256": _sha256(config),
+                "jobs_path": str(jobs),
+                "jobs_sha256": _sha256(jobs),
+                "output_root": str(root / "figures"),
+                "sample_id": "251637",
+                "requested": 1,
+                "jobs": [{"sample_id": "251637", "neuron_id": "001.swc",
+                          "neuron_folder": "001_R_M1",
+                          "output_dir": str(folder)}],
+            }
+            result = run_brain_view_products(plan, dry_run=False, renderer=render)
+            self.assertEqual(result["status"], "pass")
+            current = json.loads(receipt.read_text(encoding="utf-8"))[
+                "neurons"]["001.swc"]["current"]
+            self.assertEqual(set(current["outputs"]), {"Context"})
+            self.assertEqual(current["status"], "partial")
+            self.assertEqual(current["products"]["SWC3D"]["output"]["path"],
+                             str(folder / "brain.png"))
+            self.assertEqual(
+                current["products"]["SWC3D"]["renderer"]["region_mesh"]["acronym"],
+                "M1")
 
 if __name__ == "__main__":
     unittest.main()

@@ -511,13 +511,36 @@ class ConfigTests(unittest.TestCase):
             str(config["visual_toolkit"]["output_root"]),
             str(config["visual_toolkit"]["figure_output_root"]),
         }
-        self.assertEqual(config["config_version"], "1.0.12")
+        self.assertEqual(config["config_version"], "1.0.14")
         self.assertEqual(roots, {
             r"\\10.102.8.200\microscopy_data\fMOST\Vispa_outputs"})
         self.assertEqual(config["visual_toolkit"]["separate_plot_subfolder"], "plots")
+        self.assertEqual(config["visual_toolkit"]["filename_template"],
+                         "{sample}_{neuron}_{region_source}_{role}")
+        brain = config["sources"]["brain_view"]
+        self.assertTrue(str(brain["region_mesh_root"]).startswith("\\\\"))
+        self.assertTrue(str(brain["region_manifest"]).startswith("\\\\"))
+        self.assertEqual(brain["region_color"], [0.3, 0.7, 1.0])
         for key in ("root", "key", "hemisphere_mask"):
             self.assertTrue(str(config["sources"]["atlas"][key]).startswith("\\\\"))
         self.assertNotIn("ds00_registry", config)
+
+    def test_output_filename_template_is_compact_and_drops_swc_suffix(self):
+        from vispa.config import output_filename, validate_filename_template
+        self.assertEqual(
+            output_filename(
+                sample="252385", neuron="031.swc",
+                region_source="atlas_L_G", role="Soma"),
+            "252385_031_atlas_L_G_Soma")
+        self.assertEqual(
+            output_filename(
+                sample="251637", neuron="004",
+                region_source="atlas_R_PrCO", role="TrioPlot"),
+            "251637_004_atlas_R_PrCO_TrioPlot")
+        with self.assertRaisesRegex(ValueError, "requires sample"):
+            validate_filename_template("{neuron}_{role}")
+        with self.assertRaisesRegex(ValueError, "path-safe"):
+            validate_filename_template("{sample}/{neuron}_{role}")
 
     @staticmethod
     def _synthetic_correction_policy():

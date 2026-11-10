@@ -1,6 +1,6 @@
 """Tk controls for packaged, receipt-backed whole-animal review rendering.
 
-Version: 1.21.3 (local/unreleased)
+Version: 1.21.7 (local/unreleased)
 Last updated: 2026-11-08
 Change history: ../../CHANGELOG.md
 Status: candidate
@@ -70,6 +70,8 @@ def bulk_command(action: str, values: dict) -> list[str]:
         if values["source_receipt"].strip():
             receipt = Path(values["source_receipt"]).expanduser().resolve(strict=True)
             command += ["--source-receipt", str(receipt)]
+        if values.get("brain_view"):
+            command.append("--brain-view")
         command += ["--limit", "1"] if action == "prepare_one_preview" else ["--all"]
         if action == "prepare_one_preview":
             command.append("--dry-run")
@@ -139,7 +141,7 @@ class BulkReviewDialog:
         self._jobs_manual = False
         cache = Path(config["defaults"]["cache_root"]) / "swc_raw"
         jobs = (Path(config["defaults"]["cache_root"]) / "review_jobs" /
-                f"{sample or 'sample'}_review_v{__version__}_{self._config_sha}_jobs.json")
+                f"{sample or 'sample'}_review_flat_v{__version__}_{self._config_sha}_bv_jobs.json")
         defaults = {"sample": sample, "config": str(resolved), "csv": "",
                     "raw_roots": "", "source_receipt": "", "cache": str(cache),
                     "jobs": str(jobs),
@@ -171,7 +173,8 @@ class BulkReviewDialog:
         canvas.bind("<MouseWheel>", lambda event: canvas.yview_scroll(-1 if event.delta > 0 else 1, "units"))
         self.values["source"] = tk.StringVar(value="catalog")
         self.values["allow_download"] = tk.BooleanVar(value=False)
-        ttk.Label(form, text="One animal · four candidate review figures per neuron",
+        self.values["brain_view"] = tk.BooleanVar(value=True)
+        ttk.Label(form, text="One animal · four core review figures plus SWC Brain View",
                   style="Bulk.Title.TLabel").grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 8))
         self.region_labels = ()
         self.selected_regions = set()
@@ -230,6 +233,10 @@ class BulkReviewDialog:
         actions = ttk.Frame(form, style="Bulk.TFrame")
         actions.grid(row=5, column=0, columnspan=3, sticky="w", pady=8)
         self.buttons = []
+        ttk.Checkbutton(
+            actions, text="SWC Brain View shot", variable=self.values["brain_view"],
+            style="Bulk.TCheckbutton", command=self._review_options_changed
+        ).pack(side="left", padx=(0, 12))
         for label, action in (("Check one", "check_one"),
                               ("Run / resume all", "run_resume_all")):
             button = ttk.Button(actions, text=label, style="Bulk.TButton",
@@ -351,10 +358,18 @@ class BulkReviewDialog:
                                            ", ".join(selected[:2]) +
                                            (f" +{len(selected) - 2} more ▾" if len(selected) > 2 else " ▾")))
 
+    def _review_options_changed(self):
+        self._region_summary()
+
     def _default_jobs_path(self, sample, regions):
         suffix = ("" if not regions else "_" + hashlib.sha256(
             json.dumps(sorted(regions), ensure_ascii=False).encode("utf-8")).hexdigest()[:8])
-        return self._jobs_root / f"{sample or 'sample'}_review_flat_v{__version__}_{self._config_sha}{suffix}_jobs.json"
+        values = getattr(self, "values", {})
+        brain_view_var = values.get("brain_view")
+        brain_view = "_bv" if brain_view_var and brain_view_var.get() else ""
+        return self._jobs_root / (
+            f"{sample or 'sample'}_review_flat_v{__version__}_{self._config_sha}"
+            f"{brain_view}{suffix}_jobs.json")
 
     @staticmethod
     def _validate_jobs(jobs: Path, values: dict, *, require_exists=False,
@@ -376,6 +391,11 @@ class BulkReviewDialog:
         frozen_regions = sorted((payload.get("region_filter") or {}).get("labels") or [])
         if frozen_regions != sorted(values.get("regions") or []):
             raise ValueError("Prepared jobs use another atlas region selection")
+        frozen_roles = payload.get("review_roles", [
+            "Soma", "Context", "Sagittal", "TrioPlot"])
+        requested_brain_view = bool(values.get("brain_view"))
+        if ("SWC3D" in frozen_roles) != requested_brain_view:
+            raise ValueError("Prepared jobs use another SWC Brain View selection")
         if (payload.get("figure_output_root") and
                 Path(payload["figure_output_root"]).resolve() != Path(values["output"]).resolve()):
             raise ValueError("Prepared jobs use another figure output root")

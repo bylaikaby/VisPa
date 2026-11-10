@@ -1,6 +1,6 @@
 """Load explicit, portable VisPa dataset configuration.
 
-Version: 1.21.6 (local/unreleased)
+Version: 1.21.7 (local/unreleased)
 Last updated: 2026-11-09
 Change history: ../../CHANGELOG.md
 2026-11-08: Validate one safe optional plot subfolder; absent key preserves
@@ -13,6 +13,8 @@ and expose plot dimensions in flat-key Settings fields.
 protect versioned factory snapshots from active-profile saves.
 2026-11-08: Expose cross stroke and common figure typography/scale-bar style;
 default missing auto_load to true for packaged startup.
+2026-11-09: Add one validated filename template and materialize it in the
+saved profile so all render entry points share the same output names.
 2026-11-08: Reduce review crosshair to 120 display pixels, expose actual
 crosshair length and optional centre box through validated settings.
 2026-11-03: Preserve and resolve an explicit top-level DS00 registry path.
@@ -298,6 +300,58 @@ def validate_plot_subfolder(value) -> str:
     return value
 
 
+FILENAME_TEMPLATE_DEFAULT = "{sample}_{neuron}_{region_source}_{role}"
+FILENAME_TEMPLATE_FIELDS = {"sample", "neuron", "region_source", "role", "timestamp"}
+
+
+def validate_filename_template(value) -> str:
+    """Validate one safe output filename template."""
+    if value is None:
+        return FILENAME_TEMPLATE_DEFAULT
+    if not isinstance(value, str) or value != value.strip() or not value:
+        raise ValueError("visual_toolkit.filename_template must be a nonempty trimmed string")
+    if len(value) > 200:
+        raise ValueError("visual_toolkit.filename_template is too long")
+    values = {
+        "sample": "252385",
+        "neuron": "031",
+        "region_source": "atlas_L_G",
+        "role": "TrioPlot",
+        "timestamp": "20261109-120000",
+    }
+    try:
+        rendered = value.format(**values)
+    except (KeyError, ValueError) as exc:
+        raise ValueError(
+            "visual_toolkit.filename_template contains an unknown placeholder") from exc
+    if not {"sample", "neuron", "role"}.issubset(
+            {field for field in FILENAME_TEMPLATE_FIELDS if "{" + field + "}" in value}):
+        raise ValueError("visual_toolkit.filename_template requires sample, neuron and role")
+    if any(token in rendered for token in ("/", "\\", "<", ">", ":", '"', "|", "?", "*")):
+        raise ValueError("visual_toolkit.filename_template must render one path-safe filename")
+    if rendered.startswith(".") or rendered.endswith((".", " ")):
+        raise ValueError("visual_toolkit.filename_template has an unsafe filename boundary")
+    return value
+
+
+def output_filename(*, sample, neuron, region_source, role, template=None,
+                    timestamp="") -> str:
+    """Render one canonical filename stem without an extension."""
+    template = validate_filename_template(template)
+    sample = str(sample)
+    neuron = str(neuron)
+    if neuron.lower().endswith(".swc"):
+        neuron = neuron[:-4]
+    rendered = template.format(
+        sample=sample,
+        neuron=neuron,
+        region_source=str(region_source or "atlas_unavailable"),
+        role=str(role),
+        timestamp=str(timestamp or ""),
+    )
+    return rendered.rstrip("._- ")
+
+
 def _relative_under(value, root, key):
     """Resolve a declared child of one editable source root."""
     if value is None:
@@ -567,6 +621,8 @@ def load(path: str | Path | None = None, base_dir: str | Path | None = None) -> 
                       "figure_output_root": _resolve(ui.get("figure_output_root"), configured_base),
                       "separate_plot_subfolder": validate_plot_subfolder(
                           ui.get("separate_plot_subfolder", "")),
+                      "filename_template": validate_filename_template(
+                          ui.get("filename_template", FILENAME_TEMPLATE_DEFAULT)),
                       "auto_reload": bool(ui.get("auto_reload", True)),
                       "worker_python": _resolve(ui.get("worker_python"), configured_base),
                       "default_sample": ui.get("default_sample", ""),
@@ -1181,6 +1237,7 @@ def _validate_config_mapping(config):
     if not isinstance(visual, Mapping):
         raise ValueError("visual_toolkit must be a mapping")
     validate_plot_subfolder(visual.get("separate_plot_subfolder", ""))
+    validate_filename_template(visual.get("filename_template", FILENAME_TEMPLATE_DEFAULT))
     if not isinstance(visual.get("enforce_render_config", False), bool):
         raise ValueError("visual_toolkit.enforce_render_config must be a boolean")
     scoped = visual.get("settings", {})
@@ -1561,6 +1618,8 @@ FIELDS = (
     ("Data folders", "visual_toolkit.figure_output_root", "GUI figure output folder", "dir"),
     ("Data folders", "visual_toolkit.separate_plot_subfolder",
      "Single-plot subfolder (blank keeps legacy root layout)", "plot_subfolder"),
+    ("Data folders", "visual_toolkit.filename_template",
+     "Output filename template", "text"),
     ("Sources", "sources.neuron_catalog.host", "Neuron catalog address", "text"),
     ("Sources", "sources.neuron_catalog.mode", "Neuron catalog source", "catalog_mode"),
     ("Sources", "sources.neuron_catalog.path", "Neuron catalog CSV file (CSV mode)", "file"),

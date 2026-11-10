@@ -1,9 +1,11 @@
 """
 vispa.py - Macaque Brain Hybrid-Resolution Visualization Toolkit
 
-Version: 1.21.6 (local/unreleased)
+Version: 1.21.7 (local/unreleased)
 Last updated: 2026-11-09
 Change history: ../../../CHANGELOG.md
+2026-11-09: Replace verbose labeled-region filename segments with short region
+and bracket-free atlas_<region> source tokens.
 2026-11-08: Fix optional-region volume export without referencing plot-only state.
 2026-11-08: Add a config-authorized empty Context panel for declared missing
 5 µm sources; preserve three-panel review without synthetic image pixels.
@@ -163,7 +165,7 @@ def configure_data_sources(path=None, config=None):
     """Select explicit source roots and transport settings for this process."""
     global LOW_RES_SHARE_BY_SAMPLE, HTTP_HOST, HTTP_PATH, SSH_HOST, SSH_PORT, SSH_USER, SSH_PASS, SSH_REMOTE_BASE, SSH_SAMPLE_ID, ACTIVE_CONFIG
     global SAMPLE_PATHS, SHARE_ROOT, DATASET_MANIFEST, EXPECTED_GEOMETRY
-    global ACTIVE_CONFIG_SHA256
+    global ACTIVE_CONFIG_SHA256, OUTPUT_FILENAME_TEMPLATE
     if config is None:
         from ..config import load
         config = load(path)
@@ -253,6 +255,8 @@ def configure_data_sources(path=None, config=None):
     _sync_review_setting_constants()
     ACTIVE_CONFIG = config
     ACTIVE_CONFIG_SHA256 = selected_hash
+    OUTPUT_FILENAME_TEMPLATE = ui.get(
+        'filename_template', '{sample}_{neuron}_{region_source}_{role}')
     EXPECTED_GEOMETRY = expected_geometry
     LOW_RES_SHARE_BY_SAMPLE = low_res_paths
     HTTP_HOST, HTTP_PATH = http_host, http_path
@@ -269,6 +273,7 @@ HTTP_HOST = HTTP_PATH = None
 SSH_HOST = SSH_PORT = SSH_USER = SSH_PASS = SSH_REMOTE_BASE = SSH_SAMPLE_ID = None
 ACTIVE_CONFIG = None
 ACTIVE_CONFIG_SHA256 = None
+OUTPUT_FILENAME_TEMPLATE = "{sample}_{neuron}_{region_source}_{role}"
 RESOLUTION_LOW = [5.0, 5.0, 3.0]
 
 # Shared pure-Python defaults, schema, and validators live in vispa.config.
@@ -278,6 +283,7 @@ from ..config import (REVIEW_SETTINGS, _DEFAULT_REVIEW_SETTINGS, _SETTING_SPECS,
                      review_settings_snapshot, review_settings_schema,
                      apply_setting_overrides, resolve_widefield_parameters,
                      _output_name, _auto_scale_bar_um, _stamp,
+                     output_filename, validate_filename_template,
                      TARGET_MARKER_COLOR, WIDEFIELD_DEFAULT_PARAMETERS,
                      LEGACY_SUFFIX_NAMES, SCALE_BAR_CANDIDATES_UM,
                      _sync_review_setting_constants, _parse_setting_value,
@@ -364,6 +370,7 @@ class VisPa:
                 source data again for a full render.
         """
         self.sample_id = sample_id = str(sample_id)
+        self.filename_template = OUTPUT_FILENAME_TEMPLATE
         if not isinstance(force_reprocess, bool):
             raise ValueError("force_reprocess must be a boolean")
         self.force_reprocess = force_reprocess
@@ -913,6 +920,45 @@ class VisPa:
         import re
         return re.sub(r'[<>:"/\\|?*\x00-\x1f]', '-', str(name)).rstrip(' .')
 
+    @staticmethod
+    def _filename_region_source(soma_region):
+        """Return short region and bracket-free atlas source filename tokens."""
+        import re
+        from ..data_input_adaptor import atlas_source_token
+        text = str(soma_region or "").strip()
+        portal_match = re.search(
+            r"(?:^|\|)\s*Portal:\s*(.*?)(?=\s*\|\s*Atlas:|$)",
+            text, flags=re.IGNORECASE)
+        atlas_match = re.search(
+            r"(?:^|\|)\s*Atlas:\s*(.*?)(?=\s*[·|]|$)",
+            text, flags=re.IGNORECASE)
+        selected_match = re.match(
+            r"^(checked_region|ion_atlas|portal_region|nmt_portal)\s*=\s*([^|·]+)",
+            text, flags=re.IGNORECASE)
+        atlas_value = atlas_match.group(1) if atlas_match else (
+            selected_match.group(2) if selected_match else text)
+        source_match = re.search(r"·\s*(atlas_[A-Za-z0-9_]+)", text)
+        source_value = source_match.group(1) if source_match else atlas_value
+        source_value = re.sub(r"^atlas_", "", str(source_value), flags=re.IGNORECASE)
+        side_match = re.match(r"^(Left|Right|L|R)\b[\s_-]*",
+                              str(atlas_value).strip(), flags=re.IGNORECASE)
+        side_token = None
+        if side_match:
+            side = side_match.group(1).casefold()
+            side_token = "L" if side in {"left", "l"} else "R"
+        region_value = re.sub(r"^(CL|CR)_", "", str(source_value), flags=re.IGNORECASE)
+        region_value = re.sub(r"^(Left|Right|L|R)[-_ ]+", "", region_value,
+                              flags=re.IGNORECASE)
+        region_value = re.sub(r"_\d+\Z", "", region_value.strip())
+        region_value = re.sub(r"[^A-Za-z0-9]+", "_", region_value).strip("_")
+        if not region_value or region_value.casefold() == "unavailable":
+            return "atlas_unavailable"
+        return (f"atlas_{side_token}_{region_value}" if side_token
+                else f"atlas_{region_value}")
+
+    def _output_template(self):
+        return getattr(self, "filename_template", OUTPUT_FILENAME_TEMPLATE)
+
     def _matching_export_acquisition(self, shape, origin, spacing, acquisition=None):
         """Bind provenance to matching sample/grid geometry, never to a suffix."""
         def matches(record):
@@ -982,10 +1028,13 @@ class VisPa:
         # Build filename with region (coordinates NOT in filename)
         # Sanitize region name to prevent path issues
         if soma_region:
-            safe_region = self._sanitize_filename(soma_region)
-            filename = f"{self.sample_id}_{neuron_id}_{safe_region}_{_output_name(suffix)}"
+            source_token = self._filename_region_source(soma_region)
         else:
-            filename = f"{self.sample_id}_{neuron_id}_{_output_name(suffix)}"
+            source_token = "atlas_unavailable"
+        filename = output_filename(
+            sample=self.sample_id, neuron=neuron_id,
+            region_source=source_token, role=_output_name(suffix),
+            template=self._output_template())
 
         ext = ".nii.gz" if volume.ndim == 3 else ".tif"
         full_path = os.path.join(target_dir, filename + ext)
@@ -1122,7 +1171,7 @@ class VisPa:
     @staticmethod
     def _region_title_value(soma_region, nmt_corrected=None):
         """Format portal-derived and optional corrected NMT region values."""
-        from ..data_input_adaptor import display_region_name
+        from ..data_input_adaptor import atlas_source_token, display_region_name
         text = str(soma_region or "").strip()
         selected_match = re.match(
             r"^(checked_region|ion_atlas|portal_region|nmt_portal)\s*=\s*([^|·]+)",
@@ -1131,24 +1180,26 @@ class VisPa:
         if selected_match:
             field = selected_match.group(1).lower()
             value = re.sub(r"\s+", " ", selected_match.group(2)).strip() or "unavailable"
-            if field == 'nmt_portal':
-                value = display_region_name(value)
-            pieces.append(f"{field}={value}")
+            if field in {"ion_atlas", "nmt_portal"}:
+                pieces.append(atlas_source_token(value))
+            else:
+                pieces.append(f"{field}={value}")
         portal_match = re.search(
             r"(?:^|\|)\s*Portal:\s*(.*?)(?=\s*\|\s*Atlas:|$)",
             text, flags=re.IGNORECASE)
         atlas_match = re.search(
-            r"(?:^|\|)\s*Atlas:\s*(.*)$", text, flags=re.IGNORECASE)
+            r"(?:^|\|)\s*Atlas:\s*(.*?)(?=\s*·|$)",
+            text, flags=re.IGNORECASE)
         if portal_match and atlas_match:
             portal = re.sub(r"\s+", " ", portal_match.group(1)).strip() or "unavailable"
             atlas = re.sub(r"\s+", " ", atlas_match.group(1)).strip() or "unavailable"
             if atlas.lower() == "unavailable":
-                pieces.append("nmt_portal=unavailable")
+                pieces.append("atlas_unavailable")
                 pieces.append(f"portal_region={portal}")
             else:
-                pieces.append(f"nmt_portal={display_region_name(atlas)}")
+                pieces.append(atlas_source_token(atlas))
         elif not selected_match:
-            pieces.append(f"nmt_portal={re.sub(r'\s+', ' ', text).strip() or 'unavailable'}")
+            pieces.append(atlas_source_token(text) if text else "atlas_unavailable")
         corrected = re.sub(
             r"^(?:nmt_corrected\s*[=:]\s*)", "",
             str(nmt_corrected or "").strip(), flags=re.IGNORECASE)
@@ -1335,10 +1386,13 @@ class VisPa:
         ax.set_title(title, color='white',
                      fontsize=REVIEW_SETTINGS['figure']['panel_title_fontsize'])
         self._draw_role_legend(fig, ax, panel.get('legend') or [])
-        safe_region = self._sanitize_filename(soma_region) if soma_region else ""
-        region_part = f"_{safe_region}" if safe_region else ""
-        save_path = os.path.join(target_dir, f"{self.sample_id}_{neuron_id}{region_part}"
-                                             f"_{_stamp()}_{_output_name(suffix)}_Plot.png")
+        source_token = (self._filename_region_source(soma_region)
+                        if soma_region else "atlas_unavailable")
+        filename = output_filename(
+            sample=self.sample_id, neuron=neuron_id,
+            region_source=source_token, role=f"{_output_name(suffix)}_Plot",
+            template=self._output_template())
+        save_path = os.path.join(target_dir, f"{filename}.png")
         fig.savefig(save_path, bbox_inches='tight', pad_inches=0.1, facecolor='black',
                     dpi=self.PANEL_DPI)
         plt.close(fig)
@@ -1624,12 +1678,12 @@ class VisPa:
         # Sanitize region name to prevent path issues
         review_name = _output_name(suffix)
         stamp = _stamp()
-        if soma_region:
-            safe_region = self._sanitize_filename(soma_region)
-            plot_name = (f"{self.sample_id}_{neuron_id}_{safe_region}_{stamp}"
-                         f"_{review_name}_Plot.png")
-        else:
-            plot_name = f"{self.sample_id}_{neuron_id}_{stamp}_{review_name}_Plot.png"
+        source_token = (self._filename_region_source(soma_region)
+                        if soma_region else "atlas_unavailable")
+        plot_name = output_filename(
+            sample=self.sample_id, neuron=neuron_id,
+            region_source=source_token, role=f"{review_name}_Plot",
+            template=self._output_template()) + ".png"
 
         save_path = os.path.join(target_dir, plot_name)
 
@@ -1775,11 +1829,15 @@ class VisPa:
                 if min(ax.get_tightbbox(renderer).y0 for ax in data_axes) - legend_ax.get_tightbbox(renderer).y1 < clearance - 1e-6:
                     plt.close(fig)
                     raise RuntimeError("Could not separate labeled review axes from the shared legend")
-        safe_region = self._sanitize_filename(soma_region) if soma_region else ""
-        region_part = f"_{safe_region}" if safe_region else ""
+        source_token = (self._filename_region_source(soma_region)
+                        if soma_region else "atlas_unavailable")
+        filename = output_filename(
+            sample=self.sample_id, neuron=neuron_id,
+            region_source=source_token, role=suffix,
+            template=self._output_template())
         save_path = os.path.join(
             target_dir,
-            f"{self.sample_id}_{neuron_id}{region_part}_{_stamp()}_{suffix}.png")
+            f"{filename}.png")
         fig.savefig(save_path, bbox_inches='tight', pad_inches=0.15, facecolor='black',
                     dpi=dpi or self.TRIO_DPI)
         plt.close(fig)

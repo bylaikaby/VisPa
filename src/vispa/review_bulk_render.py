@@ -1,6 +1,6 @@
 """Render one VisPa review set per published region/FNT job.
 
-Version: 1.21.6 (local/unreleased)
+Version: 1.21.7 (local/unreleased)
 Last updated: 2026-11-09
 Change history: ../CHANGELOG.md
 Status: candidate
@@ -22,11 +22,27 @@ import os
 from pathlib import Path
 import re
 import tempfile
+from uuid import uuid4
 
 
 _NEURON = re.compile(r"[A-Za-z0-9_-]+\.swc\Z", re.IGNORECASE)
 _TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,80}\Z")
 _RUN_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,79}\Z")
+BASE_REVIEW_ROLES = ("Soma", "Context", "Sagittal", "TrioPlot")
+SWC_BRAIN_VIEW_ROLE = "SWC3D"
+REVIEW_ROLES = (*BASE_REVIEW_ROLES, SWC_BRAIN_VIEW_ROLE)
+
+
+def normalize_review_roles(roles=None, *, default=BASE_REVIEW_ROLES) -> list[str]:
+    """Return one ordered, unique plot-role selection."""
+    selected = set(default if roles is None else roles)
+    unknown = selected - set(REVIEW_ROLES)
+    if unknown:
+        raise ValueError("Unknown review role(s): " + ", ".join(sorted(unknown)))
+    ordered = [role for role in REVIEW_ROLES if role in selected]
+    if not ordered:
+        raise ValueError("At least one review plot role is required")
+    return ordered
 
 
 def validate_run_name(name: str) -> str:
@@ -52,6 +68,7 @@ def neuron_folder_name(sample_id: str, neuron_id: str, region: str | None,
     if not isinstance(neuron_id, str) or not _NEURON.fullmatch(neuron_id):
         raise ValueError("neuron_id must be a simple SWC filename")
     label = region.strip() if isinstance(region, str) and region.strip() else "Unassigned"
+    label = re.sub(r"^(Left|Right)\s+", "", label, flags=re.IGNORECASE)
     # Atlas labels commonly append a numeric atlas ID; keep intrinsic digits.
     label = re.sub(r"_[0-9]+\Z", "", label)
     label = label or "Unassigned"
@@ -83,8 +100,20 @@ def _complete_existing_outputs(plan: dict) -> dict[str, str]:
     for folder in sample_root.iterdir():
         if folder.is_dir():
             by_stem.setdefault(folder.name.split("_", 1)[0], []).append(folder)
-    patterns = ("*_TriPlot.png", "*_Soma_Plot.png", "*_Context_Plot.png",
-                "*_Sagittal_Plot.png", "*_Soma.nii.gz")
+    roles = set(plan.get("review_roles") or BASE_REVIEW_ROLES)
+    patterns = []
+    if "Soma" in roles:
+        patterns.append("*_Soma_Plot.png")
+    if "Context" in roles:
+        patterns.append("*_Context_Plot.png")
+    if "Sagittal" in roles:
+        patterns.append("*_Sagittal_Plot.png")
+    if "TrioPlot" in roles:
+        patterns.append("*_TriPlot.png")
+    if {"Soma", "TrioPlot"} & roles:
+        patterns.append("*_Soma.nii.gz")
+    if SWC_BRAIN_VIEW_ROLE in roles:
+        patterns.append("*_3D_SWC.png")
     complete = {}
     for job in plan["jobs"]:
         stem = job["neuron_id"][:-4]
@@ -287,7 +316,8 @@ def _finite_xyz(value, label: str) -> list[float]:
     return coords
 
 
-def load_review_jobs(jobs_path: Path, output_root: Path, limit: int | None, all_jobs: bool) -> dict:
+def load_review_jobs(jobs_path: Path, output_root: Path, limit: int | None,
+                     all_jobs: bool, *, include_unready: bool = False) -> dict:
     jobs_path = Path(jobs_path).resolve(strict=True)
     payload = json.loads(jobs_path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict) or payload.get("schema") != "vispa.review_bulk.v1":
@@ -307,13 +337,21 @@ def load_review_jobs(jobs_path: Path, output_root: Path, limit: int | None, all_
     layout = payload.get("output_layout", "legacy")
     if layout not in {"legacy", "sample_neurons", "sample_neurons_flat"}:
         raise ValueError("output_layout must be legacy, sample_neurons or sample_neurons_flat")
+    requested_roles = payload.get("review_roles", list(BASE_REVIEW_ROLES))
+    if (not isinstance(requested_roles, list) or
+            not requested_roles or len(requested_roles) != len(set(requested_roles)) or
+            any(role not in REVIEW_ROLES for role in requested_roles)):
+        raise ValueError(
+            "review_roles must be a nonempty subset of Soma, Context, Sagittal, "
+            "TrioPlot and SWC3D")
+    review_roles = tuple(role for role in REVIEW_ROLES if role in requested_roles)
     config_hash = _sha256(config_path)
     if payload.get("vispa_config_sha256") and payload["vispa_config_sha256"] != config_hash:
         raise ValueError("Prepared VisPa config hash differs from current config")
     output_root = Path(output_root).expanduser().resolve()
     if output_root == jobs_path.parent or jobs_path.parent in output_root.parents:
         raise ValueError("Output root must be separate from the jobs file")
-    ready, skipped = [], []
+    ready, unready, skipped = [], [], []
     region_filter = payload.get("region_filter")
     if region_filter is not None:
         if (not isinstance(region_filter, dict) or
@@ -345,6 +383,7 @@ def load_review_jobs(jobs_path: Path, output_root: Path, limit: int | None, all_
             ready_job = {
                 "sample_id": sample,
                 "neuron_id": neuron,
+                "review_roles": list(review_roles),
                 "soma_region": entry.get("soma_region"),
                 "soma_xyz": _finite_xyz(entry.get("soma_xyz"), f"{neuron} soma_xyz"),
                 "soma_units": entry.get("soma_units"),
@@ -372,19 +411,36 @@ def load_review_jobs(jobs_path: Path, output_root: Path, limit: int | None, all_
                     ready_job[key] = entry[key]
             ready.append(ready_job)
         else:
-            skipped.append({"sample_id": sample, "neuron_id": neuron,
-                            "soma_error": entry.get("soma_error")})
+            unavailable = {
+                "sample_id": sample,
+                "neuron_id": neuron,
+                "review_roles": list(review_roles),
+                "soma_region": entry.get("soma_region"),
+                "soma_region_entries": entry.get("soma_region_entries") or {},
+                "soma_region_source": entry.get("soma_region_source"),
+                "vispa_region": entry.get("vispa_region"),
+                "neuron_folder": entry.get("neuron_folder"),
+                "render_ready": False,
+                "soma_error": entry.get("soma_error"),
+            }
+            if include_unready:
+                unready.append(unavailable)
+            else:
+                skipped.append({"sample_id": sample, "neuron_id": neuron,
+                                "soma_error": entry.get("soma_error")})
     ready.sort(key=lambda item: item["neuron_id"])
+    unready.sort(key=lambda item: item["neuron_id"])
     skipped.sort(key=lambda item: item["neuron_id"])
     allow_all = payload.get("allow_all")
+    candidates = ready + unready if include_unready else ready
     if all_jobs:
         if limit is not None or allow_all is not True:
             raise ValueError("--all requires allow_all=true in the jobs file and cannot use --limit")
-        selected = ready
+        selected = candidates
     elif limit is None or isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
         raise ValueError("Use a positive --limit for bounded work, or explicitly opt in to --all")
     else:
-        selected = ready[:limit]
+        selected = candidates[:limit]
     if not selected:
         raise ValueError("No render-ready neurons are available for this limit")
     jobs_hash = _sha256(jobs_path)
@@ -419,6 +475,7 @@ def load_review_jobs(jobs_path: Path, output_root: Path, limit: int | None, all_
         "vispa_config": str(config_path),
         "vispa_config_sha256": config_hash,
         "output_root": str(output_root),
+        "review_roles": list(review_roles),
         "sample_id": sample,
         "requested": len(selected),
         "all_jobs": all_jobs,
@@ -429,6 +486,7 @@ def load_review_jobs(jobs_path: Path, output_root: Path, limit: int | None, all_
         "vispa_region_lookup": payload.get("vispa_region_lookup"),
         "region_filter": region_filter,
         "skipped_not_ready": skipped,
+        "included_unready": unready if include_unready else [],
         "jobs": selected,
         "anatomical_acceptance": "not established",
     }
@@ -501,16 +559,22 @@ def render_review_neuron(job: dict, output_dir: Path, config_path: Path) -> dict
         make_review_figure=True)
     side = int(round(float(request.soma_cubes) * BLOCK_SIZE_PIXELS[0]))
     region = _region_display_value(job)
+    review_roles = set(job.get("review_roles") or BASE_REVIEW_ROLES)
+    need_soma = bool({"Soma", "TrioPlot"} & review_roles)
+    need_context = bool({"Context", "TrioPlot"} & review_roles)
+    need_sagittal = bool({"Sagittal", "TrioPlot"} & review_roles)
     tool = VisPa(job["sample_id"])
     panels, errors = {}, []
     context_availability = {"status": "source_expected"}
+    brain_view_receipt = None
     try:
         volume = origin = resolution = None
-        try:
-            volume, origin, resolution = tool.get_high_res_soma_window(
-                request.soma_xyz, window_px=(side, side))
-        except Exception as exc:
-            errors.append(f"Soma: {exc}")
+        if need_soma:
+            try:
+                volume, origin, resolution = tool.get_high_res_soma_window(
+                    request.soma_xyz, window_px=(side, side))
+            except Exception as exc:
+                errors.append(f"Soma: {exc}")
         if volume is not None:
             try:
                 tool.export_data(volume, origin, resolution, job["neuron_id"],
@@ -518,62 +582,98 @@ def render_review_neuron(job: dict, output_dir: Path, config_path: Path) -> dict
                                  soma_coords=request.soma_xyz, output_dir=str(output_dir))
             except Exception as exc:
                 errors.append(f"Soma NIfTI: {exc}")
+            if "Soma" in review_roles:
+                try:
+                    panels["Soma"] = tool.plot_soma_block(
+                        volume, origin, resolution, request.soma_xyz, job["neuron_id"],
+                        soma_region=region, output_dir=str(output_dir))
+                except Exception as exc:
+                    errors.append(f"Soma plot: {exc}")
+        if need_context:
             try:
-                panels["Soma"] = tool.plot_soma_block(
-                    volume, origin, resolution, request.soma_xyz, job["neuron_id"],
-                    soma_region=region, output_dir=str(output_dir))
+                tree = (read_swc(raw_path) if raw_path is not None else
+                        load_raw_neuron(config, job["sample_id"], job["neuron_id"],
+                                        allow_download=False))
+                if tree is None:
+                    raise ValueError("raw SWC was not found")
+                if context_unavailable_authorized(config, job["sample_id"]):
+                    if job.get("context_source_status") != "missing_declared_5um_source":
+                        raise ValueError("Frozen Context availability differs from saved config")
+                    panels["Context"] = tool.plot_unavailable_context(
+                        job["neuron_id"], soma_region=region,
+                        soma_coords=request.soma_xyz, output_dir=str(output_dir),
+                        reason="5 µm source missing")
+                    context_availability = {
+                        "status": "intentionally_unavailable",
+                        "source_status": "missing_declared_5um_source",
+                        "reason": "No declared 5 µm Context source for this sample"}
+                else:
+                    wide, wide_origin, wide_resolution = tool.get_low_res_widefield(
+                        request.soma_xyz, width_um=request.width_um,
+                        height_um=request.height_um, depth_um=request.depth_um)
+                    panels["Context"] = tool.plot_widefield_context(
+                        wide, wide_origin, wide_resolution, request.soma_xyz,
+                        job["neuron_id"], swc_tree=tree, soma_region=region,
+                        output_dir=str(output_dir))
+                    context_availability = {"status": "source_rendered"}
             except Exception as exc:
-                errors.append(f"Soma plot: {exc}")
-        try:
-            tree = (read_swc(raw_path) if raw_path is not None else
-                    load_raw_neuron(config, job["sample_id"], job["neuron_id"], allow_download=False))
-            if tree is None:
-                raise ValueError("raw SWC was not found")
-            if context_unavailable_authorized(config, job["sample_id"]):
-                if job.get("context_source_status") != "missing_declared_5um_source":
-                    raise ValueError("Frozen Context availability differs from saved config")
-                panels["Context"] = tool.plot_unavailable_context(
-                    job["neuron_id"], soma_region=region, soma_coords=request.soma_xyz,
-                    output_dir=str(output_dir), reason="5 µm source missing")
-                context_availability = {"status": "intentionally_unavailable",
-                                        "source_status": "missing_declared_5um_source",
-                                        "reason": "No declared 5 µm Context source for this sample"}
+                errors.append(f"Context: {exc}")
+        if need_sagittal:
+            try:
+                sagittal_raw_path = raw_path
+                if sagittal_raw_path is None:
+                    from vispa.data_input_adaptor import resolve_declared_raw_swc
+                    declared_root = (config.get("sources") or {}).get("legacy_raw_swc_root")
+                    if declared_root:
+                        sagittal_raw_path = resolve_declared_raw_swc(
+                            declared_root, job["sample_id"], job["neuron_id"])
+                panels["Sagittal"] = tool.render_sagittal_context_from_ds(
+                    job["neuron_id"], request.soma_xyz, output_dir=str(output_dir),
+                    soma_region=region, swc_path=sagittal_raw_path)["panel"]
+            except Exception as exc:
+                errors.append(f"Sagittal: {exc}")
+        if "TrioPlot" in review_roles:
+            if all(isinstance(panels.get(role), dict)
+                   for role in ("Soma", "Context", "Sagittal")):
+                try:
+                    panels["TrioPlot"] = tool.plot_tri_plot(
+                        [panels["Soma"], panels["Context"], panels["Sagittal"]],
+                        job["neuron_id"], output_dir=str(output_dir), soma_region=region,
+                        soma_coords=list(request.soma_xyz), legend=False)
+                except Exception as exc:
+                    errors.append(f"TrioPlot: {exc}")
             else:
-                wide, wide_origin, wide_resolution = tool.get_low_res_widefield(
-                    request.soma_xyz, width_um=request.width_um,
-                    height_um=request.height_um, depth_um=request.depth_um)
-                panels["Context"] = tool.plot_widefield_context(
-                    wide, wide_origin, wide_resolution, request.soma_xyz, job["neuron_id"],
-                    swc_tree=tree, soma_region=region, output_dir=str(output_dir))
-                context_availability = {"status": "source_rendered"}
-        except Exception as exc:
-            errors.append(f"Context: {exc}")
-        try:
-            sagittal_raw_path = raw_path
-            if sagittal_raw_path is None:
-                from vispa.data_input_adaptor import resolve_declared_raw_swc
-                declared_root = (config.get("sources") or {}).get("legacy_raw_swc_root")
-                if declared_root:
-                    sagittal_raw_path = resolve_declared_raw_swc(
-                        declared_root, job["sample_id"], job["neuron_id"])
-            panels["Sagittal"] = tool.render_sagittal_context_from_ds(
-                job["neuron_id"], request.soma_xyz, output_dir=str(output_dir),
-                soma_region=region, swc_path=sagittal_raw_path)["panel"]
-        except Exception as exc:
-            errors.append(f"Sagittal: {exc}")
-        if all(isinstance(panels.get(role), dict) for role in ("Soma", "Context", "Sagittal")):
+                missing = [role for role in ("Soma", "Context", "Sagittal")
+                           if role not in panels]
+                errors.append(
+                    "TrioPlot: requires Soma, Context and Sagittal; missing "
+                    + ", ".join(missing))
+        if SWC_BRAIN_VIEW_ROLE in review_roles:
             try:
-                panels["TrioPlot"] = tool.plot_tri_plot(
-                    [panels["Soma"], panels["Context"], panels["Sagittal"]],
-                    job["neuron_id"], output_dir=str(output_dir), soma_region=region,
-                    soma_coords=list(request.soma_xyz), legend=False)
+                from vispa.renderers.swc_brain_view import render_configured_snapshot
+                entries = job.get("soma_region_entries") or {}
+                portal_region = (
+                    entries.get("portal_region") if isinstance(entries, dict) else None
+                ) or job.get("soma_region") or ""
+                from vispa.config import output_filename
+                region_source = tool._filename_region_source(region)
+                snapshot = output_dir / (
+                    output_filename(
+                        sample=job["sample_id"], neuron=job["neuron_id"],
+                        region_source=region_source, role=SWC_BRAIN_VIEW_ROLE,
+                        template=config.get("visual_toolkit", {}).get(
+                            "filename_template")) + ".png")
+                brain_view_receipt = render_configured_snapshot(
+                    job["sample_id"], job["neuron_id"], snapshot,
+                    portal_region=str(portal_region), config_path=config_path)
+                if brain_view_receipt.get("status") != "rendered_candidate":
+                    raise RuntimeError("SWC Brain View did not report rendered_candidate")
+                panels[SWC_BRAIN_VIEW_ROLE] = str(snapshot)
             except Exception as exc:
-                errors.append(f"TrioPlot: {exc}")
-        elif "TrioPlot" not in errors:
-            missing = [role for role in ("Soma", "Context", "Sagittal") if role not in panels]
-            errors.append("TrioPlot: requires Soma, Context and Sagittal; missing " + ", ".join(missing))
+                errors.append(f"SWC Brain View: {exc}")
     finally:
         tool.close()
+    panels = {role: panel for role, panel in panels.items() if role in review_roles}
     outputs = {}
     for role, panel in panels.items():
         if isinstance(panel, dict):
@@ -584,11 +684,192 @@ def render_review_neuron(job: dict, output_dir: Path, config_path: Path) -> dict
         raise ValueError("Configured raw SWC changed during rendering")
     return {"outputs": outputs, "errors": errors,
             "role_availability": {"Context": context_availability},
+            "brain_view_receipt": (
+                {key: brain_view_receipt.get(key) for key in
+                 ("status", "receipt", "region_resolution", "worker_python")}
+                if isinstance(brain_view_receipt, dict) else None),
             "raw_swc_source_equivalence": "verified by hash" if raw_path is not None else "unknown"}
 
 
-def _status_for(outputs: dict, errors: list) -> str:
-    required = {"Soma", "Context", "Sagittal", "TrioPlot"}
+def render_swc3d_product(job: dict, output_dir: Path, config_path: Path) -> dict:
+    """Render only the SWC Brain View product for an existing review folder."""
+    from vispa.config import load, output_filename
+    from vispa.renderers.microscopy_panels import VisPa
+    from vispa.renderers.swc_brain_view import render_configured_snapshot
+
+    config = load(config_path)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    entries = job.get("soma_region_entries") or {}
+    portal_region = (
+        entries.get("portal_region") if isinstance(entries, dict) else None
+    ) or job.get("soma_region") or ""
+    region_source = VisPa._filename_region_source(_region_display_value(job))
+    snapshot = output_dir / (
+        output_filename(
+            sample=job["sample_id"], neuron=job["neuron_id"],
+            region_source=region_source, role=SWC_BRAIN_VIEW_ROLE,
+            template=config.get("visual_toolkit", {}).get("filename_template"))
+        + ".png")
+    receipt = render_configured_snapshot(
+        job["sample_id"], job["neuron_id"], snapshot,
+        portal_region=str(portal_region), config_path=config_path)
+    if receipt.get("status") != "rendered_candidate":
+        raise RuntimeError("SWC Brain View did not report rendered_candidate")
+    return {
+        "status": "rendered_candidate",
+        "snapshot_png": str(snapshot),
+        "receipt": str(snapshot.with_suffix(".json")),
+        "renderer": receipt,
+    }
+
+
+def _verified_swc3d_product(folder: Path, current: dict | None) -> dict | None:
+    """Return a hash-verified existing SWC3D product, or None."""
+    product = ((current or {}).get("products") or {}).get(SWC_BRAIN_VIEW_ROLE)
+    output = (product or {}).get("output")
+    if not isinstance(output, dict) or not output.get("path") or not output.get("sha256"):
+        return None
+    try:
+        path = Path(output["path"]).resolve(strict=True)
+        if (not path.is_relative_to(folder.resolve()) or not path.is_file() or
+                path.stat().st_size <= 0 or
+                _sha256(path) != output["sha256"]):
+            return None
+        from PIL import Image
+        with Image.open(path) as image:
+            if image.format != "PNG":
+                return None
+            image.verify()
+        with Image.open(path) as image:
+            image.load()
+        return product
+    except (OSError, TypeError, ValueError):
+        return None
+
+
+def run_brain_view_products(plan: dict, *, dry_run: bool, resume: bool = False,
+                            renderer=None) -> dict:
+    """Add SWC Brain View products without replacing existing review panels."""
+    from vispa.batch_run_lock import exclusive_batch
+    from vispa.render_records import (animal_receipt_path, load_animal_receipt,
+                                      record_neuron_product)
+
+    result = {
+        **plan,
+        "status": "dry_run" if dry_run else "in_progress",
+        "mode": "brain_view_only",
+        "completed": [],
+        "skipped_existing": [],
+        "error": None,
+    }
+    if _sha256(Path(plan["vispa_config"])) != plan["vispa_config_sha256"]:
+        raise ValueError("VisPa config changed after job planning")
+    if _sha256(Path(plan["jobs_path"])) != plan["jobs_sha256"]:
+        raise ValueError("Review jobs changed after planning")
+    if dry_run:
+        return result
+    output_root = Path(plan["output_root"])
+    output_root.mkdir(parents=True, exist_ok=True)
+    receipt_path = animal_receipt_path(output_root, plan["sample_id"])
+    render = renderer or render_swc3d_product
+    lock = output_root.parent / f".{output_root.name}.review_bulk.lock"
+    with exclusive_batch(lock):
+        for job in plan["jobs"]:
+            folder = Path(job["output_dir"])
+            folder.mkdir(parents=True, exist_ok=True)
+            animal = load_animal_receipt(receipt_path, plan["sample_id"])
+            current = ((animal.get("neurons") or {}).get(job["neuron_id"]) or {}).get(
+                "current")
+            existing = _verified_swc3d_product(folder, current)
+            if resume and existing is not None:
+                result["skipped_existing"].append({
+                    "neuron_id": job["neuron_id"],
+                    "path": existing["output"]["path"],
+                })
+                result["completed"].append({
+                    "sample_id": plan["sample_id"],
+                    "neuron_id": job["neuron_id"],
+                    "status": "rendered_candidate",
+                    "resume_action": "verified_skip",
+                    "products": {SWC_BRAIN_VIEW_ROLE: existing},
+                })
+                if len(result["completed"]) % 25 == 0:
+                    print(
+                        f"BRAIN_VIEW_PROGRESS sample={plan['sample_id']} "
+                        f"completed={len(result['completed'])}/{plan['requested']}",
+                        flush=True)
+                continue
+            with tempfile.TemporaryDirectory(
+                    prefix=".stage-brain-view-", dir=output_root / plan["sample_id"]) as temporary:
+                stage = Path(temporary)
+                rendered = render(job, stage, Path(plan["vispa_config"]))
+                snapshot = Path(rendered["snapshot_png"]).resolve(strict=True)
+                snapshot_receipt = Path(rendered["receipt"]).resolve(strict=True)
+                if (not snapshot.is_relative_to(stage.resolve()) or
+                        not snapshot_receipt.is_relative_to(stage.resolve()) or
+                        snapshot.suffix.lower() != ".png" or
+                        not snapshot.is_file() or not snapshot_receipt.is_file()):
+                    raise ValueError("SWC Brain View returned invalid staged paths")
+                from PIL import Image
+                with Image.open(snapshot) as image:
+                    if image.format != "PNG":
+                        raise ValueError("SWC Brain View output is not PNG")
+                    image.verify()
+                with Image.open(snapshot) as image:
+                    image.load()
+                target = folder / snapshot.name
+                if target.exists():
+                    target = folder / f"{snapshot.stem}_{uuid4().hex[:8]}.png"
+                target_receipt = target.with_suffix(".json")
+                if target_receipt.exists():
+                    target_receipt = folder / f"{snapshot.stem}_{uuid4().hex[:8]}.json"
+                snapshot.replace(target)
+                snapshot_receipt.replace(target_receipt)
+                output = {"path": str(target), "sha256": _sha256(target)}
+                renderer_record = {
+                    key: rendered["renderer"].get(key)
+                    for key in ("status", "region_resolution", "region_mesh",
+                                "processed_swc", "worker_python", "config_sha256")
+                }
+                renderer_record.update({
+                    "receipt": str(target_receipt),
+                    "receipt_sha256": _sha256(target_receipt),
+                })
+                product = {
+                    "output": output,
+                    "renderer": renderer_record,
+                    "source_availability": {
+                        "raw_swc_status": (
+                            "failed" if job.get("render_ready") is False
+                            else "ready"),
+                        "raw_swc_error": job.get("soma_error"),
+                    },
+                    "recorded_at_utc": datetime.now(timezone.utc).isoformat(),
+                }
+                record_neuron_product(
+                    receipt_path, plan["sample_id"], job["neuron_id"],
+                    SWC_BRAIN_VIEW_ROLE, product)
+                result["completed"].append({
+                    "sample_id": plan["sample_id"],
+                    "neuron_id": job["neuron_id"],
+                    "status": "rendered_candidate",
+                    "resume_action": "product_added",
+                    "products": {SWC_BRAIN_VIEW_ROLE: product},
+                })
+                if len(result["completed"]) % 25 == 0:
+                    print(
+                        f"BRAIN_VIEW_PROGRESS sample={plan['sample_id']} "
+                        f"completed={len(result['completed'])}/{plan['requested']}",
+                        flush=True)
+    result["status"] = (
+        "pass" if result["completed"] and len(result["completed"]) == plan["requested"]
+        else "partial_or_failed")
+    return result
+
+
+def _status_for(outputs: dict, errors: list,
+                required_roles: tuple[str, ...] | set[str] = BASE_REVIEW_ROLES) -> str:
+    required = set(required_roles)
     if not outputs:
         return "failed"
     if errors or not required.issubset(outputs):
@@ -602,7 +883,8 @@ def _settings_sha256(plan: dict) -> str:
 
 
 def _job_sha256(job: dict) -> str:
-    encoded = json.dumps(job, sort_keys=True, default=str).encode("utf-8")
+    source_job = {key: value for key, value in job.items() if key != "review_roles"}
+    encoded = json.dumps(source_job, sort_keys=True, default=str).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
 
@@ -615,12 +897,14 @@ def _current_receipt(job: dict, plan: dict) -> dict | None:
         _verified_raw_path(load(plan["vispa_config"]), job)
         folder = Path(job["output_dir"]).resolve()
         record = json.loads((folder / "review_receipt.json").read_text(encoding="utf-8"))
+        review_roles = set(job.get("review_roles") or plan.get("review_roles") or
+                           BASE_REVIEW_ROLES)
         if (record.get("status") != "rendered_candidate" or record.get("errors") or
             record.get("job_sha256") != _job_sha256(job) or
             record.get("config_sha256") != plan["vispa_config_sha256"] or
             record.get("vispa_version") != plan["vispa_version"] or
             record.get("settings_sha256") != _settings_sha256(plan) or
-            set(record.get("outputs") or {}) != {"Soma", "Context", "Sagittal", "TrioPlot"}):
+            set(record.get("outputs") or {}) != review_roles):
             return None
         from PIL import Image
         seen_paths = set()
@@ -645,6 +929,9 @@ def _current_receipt(job: dict, plan: dict) -> dict | None:
 
 def run_review_bulk(plan: dict, *, dry_run: bool, renderer=None, resume: bool = False,
                     skip_existing: bool = False) -> dict:
+    if set(plan.get("review_roles") or ()) == {SWC_BRAIN_VIEW_ROLE}:
+        return run_brain_view_products(
+            plan, dry_run=dry_run, resume=resume, renderer=renderer)
     if skip_existing:
         plan = skip_complete_existing_outputs(plan)
         if not plan["jobs"]:
@@ -665,7 +952,6 @@ def run_review_bulk(plan: dict, *, dry_run: bool, renderer=None, resume: bool = 
 def _run_review_bulk_flat(plan: dict, *, dry_run: bool, renderer=None,
                           resume: bool = False) -> dict:
     """Render into direct neuron folders and keep one animal process log."""
-    from uuid import uuid4
     from vispa.config import load
     from vispa.render_records import (animal_receipt_path, record_neuron_output,
                                       separate_plot_output_dir, update_animal_batch,
@@ -703,7 +989,7 @@ def _run_review_bulk_flat(plan: dict, *, dry_run: bool, renderer=None,
              "status": "in_progress", "started_at_utc": datetime.now(timezone.utc).isoformat()}
     update_animal_batch(receipt_path, sample, batch)
     render = renderer or render_review_neuron
-    roles = {"Soma", "Context", "Sagittal", "TrioPlot"}
+    roles = set(plan["review_roles"])
     try:
         for job in plan["jobs"]:
             folder = Path(job["output_dir"])
@@ -718,7 +1004,12 @@ def _run_review_bulk_flat(plan: dict, *, dry_run: bool, renderer=None,
                         "raw_swc_sha256": job.get("raw_swc_sha256"),
                         "output_dir": str(folder)}
             if resume:
-                prior = verified_neuron_record(receipt_path, sample, job["neuron_id"], expected)
+                prior = verified_neuron_record(
+                    receipt_path, sample, job["neuron_id"], expected,
+                    expected_outputs=set(roles - {SWC_BRAIN_VIEW_ROLE}),
+                    expected_products=(
+                        {SWC_BRAIN_VIEW_ROLE}
+                        if SWC_BRAIN_VIEW_ROLE in roles else set()))
                 if prior is not None:
                     result["completed"].append({**prior, "resume_action": "verified_skip"})
                     batch["completed"] = len(result["completed"])
@@ -788,6 +1079,21 @@ def _run_review_bulk_flat(plan: dict, *, dry_run: bool, renderer=None,
             missing = sorted(roles - set(outputs))
             if missing:
                 errors.append("Missing verified output roles: " + ", ".join(missing))
+            errors = list(dict.fromkeys(errors))
+            product_record = None
+            if SWC_BRAIN_VIEW_ROLE in outputs:
+                renderer_record = dict(rendered.get("brain_view_receipt") or {})
+                final_receipt = next(
+                    (item for name, item in other_outputs.items()
+                     if name.endswith("_3D_SWC.json")), None)
+                if final_receipt is not None:
+                    renderer_record["receipt"] = final_receipt["path"]
+                    renderer_record["receipt_sha256"] = final_receipt["sha256"]
+                product_record = {
+                    "output": outputs[SWC_BRAIN_VIEW_ROLE],
+                    "renderer": renderer_record,
+                    "recorded_at_utc": datetime.now(timezone.utc).isoformat(),
+                }
             record = {**expected, "sample_id": sample, "neuron_id": job["neuron_id"],
                       "neuron_folder": job.get("neuron_folder"),
                       "soma_region": job.get("soma_region"),
@@ -805,8 +1111,14 @@ def _run_review_bulk_flat(plan: dict, *, dry_run: bool, renderer=None,
                       "raw_swc_source_equivalence": rendered.get("raw_swc_source_equivalence", "unknown"),
                       "context_source_status": job.get("context_source_status"),
                       "role_availability": rendered.get("role_availability"),
-                      "outputs": outputs, "other_outputs": other_outputs,
-                      "errors": errors, "status": _status_for(outputs, errors),
+                      "outputs": {
+                          role: value for role, value in outputs.items()
+                          if role != SWC_BRAIN_VIEW_ROLE
+                      },
+                      "products": ({SWC_BRAIN_VIEW_ROLE: product_record}
+                                   if product_record is not None else {}),
+                      "other_outputs": other_outputs,
+                      "errors": errors, "status": _status_for(outputs, errors, roles),
                       "rendered_at_utc": datetime.now(timezone.utc).isoformat(),
                       "resume_action": "rendered", "anatomical_acceptance": "not established"}
             record_neuron_output(receipt_path, sample, job["neuron_id"], record, batch=batch)
@@ -920,10 +1232,11 @@ def _run_review_bulk(plan: dict, *, dry_run: bool, renderer=None, resume: bool =
                     outputs[role] = {"path": str(candidate), "sha256": _sha256(candidate)}
                 except (OSError, TypeError, ValueError) as exc:
                     errors.append(f"{role}: invalid output: {exc}")
-            missing = sorted({"Soma", "Context", "Sagittal", "TrioPlot"} - set(outputs))
+            review_roles = set(plan["review_roles"])
+            missing = sorted(review_roles - set(outputs))
             if missing:
                 errors.append("Missing verified output roles: " + ", ".join(missing))
-            status = _status_for(outputs, errors)
+            status = _status_for(outputs, errors, review_roles)
             record = {
                 "sample_id": job["sample_id"],
                 "neuron_id": job["neuron_id"],
@@ -967,6 +1280,19 @@ def _run_review_bulk(plan: dict, *, dry_run: bool, renderer=None, resume: bool =
     return result
 
 
+def _roles_from_cli(args) -> list[str] | None:
+    selected = set(args.plot or [])
+    for flag, role in (
+            ("somaplot", "Soma"), ("contextplot", "Context"),
+            ("sagittalplot", "Sagittal"), ("triplot", "TrioPlot"),
+            ("swcplot", "SWC3D")):
+        if getattr(args, flag, False):
+            selected.add(role)
+    if args.full:
+        selected.update(REVIEW_ROLES)
+    return normalize_review_roles(selected) if selected else None
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     from vispa import __version__
@@ -979,8 +1305,21 @@ def main(argv=None) -> int:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--resume", action="store_true",
                         help="verify and skip complete neuron receipts, retry incomplete neurons")
+    parser.add_argument("--brain-view-only", action="store_true",
+                        help="add verified SWC3D products without replacing existing review panels")
+    parser.add_argument("--include-unready", action="store_true",
+                        help="with SWC-only mode, include raw-SWC source failures that may have a processed SWC")
     parser.add_argument("--skip-existing", action="store_true",
                         help="skip neurons whose required products already exist in output")
+    parser.add_argument("--plot", action="append", choices=REVIEW_ROLES,
+                        help="render only one explicit output role; repeatable")
+    parser.add_argument("--somaplot", action="store_true")
+    parser.add_argument("--contextplot", action="store_true")
+    parser.add_argument("--sagittalplot", action="store_true")
+    parser.add_argument("--triplot", action="store_true")
+    parser.add_argument("--swcplot", action="store_true")
+    parser.add_argument("--full", action="store_true",
+                        help="render every individual panel, TrioPlot and SWC3D")
     parser.add_argument("--repair-folder-names", action="store_true",
                         help="plan readable names for legacy hash-suffixed neuron folders")
     parser.add_argument("--apply-folder-renames", action="store_true",
@@ -1014,9 +1353,26 @@ def main(argv=None) -> int:
             return 0 if not result.get("conflicts") else 2
         if not args.limit and not args.all:
             raise ValueError("Use --limit for bounded work, or explicitly opt in to --all")
-        plan = load_review_jobs(args.jobs, args.output_root, args.limit, args.all)
-        result = run_review_bulk(plan, dry_run=args.dry_run, resume=args.resume,
-                                 skip_existing=args.skip_existing)
+        plan = load_review_jobs(
+            args.jobs, args.output_root, args.limit, args.all,
+            include_unready=args.include_unready)
+        selected_roles = _roles_from_cli(args)
+        if selected_roles is not None:
+            plan["review_roles"] = selected_roles
+            for job in plan["jobs"]:
+                job["review_roles"] = selected_roles
+        if args.include_unready and not (
+                args.brain_view_only or
+                set(plan.get("review_roles") or ()) == {SWC_BRAIN_VIEW_ROLE}):
+            raise ValueError("--include-unready is only valid for SWC-only Brain View products")
+        if args.brain_view_only:
+            if args.skip_existing:
+                raise ValueError("--brain-view-only and --skip-existing are separate modes")
+            result = run_brain_view_products(
+                plan, dry_run=args.dry_run, resume=args.resume)
+        else:
+            result = run_review_bulk(plan, dry_run=args.dry_run, resume=args.resume,
+                                     skip_existing=args.skip_existing)
     except (OSError, RuntimeError, TypeError, ValueError, KeyError) as exc:
         result = {"status": "failed", "error": str(exc)}
     print(json.dumps(result, indent=2, sort_keys=True, default=str))

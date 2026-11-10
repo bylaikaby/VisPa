@@ -112,7 +112,8 @@ class RefactorIntegrationTests(unittest.TestCase):
             gui._fetch_fnt = mock.Mock()
             gui._launch_processing = lambda process: process()
             gui._resolve_plot_region = lambda req, config: {
-                'display_label': 'Portal: M1_79 | Atlas: Right CR_M1'}
+                'display_label':
+                    'Portal: M1_79 | Atlas: Right CR_M1 · atlas_CR_M1'}
             request = reviewer.make_processing_request(
                 '252527', '001.swc', (1, 2, 3), 1, 100, 100, 30,
                 str(Path(folder) / 'figures'), save_outputs=False, soma_cubes=1.5)
@@ -141,7 +142,7 @@ class RefactorIntegrationTests(unittest.TestCase):
                              reviewer._figure_folder(folder, '252527', '001.swc', 'Unassigned'))
             self.assertEqual(fingerprint['config_sha256'], first_sha)
             self.assertEqual(fingerprint['region']['display_label'],
-                             'Portal: M1_79 | Atlas: Right CR_M1')
+                             'Portal: M1_79 | Atlas: Right CR_M1 · atlas_CR_M1')
             self.assertEqual(seen[1][0].width_um, 600)
             self.assertNotEqual(fingerprint['config_sha256'],
                                 seen[1][1]['config_sha256'])
@@ -167,7 +168,7 @@ class RefactorIntegrationTests(unittest.TestCase):
              mock.patch("vispa.reviewer.IT.acquire_neuron_side", return_value=native):
             resolved = gui._resolve_plot_region(request)
         self.assertEqual(resolved["display_label"],
-                         "Portal: M1_79 | Atlas: Right M1")
+                         "Portal: M1_79 | Atlas: Right M1 · atlas_CR_M1")
         self.assertEqual(resolved["portal_source"]["sha256"], "abc")
         gui._plot_region_context = resolved
         toolkit = mock.Mock()
@@ -205,7 +206,7 @@ class RefactorIntegrationTests(unittest.TestCase):
              mock.patch("vispa.reviewer.IT.acquire_neuron_side", side_effect=OSError("atlas offline")):
             resolved = gui._resolve_plot_region(request)
         self.assertEqual(resolved["display_label"],
-                         "Portal: Unassigned | Atlas: unavailable")
+                         "Portal: Unassigned | Atlas: unavailable · atlas_unavailable")
         self.assertEqual(resolved["portal_error"], "catalog offline")
         self.assertEqual(resolved["atlas_error"], "atlas offline")
 
