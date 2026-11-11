@@ -1,5 +1,8 @@
 # VisPa change log
 
+## Unreleased — 2026-11-11
+- Match the Region badge to the Render button color.
+
 ## 1.21.7 — 2026-11-09 (local/unreleased candidate)
 - Add the packaged `SWC3D` Brain View screenshot to bulk review as a fifth
   optional role. The GUI enables it by default, retains one default-off CLI

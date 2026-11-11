@@ -2,7 +2,7 @@
 vispa_gui.py - GUI for NeuroVis Visual Toolkit
 
 Version: 1.21.7 (local/unreleased)
-Last updated: 2026-11-09
+Last updated: 2026-11-11
 Change history: ../../CHANGELOG.md
 2026-11-09: Keep GUI region text compact with full Left/Right and omit atlas source tokens.
 2026-11-08: Include native soma coordinates and region in Soma volume export.
@@ -462,6 +462,7 @@ class NeuroVisGUI:
     # Graphite surfaces follow the reviewed classic preview. Plot action colours
     # remain semantic and are kept at their call sites below.
     COLORS = {
+        'render_purple': '#6b4fa0',
         'page': '#303637', 'card': '#414a4c', 'border': '#697575',
         'header': '#171d1e', 'header_text': '#c5ddca', 'header_muted': '#b7c9ba',
         'text': '#e4e4dc', 'muted': '#c5cecb', 'accent': '#168a91',
@@ -942,7 +943,7 @@ class NeuroVisGUI:
             status_row.grid_columnconfigure(column, weight=1)
         status_boxes = (
             (self.neuron_status_var, C['accent_soft'], 0, 0, 2),
-            (self.region_status_var, C['strip'], 1, 0, 2),
+            (self.region_status_var, C['render_purple'], 1, 0, 2),
         )
         for variable, fill, row, column, columnspan in status_boxes:
             box = tk.Frame(status_row, bg=fill, highlightthickness=1,
@@ -950,7 +951,8 @@ class NeuroVisGUI:
             box.grid(row=row, column=column, columnspan=columnspan, sticky='nsew',
                      padx=(0 if column == 0 else P(3), 0),
                      pady=(0, P(3)) if row == 0 else (P(3), 0))
-            tk.Label(box, textvariable=variable, bg=fill, fg=C['text'],
+            tk.Label(box, textvariable=variable, bg=fill,
+                     fg='#ffffff' if variable is self.region_status_var else C['text'],
                      anchor='w', font=('Segoe UI', 9, 'bold'), justify='left',
                      wraplength=P(155)).pack(fill='x', padx=P(7), pady=P(5))
         self.neuron_catalog_open_button = self._flat_button(
@@ -1209,7 +1211,7 @@ class NeuroVisGUI:
         action_row.pack(fill='x', padx=P(14), pady=P(10))
         render_button = self._flat_button(
             action_row, "Render", self.run_selected, primary=True,
-            color='#6b4fa0', active='#563d85')
+            color=C['render_purple'], active='#563d85')
         render_button.configure(font=('Segoe UI', 12, 'bold'),
                                 padx=P(34), pady=P(12))
         render_button.pack(side='left', padx=(0, P(10)))
