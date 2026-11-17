@@ -588,7 +588,7 @@ The Python API is imported only as `vispa`. The legacy `Visual_toolkit`
 forwarding package and class alias have been removed. Optional OpenGL remains
 lazy. Use `python run_vispa.py` for the GUI and `python run_vispa.py --help` for commands.
 
-New standalone run receipts, builds and candidate outputs live under `D:/VisPa/work/`. The [shared validation receipt](work/fnt_onboarding_20261022/run_receipt.json) records versioned milestones separately; [the Windows Conda workflow](.github/workflows/windows-python-conda.yml) validates the Python-only environment. The living project journal remains `D:/projectome_analysis/docs/project_note.md`. Existing projectome receipts remain historical evidence; external scientific data/cache paths remain explicit configuration.
+New standalone run receipts, builds and candidate outputs live under `D:/VisPa/work/`. The [shared validation receipt](work/fnt_onboarding_20261022/run_receipt.json) records versioned milestones separately; [the Windows Conda workflow](.github/workflows/windows-python-conda.yml) validates the Python-only environment. The [VisPa and ReMAP project note](docs/project_note.md) is the living software journal. Existing projectome receipts remain historical evidence; external scientific data/cache paths remain explicit configuration.
 
 ### Repository status and compatibility
 
