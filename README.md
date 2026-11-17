@@ -1,5 +1,7 @@
 # VisPa — Visual Projectome Analysis tool
 
+> **Secondary HTML candidate — development paused.** Download [web/vispa.html](web/vispa.html) and open it locally in a browser. Candidate 0.7.0 is self-contained, but does not yet replicate all desktop functions or design. Desktop VisPa remains the primary application. See the [project note](docs/project_note.md#html-candidate-publication-and-pause) for tested scope and remaining work.
+
 VisPa reviews macaque neuron and microscopy data configured by the DEB lab.
 This checkout identifies as **1.21.7**. VisPa is a
 Python package inside a Conda environment. Launch the GUI directly from this

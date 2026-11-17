@@ -1,5 +1,23 @@
 # VisPa change log
 
+## Unreleased — 2026-11-17
+
+- HTML 0.7.0 adds manifest/checksum-bound DS00 Sagittal computation: constant-i selection, positive whole-plane percentile normalization, j/k display orientation, candidate A/B marker mappings and optional crop. Three fixtures matched the actual desktop preparation function within 1e-12 in Chrome, including marker positions and crop dimensions. Manifest mismatch rejection passed. Real DS data, configured geometry binding and complete render/UI parity remain pending.
+
+- HTML 0.6.0 extends the microscopy worker to Context RGB composition and ports SWC segment clipping against XY crop bounds and the soma-centered Z slab. Gain/threshold/slab controls and identity-bound SWC hashes enter render records. Chrome output matched four desktop-method RGB fixtures within 1e-12; three clipping fixtures matched desktop `clip_segment`. Context visual parity and real-data integration remain pending.
+
+- HTML 0.5.0 adds bounded native-crop Soma rendering in a cancellable worker: source-Z MIP, 0.5/99.5 percentile normalization, gamma 0.5, declared physical geometry, target marker, PNG preview and hash-bound render record. Synthetic values matched desktop `percentile_normalize` within 1e-12; actual Chrome completion verified through CDP. Acquisition integration, desktop styling, real-data parity and disk-download readback remain pending.
+
+- HTML candidate 0.4.0 ports the NIfTI hierarchy atlas level-6 lookup, NumPy-compatible half-to-even voxel rounding, explicit region-prefix side and unambiguous hemisphere-mask fallback. Separate live IONData soma lookup never derives NMT coordinates from edited physical coordinates. Browser tests matched the actual Python `atlas_names` function on five synthetic boundary cases and checked mask ambiguity/affines, source separation and stale identity invalidation. Real atlas, NPY support and complete GUI parity remain pending.
+
+- HTML candidate 0.3.0 adds the desktop IONData catalog and raw-SWC routes, bounded streamed responses, cancellation, identity-bound physical soma autofill, region/neuron filtering and source download. Synthetic Chrome integration passed route encoding, fractional coordinates, failed-refresh preservation, stale-result rejection, duplicate catalogs and byte limits. Real lab endpoint access, NMT atlas derivation and full catalog/design parity remain unverified.
+
+- HTML candidate 0.2.0 embeds NiiVue 0.69.0 (BSD-2-Clause, license included) for local NIfTI/NRRD volume viewing, plane selection, contrast and PNG export. npm tarball SHA-512 integrity verified. Host Chrome synthetic checks passed for voxels, affine, contrast and invalid-import preservation with hostname resolution disabled. Whole-volume input is bounded to 512 MiB compressed/file size; expanded-memory control, real-data parity, download readback and mobile testing remain open.
+
+- Started standalone HTML reviewer in `web/vispa.html`, using the desktop palette, local figure navigation and SWC/OBJ canvas viewing. The early SWC import and zoom fixture passed in host Chrome. Full desktop functionality and visual parity remain in development.
+
+- HTML development paused at the user's request. This is a secondary, incomplete candidate; desktop VisPa remains primary. No desktop package version or deployment changes.
+
 ## Unreleased — 2026-11-11
 - Match the Region badge to the Render button color.
 
