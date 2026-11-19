@@ -1,0 +1,28 @@
+# ReMAP package profile. Shared resources are read-only atlas/tables on the
+# fMOST microscopy share. The SWC cache is the only neuron file location: a
+# present file is parsed, a missing file is fetched. Figures and workbooks go
+# to the output root. Do not point these resources at the projectome_analysis
+# checkout; that repository is not a ReMAP dependency.
+version: 1
+config_name: remap_config
+config_version: 0.1.0
+config_updated_at: '2026-11-09T17:35:00+08:00'
+resources:
+  iondata_host: http://10.10.48.110
+  atlas: '\\10.102.8.200\microscopy_data\fMOST\resources\atlas\NMT_v2.1_sym\NMT_v2.1_sym\ARM_in_NMT_v2.1_sym.nii.gz'
+  atlas_key: '\\10.102.8.200\microscopy_data\fMOST\resources\atlas\NMT_v2.1_sym\tables_ARM\ARM_key_all.txt'
+  template: '\\10.102.8.200\microscopy_data\fMOST\resources\atlas\NMT_v2.1_sym\NMT_v2.1_sym\NMT_v2.1_sym_SS.nii.gz'
+  hemisphere_mask: '\\10.102.8.200\microscopy_data\fMOST\resources\atlas\NMT_v2.1_sym\NMT_v2.1_sym\supplemental_masks\NMT_v2.1_sym_LR_plane.nii.gz'
+  cortex_hierarchy_csv: '\\10.102.8.200\microscopy_data\fMOST\resources\atlas\NMT_v2.1_sym\tables_CHARM\CHARM_key_table.csv'
+  subcortical_hierarchy_csv: '\\10.102.8.200\microscopy_data\fMOST\resources\atlas\NMT_v2.1_sym\tables_SARM\SARM_key_table.csv'
+  declared_space: NMT_v2.1_sym atlas voxel index
+cache:
+  swc: '\\10.102.8.200\microscopy_data\fMOST\VisPa\cached_data\swc_processed'
+  fnt: '\\10.102.8.200\microscopy_data\fMOST\VisPa\cached_data\fnt'
+output:
+  root: '\\10.102.8.200\microscopy_data\fMOST\remap_outputs'
+  # Each run writes <root>/<sample-id>/neuron_table, report/report_plots, and swc_plots.
+  # QC summary figures stay off unless generate_plots is true or the CLI passes --generate-plots.
+  # swc_plots: off, montage (at most 12 neurons), or each.
+  generate_plots: false
+  swc_plots: "off"

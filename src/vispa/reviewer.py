@@ -1,9 +1,10 @@
 """
 vispa_gui.py - GUI for NeuroVis Visual Toolkit
 
-Version: 1.21.7 (local/unreleased)
-Last updated: 2026-11-11
+Version: 1.21.8.dev1 (local/unreleased)
+Last updated: 2026-11-18
 Change history: ../../CHANGELOG.md
+2026-11-18: add the cohort progress preview and delegate its report to ReMAP.
 2026-11-09: Keep GUI region text compact with full Left/Right and omit atlas source tokens.
 2026-11-08: Include native soma coordinates and region in Soma volume export.
 Status: candidate (GUI layout reviewed; scientific review pending)
@@ -879,20 +880,22 @@ class NeuroVisGUI:
         tk.Label(header, text=f"VisPa {__version__}", bg=C['header'],
                  fg=C['header_text'], font=('Segoe UI', 14, 'bold')).pack(
                      side='left', padx=(P(18), P(8)))
-        tk.Label(
+        config_label = tk.Label(
             header,
             text=(f"{self.version_report['config_name']} "
                   f"{self.version_report['config_version']}"
                   f"{' TEST OUTPUT' if self.test_mode else ''} · "
                   "DEB lab · fMOST neuron reviewer"),
-            bg=C['header'],
-                 fg=C['header_muted'], font=('Segoe UI', 9)).pack(side='left')
+            bg=C['header'], fg=C['header_muted'], font=('Segoe UI', 9), anchor='w')
         self._flat_button(header, "Version", self._show_runtime_version,
                           small=True).pack(side='right', padx=(0, P(4)))
         self._flat_button(header, "Settings", self._open_config_yaml,
                           small=True).pack(side='right', padx=P(16))
         self._flat_button(header, "Guide", self._open_guide,
                           small=True).pack(side='right', padx=(0, P(4)))
+        self._flat_button(header, "Cohort progress…", self._on_cohort_progress,
+                          small=True).pack(side='right', padx=(0, P(4)))
+        config_label.pack(side='left', fill='x', expand=True)
 
         # Left column: scrollable setting cards, fixed to the mockup's 392 px.
         left = tk.Frame(
@@ -2305,6 +2308,11 @@ class NeuroVisGUI:
         except (OSError, ValueError, KeyError) as exc:
             self._log_operation("Bulk review", "failed", error=exc)
             messagebox.showerror("Bulk review", str(exc), parent=self.root)
+
+    def _on_cohort_progress(self):
+        """Open the saved Projectome progress report in VisPa."""
+        from .cohort_progress import open_progress_window
+        open_progress_window(self.root, log=self._log_operation)
 
     def launch_template_brain_view(self, sample_id: str, neuron_id: str,
                                    portal_region: str = ""):

@@ -1,7 +1,7 @@
 """Run region analysis and FNT clustering with current ReMAP, then publish a VisPa bulk list.
 
-Version: 1.12.0.dev3 (local/unreleased)
-Last updated: 2026-10-31
+Version: 1.21.7 (local/unreleased)
+Last updated: 2026-11-17
 Change history: ../CHANGELOG.md
 Status: candidate
 
@@ -164,7 +164,16 @@ def resolve_remap(importer=None):
     if importer is None:
         def importer():
             from remap import __version__ as remap_version
-            from remap.clustering_validation import read_fnt_distances, safe_linkage
+            # 2026-11-17: Support the in-repository ReMAP clustering layout.
+            try:
+                from remap.morph_clustering.clustering_validation import read_fnt_distances, safe_linkage
+            except ModuleNotFoundError as exc:
+                if exc.name not in {
+                    "remap.morph_clustering",
+                    "remap.morph_clustering.clustering_validation",
+                }:
+                    raise
+                from remap.clustering_validation import read_fnt_distances, safe_linkage
             from remap.population_operator import plan_population, run_population
             from scipy.cluster.hierarchy import fcluster
             return {

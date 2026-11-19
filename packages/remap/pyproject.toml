@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "remap"
+dynamic = ["version"]
+description = "Candidate local macaque region and FNT distance analysis"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "pandas",
+    "nibabel",
+    "scipy",
+    "scikit-learn",
+    "openpyxl",
+    "PyYAML",
+    "neurom>=4.0.0",
+]
+
+[project.optional-dependencies]
+plots = ["matplotlib", "seaborn"]
+
+[project.scripts]
+remap = "remap.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+remap = ["configs/*.yaml", "resources/*.csv"]
+
+[tool.setuptools.dynamic]
+version = {attr = "remap._version.__version__"}

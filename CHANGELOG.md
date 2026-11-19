@@ -1,5 +1,29 @@
 # VisPa change log
 
+## 1.21.8.dev2 — 2026-11-19 (local/unreleased candidate)
+
+- Updated VisPa Function Overview to 0.1.4. The single-monkey route accepts any configured sample, with 251637 retained as a documented historical example. Verified fresh FNT scoring, projection review and workbook export on four neurons each from samples 251637 and 252383 using their saved regional tables. Verified saved score and table alignment for all nine study samples.
+
+- Updated VisPa Function Overview to 0.1.3. Single- and multi-monkey routes show the regional tables and FNT files feeding the same review renderer. The Insula Analysis Package branch and study index point to pinned paper replays and insula adaptations. Both formats retain the existing CLI and filenames. Verified both renderers, 128 Markdown links, the study index, export guards and 324 VisPa source tests.
+
+- Updated VisPa Function Overview to 0.1.2. One top-down operator tree links the VisPa and ReMAP routes beneath the inventory in both exports. It follows the established file, callable and data shapes so readers can trace each branch. The CLI and export filenames are compatible with 0.1.1. Visually checked the PNG and Mermaid in Edge, verified the Markdown links and export checks, and passed all 324 VisPa source tests.
+
+- Added VisPa Function Overview 0.1.0 with the `vispa functions` command. It writes a PNG chart and a Markdown source inventory built from the active VisPa and ReMAP modules. Validated the live command registries, source links, script versions, no-write preflight, existing-output protection and the rendered chart. All 324 VisPa source tests passed.
+
+- Updated VisPa Function Overview to 0.1.1. The PNG and Markdown now include the four source-grounded workflows below the function inventory. Verified the final PNG visually and checked the 16 Mermaid nodes, 12 directed edges, and 127 source links. All 324 VisPa source tests passed.
+
+## 1.21.8.dev1 — 2026-11-18 (local/unreleased candidate)
+
+- The Cohort progress GUI and CLI dispatch to ReMAP 0.2.2.dev3. Source launch resolves the sibling package and the VisPa receipt keeps its own schema. The ReMAP CLI, VisPa CLI and native preview all reproduced the saved composition PNG byte for byte. All 324 VisPa source tests passed.
+
+## 1.21.8.dev0 — 2026-11-18 (local/unreleased candidate)
+
+- Added Cohort progress to the VisPa GUI and the progress CLI. They read the saved Projectome export, optionally reconcile each animal, parcel and hemisphere against a ReMAP receipt, and render a chart with a hashed export receipt. Verified the 251637 pilot, full 309-neuron figure, identical native and CLI export, mismatch recovery, and no-clobber behavior. All 325 source regression tests passed. The legacy manager retains upstream refresh responsibility.
+
+## Unreleased — 2026-11-18
+- Added the ReMAP insula area–function evidence resource 0.1.0 and linked the reproducibility index. Source resource and coverage checks passed. See the ReMAP change log for evidence and scope.
+- ReMAP legacy review renderer consolidated into reusable profile-driven source API/CLI. Real251637 baseline replay and plot inspection passed; no build/install. See packages/remap/CHANGELOG.md for validation scope and the missing pytest limitation.
+
 ## Unreleased — 2026-11-17
 
 - HTML 0.7.0 adds manifest/checksum-bound DS00 Sagittal computation: constant-i selection, positive whole-plane percentile normalization, j/k display orientation, candidate A/B marker mappings and optional crop. Three fixtures matched the actual desktop preparation function within 1e-12 in Chrome, including marker positions and crop dimensions. Manifest mismatch rejection passed. Real DS data, configured geometry binding and complete render/UI parity remain pending.
@@ -17,6 +41,8 @@
 - Started standalone HTML reviewer in `web/vispa.html`, using the desktop palette, local figure navigation and SWC/OBJ canvas viewing. The early SWC import and zoom fixture passed in host Chrome. Full desktop functionality and visual parity remain in development.
 
 - HTML development paused at the user's request. This is a secondary, incomplete candidate; desktop VisPa remains primary. No desktop package version or deployment changes.
+
+- Added the ReMAP sibling package under packages/remap and updated the FNT review bridge for its clustering module layout.
 
 ## Unreleased — 2026-11-11
 - Match the Region badge to the Render button color.

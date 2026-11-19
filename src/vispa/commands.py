@@ -1,8 +1,10 @@
 """Bounded command line for VisPa review renders and source acquisition.
 
-Version: 1.21.7 (local/unreleased)
-Last updated: 2026-11-09
+Version: 1.21.8.dev2 (local/unreleased)
+Last updated: 2026-11-19
 Change history: ../../CHANGELOG.md
+2026-11-19: expose the local VisPa and ReMAP function overview.
+2026-11-18: expose the ReMAP Projectome cohort progress report.
 2026-11-08: Resolve render styles from selected saved config, reject strict
 one-off conflicts, and record/check config hashes before receipts.
 2026-11-08: Require both parsed atlas region and side for a portal-derived
@@ -860,6 +862,16 @@ def _parser():
                         help="launch the GUI with local test output/cache overrides")
     commands = parser.add_subparsers(dest="command")
     commands.add_parser("gui", help="open the VisPa review GUI")
+    from .function_overview import configure_parser
+    functions = commands.add_parser("functions", help="write the VisPa and ReMAP function overview as PNG and Markdown")
+    configure_parser(functions)
+    progress = commands.add_parser("progress", help="illustrate a saved Projectome Progress Manager export")
+    progress.add_argument("--snapshot", required=True, type=Path, help="exported data_progress_table.csv")
+    progress.add_argument("--cohort", type=Path, help="matching ReMAP regional measurement receipt JSON")
+    progress.add_argument("--sample", help="show one exact fMOST sample after validating the snapshot")
+    progress.add_argument("--output", type=Path, help="new PNG path, with an adjacent receipt")
+    progress.add_argument("--dpi", type=int, default=168, help="PNG resolution from 100 to 300")
+    progress.add_argument("--dry-run", action="store_true", help="validate inputs and report counts without writing")
     example = commands.add_parser(
         "example", help="download and preview one public neuron morphology",
         description=f"VisPa {VERSION}: render one public macaque SWC morphology only; no atlas or image context")
@@ -1029,7 +1041,7 @@ def main(argv=None):
     if argv and argv[0] == "brain-view":
         from .renderers.swc_brain_view import main as brain_view_main
         return brain_view_main(argv[1:])
-    if "--version" in argv:
+    if "--version" in argv and argv[:1] != ["functions"]:
         try:
             if "--test" in argv:
                 os.environ["VISPA_TEST_MODE"] = "1"
@@ -1048,6 +1060,20 @@ def main(argv=None):
     if args.command is None:
         parser.print_help()
         return 2
+    if args.command == "functions":
+        from .function_overview import export_overview
+        try:
+            print(json.dumps(export_overview(args.output_dir, dry_run=args.dry_run), indent=2))
+            return 0
+        except (OSError, RuntimeError, ValueError) as exc:
+            parser.error(str(exc))
+    if args.command == "progress":
+        from .cohort_progress import run_progress
+        try:
+            print(json.dumps(run_progress(args), indent=2, ensure_ascii=False))
+            return 0
+        except (OSError, RuntimeError, ValueError, KeyError, TypeError, AttributeError) as exc:
+            parser.error(str(exc))
     if args.command == "inputs":
         try:
             return _inputs(args)

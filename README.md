@@ -3,11 +3,13 @@
 > **Secondary HTML candidate — development paused.** Download [web/vispa.html](web/vispa.html) and open it locally in a browser. Candidate 0.7.0 is self-contained, but does not yet replicate all desktop functions or design. Desktop VisPa remains the primary application. See the [project note](docs/project_note.md#html-candidate-publication-and-pause) for tested scope and remaining work.
 
 VisPa reviews macaque neuron and microscopy data configured by the DEB lab.
-This checkout identifies as **1.21.7**. VisPa is a
-Python package inside a Conda environment. Launch the GUI directly from this
-checkout with `python run_vispa.py`.
+Launch the GUI from this checkout with `python run_vispa.py`. The launcher
+uses the VisPa and ReMAP source in this checkout. Run `python run_vispa.py --version`
+to check the source version and `vispa --version` to check the installed version.
 
 [Install](#install-on-windows) · [Update an existing environment](#update-an-existing-vispa-environment) · [Remove VisPa](#remove-vispa)
+
+Use the [ReMAP guide](packages/remap/README.md#install-and-operate) for atlas measurements, FNT scores, clustering and tables. The [Function Overview](#vispa-function-overview) maps both packages. For paper-method replays and insula figures, see the [study workflow summary](docs/project_note.md#insula-study-workflow).
 
 ## Batch review
 
@@ -92,6 +94,14 @@ It does not replace other acquisition failures with blank images.
 ```mermaid
 flowchart TD
   A[run_vispa.py or installed vispa] --> C[commands.py]
+  subgraph FOV["function_overview.py"]
+    FOE(["export_overview()"])
+    FOB(["build_overview()"])
+  end
+  C -->|functions command| FOE
+  FOE -->|calls| FOB
+  FOS[/Active VisPa and ReMAP source declarations/] -->|inputs| FOB
+  FOE -->|writes| FOO[/PNG chart and Markdown inventory/]
   C --> G[reviewer.py]
   C --> K[config.py]
   G --> K
@@ -159,6 +169,25 @@ flowchart TD
   end
   G -->|calls| RR
   W -->|calls| RR
+  subgraph PVA["VisPa cohort_progress.py"]
+    PGW(["open_progress_window()"])
+  end
+  subgraph PG["ReMAP cohort_progress.py"]
+    PGB(["build_report()"])
+    PGF(["make_figure()"])
+    PGE(["export_report()"])
+  end
+  C -->|progress command| PGB
+  C -->|PNG export| PGE
+  G -->|opens| PGW
+  PS[/Progress Manager CSV and optional ReMAP receipt/] -->|data| PGB
+  PGW -->|calls| PGB
+  PGW -->|preview| PGF
+  PGW -->|Save PNG| PGE
+  PGE -->|calls| PGF
+  PGE -->|writes| PO[/PNG and progress receipt/]
+  classDef progressCandidate fill:#FFF5DD,stroke:#B7791F,stroke-width:2px,stroke-dasharray:5 3,color:#332B20
+  class PGB,PGW,PGF,PGE progressCandidate
   RR -->|reads and writes| PL[/sample/process_log.json/]
   T -. planned .-> TR[Terminal image review]
   classDef callable fill:#E8F5EE,stroke:#23845B,color:#173B2C
@@ -275,12 +304,12 @@ git clone --branch main https://github.com/bylaikaby/VisPa.git D:\vispa
 cd D:\vispa
 conda env create -f environment.yml
 conda activate vispa
-python -m pip install "remap[plots] @ git+https://github.com/bylaikaby/ReMAP.git@main"
+python -m pip install "./packages/remap[plots]"
 python run_vispa.py
 ```
 
 If `vispa` already exists, [update it](#update-an-existing-vispa-environment), or create a separate new environment with `conda env create -n vispa-new -f environment.yml` and activate `vispa-new`. Recloning the repository does not remove an environment.
-Activation selects the environment's Python; `run_vispa.py` starts the GUI. The ReMAP Git command requires repository access. If you already have a trusted local ReMAP checkout, use `python -m pip install "D:/ReMAP[plots]"` instead. Both packages then use the same `vispa` environment.
+Activation selects the environment's Python; `run_vispa.py` starts the GUI. ReMAP is maintained in [packages/remap](packages/remap/README.md) in this repository. It has its own Python package and CLI. Both packages use the same `vispa` environment.
 
 If the Windows `conda.exe` launcher itself fails, run the environment create or
 update command as `python -m conda env ...` from the base Conda Prompt. If
@@ -349,7 +378,7 @@ Continue only on `main` with a clean working tree. If it is dirty or has diverge
 git pull --ff-only origin main
 conda env update -n vispa -f environment.yml
 conda activate vispa
-python -m pip install --force-reinstall --no-deps "remap[plots] @ git+https://github.com/bylaikaby/ReMAP.git@main"
+python -m pip install --force-reinstall --no-deps "./packages/remap[plots]"
 python run_vispa.py
 ```
 
@@ -521,12 +550,41 @@ directory.
 | Render a montage | `python run_vispa.py montage --input FILE --output FILE --units mm` | Creates a five-view DS00 montage. |
 | Fetch FNT | `python run_vispa.py fnt-fetch --sample 251637 --neuron 004.swc` | Retrieves one exact FNT into the user cache. |
 | Create user config | `python run_vispa.py config-init` | Creates the per-user profile without overwriting an existing file. |
+| Review cohort composition | `python run_vispa.py progress --help` | Previews or exports the saved Progress Manager report. |
 | Run tests | `python -m unittest discover -s tests -v` | Runs all automated tests. |
 
 `python run_vispa.py` is the single GUI and command entry point in this checkout.
 
 The [Windows Conda workflow](.github/workflows/windows-python-conda.yml) creates
 the declared environment, installs editable VisPa, checks shared analysis-library imports and the script entry point, and runs source and batch tests. ReMAP itself is installed separately by the command above and is tested locally when repository access is available.
+
+## VisPa Function Overview
+
+From this checkout, run `python run_vispa.py functions --output-dir ..\..\work\vispa_function_overview`. An installed package exposes the same command as `vispa functions`. Use a fresh output directory. Add `--dry-run` for version and path checks without writing.
+
+The command writes `vispa_function_overview.png` and `vispa_function_overview.md`. Below the inventory, the tree shows the three VisPa review routes and separate ReMAP branches for one monkey and multiple monkeys. Each ReMAP branch joins regional tables with saved FNT files for the projection and clustering review. Blue frames enclose callable functions in green. Solid arrows show calls and dashed arrows show data transfers. The Markdown adds the same Mermaid tree, operator notes, source links, registered commands and script versions.
+
+## Cohort progress
+
+The VisPa preview uses the [ReMAP Progress Manager operator](packages/remap/README.md#progress-manager). The checkout launcher supplies the sibling ReMAP source. Installed VisPa uses the compatible ReMAP package in its environment.
+
+Open **Cohort progress…** in the VisPa header and select the exported Projectome
+Progress Manager CSV. Select the corresponding ReMAP regional measurement
+receipt to include recorded projection types. Cancel the second picker to view
+the snapshot on its own. **Save PNG…** writes the figure and an adjacent
+source and count receipt. Choose a new filename for each export.
+
+```powershell
+python run_vispa.py progress --snapshot data_progress_table.csv --cohort receipt.json --dry-run
+python run_vispa.py progress --snapshot data_progress_table.csv --cohort receipt.json --output insula_cohort_progress.png
+```
+
+Use `--sample 251637` for a single-sample report or `--dpi 200` to change the
+PNG resolution. VisPa verifies the atlas count for each sample, parcel and soma
+hemisphere before joining recorded types. Historical selected counts come from
+the saved Progress Manager column. Blank source entries remain blank. The
+legacy Projectome Progress Manager produces the CSV and refreshes upstream
+sources.
 
 ## GUI walkthrough
 
@@ -590,7 +648,7 @@ The Python API is imported only as `vispa`. The legacy `Visual_toolkit`
 forwarding package and class alias have been removed. Optional OpenGL remains
 lazy. Use `python run_vispa.py` for the GUI and `python run_vispa.py --help` for commands.
 
-New standalone run receipts, builds and candidate outputs live under `D:/VisPa/work/`. The [shared validation receipt](work/fnt_onboarding_20261022/run_receipt.json) records versioned milestones separately; [the Windows Conda workflow](.github/workflows/windows-python-conda.yml) validates the Python-only environment. The [VisPa and ReMAP project note](docs/project_note.md) is the living software journal. Existing projectome receipts remain historical evidence; external scientific data/cache paths remain explicit configuration.
+New standalone run receipts, builds and candidate outputs live under the VisPa workspace’s `work/` directory. The [shared validation receipt](work/fnt_onboarding_20261022/run_receipt.json) records versioned milestones separately; [the Windows Conda workflow](.github/workflows/windows-python-conda.yml) validates the Python-only environment. The [VisPa and ReMAP project note](docs/project_note.md) is the living software journal. Existing Projectome receipts remain historical evidence; external scientific data/cache paths remain explicit configuration.
 
 ### Repository status and compatibility
 

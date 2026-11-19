@@ -1,0 +1,30 @@
+# ReMAP designated DEB atlas profile. Shared atlas resources are read-only and
+# stay on the fMOST share. This file records paths only; it does not bundle
+# NIfTI or key bytes.
+# Paths match VisPa src/vispa/configs/config_deb.yaml sources.atlas
+# at aed0077e1b9987a4a3aeac5507fc6f1a5688ff3c (ded_vispa_config 1.0.12,
+# updated 2026-11-09T09:39:55+08:00).
+# History: ../../../CHANGELOG.md
+version: 1
+schema: remap.deb_atlas_profile.v1
+profile: deb
+config_name: remap_deb_atlas
+copied_from:
+  repository: https://github.com/bylaikaby/VisPa
+  path: src/vispa/configs/config_deb.yaml
+  commit: aed0077e1b9987a4a3aeac5507fc6f1a5688ff3c
+  config_name: ded_vispa_config
+  config_version: '1.0.12'
+  config_updated_at: '2026-11-09T09:39:55+08:00'
+sources:
+  atlas:
+    root: '\\10.102.8.200\microscopy_data\fMOST\resources\dependencies\atlas\NMT_v2.1_sym\ARM_in_NMT_v2.1_sym.nii.gz'
+    key: '\\10.102.8.200\microscopy_data\fMOST\resources\dependencies\atlas\NMT_v2.1_sym\ARM_key_all.txt'
+    hemisphere_mask: '\\10.102.8.200\microscopy_data\fMOST\resources\dependencies\atlas\NMT_v2.1_sym\NMT_v2.1_sym_LR_plane.nii.gz'
+    version: NMT_v2.1_sym
+    # VisPa names this coordinate_scale_um: 250.0. ReMAP uses coordinate_scale.
+    coordinate_scale: 250
+not_designated:
+  - template
+  - cortex_hierarchy_csv
+  - subcortical_hierarchy_csv

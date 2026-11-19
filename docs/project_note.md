@@ -7,12 +7,23 @@ This is the living record for VisPa and its sibling ReMAP package. The [Projecto
 | Area | Current evidence and next step |
 | --- | --- |
 | Standalone HTML | Secondary candidate 0.7.0; development paused by user. Full desktop design/function parity remains incomplete. |
-| VisPa | Local source checkout is 1.21.7. The [operator guide](../README.md) covers interactive and bulk review. See the [VisPa changelog](../CHANGELOG.md) for version history. |
-| ReMAP | The sibling package was imported from standalone ReMAP 0.2.1 at `619fdd0e3e1bdfa04dcd5a3464ba30d93dcf70a7`. The subsequent 0.2.2.dev1 clustering work is a local candidate. See the ReMAP guide and changelog for commands and changes. |
+| VisPa | Source candidate 1.21.8.dev2 includes [Cohort Progress](../README.md#cohort-progress) and [Function Overview](../README.md#vispa-function-overview). See the [changelog](../CHANGELOG.md). |
+| ReMAP | Sibling source candidate 0.2.2.dev3 supplies atlas measurement, FNT, clustering and table operators. The [ReMAP guide](../packages/remap/README.md) and [changelog](../packages/remap/CHANGELOG.md) describe the public source interfaces. |
 | 251637 FNT | The cohort audit covered 574 unique identities and all corresponding processed SWCs. The current exploratory workbook covers 260 scored and 314 unscored neurons. Source producer runs matched all 10 and 78 within-run entries on separate four- and twelve-neuron subsets of the 260-source matrix. Cross-batch pairs and full-cohort score parity remain open. See the local consolidated review and receipts in `work/remap_clustering_251637_20261117/`. |
 | Scientific review | The 212- and 260-source matrices disagree on all 22,366 shared off-diagonal scores. Cached inputs differ and full historical lineage remains unresolved. Cluster method, normalization, K and anatomical interpretation remain open. |
 
-The ReMAP sibling package and the cited candidate outputs are recorded from local development.
+The cited study outputs are held in the research workspace.
+
+## Insula study workflow
+
+1. Generate [Function Overview](../README.md#vispa-function-overview) to trace the single-monkey and multi-monkey routes. Supply exact sample and neuron identities and declared coordinates.
+2. Check the [saved-score review](../packages/remap/README.md#saved-score-analysis-and-review) with a bounded case and matching regional tables. Saved FNT files and source tables feed the projection hierarchy and its candidate assignments. Keep candidate tables and source workbooks separate.
+3. Check cohort scope before comparing figures. The [atlas display](../packages/remap/README.md#atlas-insula-hierarchy-display) restricts the saved parent tree to the declared soma roster. [Cohort Progress](../README.md#cohort-progress) validates saved composition evidence through a separate report.
+4. Use the pinned research drivers and receipts for paper-method figures, flat maps, morphology and functional evidence. Candidate clustering and software checks support technical review. Scientific interpretation requires the study-specific evidence.
+
+### 2026-11-19 | Codex | Integrated source candidate
+
+- Work agent Codex. Recorded at 2026-11-19T08:49:30+08:00 (Asia/Shanghai). Event date 2026-11-19. Reconciled the integrated source with the current remote VisPa tree, retaining its desktop badge and paused HTML changes. Verified the source Function Overview export, a bounded Cohort Progress export, 324 VisPa tests and 43 ReMAP tests. The local study guide and figures retain the panel-level review and reproducibility evidence.
 
 ## Legacy milestones and source records
 
