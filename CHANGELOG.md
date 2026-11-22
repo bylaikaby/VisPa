@@ -1,5 +1,9 @@
 # VisPa change log
 
+## Documentation — 2026-11-23
+
+- Add three insula/cardiac-stimulation references, a project-note index, and BibTeX export for fMOST research context; no software version bump.
+
 ## Unreleased — 2026-11-17
 
 - HTML 0.7.0 adds manifest/checksum-bound DS00 Sagittal computation: constant-i selection, positive whole-plane percentile normalization, j/k display orientation, candidate A/B marker mappings and optional crop. Three fixtures matched the actual desktop preparation function within 1e-12 in Chrome, including marker positions and crop dimensions. Manifest mismatch rejection passed. Real DS data, configured geometry binding and complete render/UI parity remain pending.

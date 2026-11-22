@@ -9,6 +9,8 @@ checkout with `python run_vispa.py`.
 
 [Install](#install-on-windows) · [Update an existing environment](#update-an-existing-vispa-environment) · [Remove VisPa](#remove-vispa)
 
+For fMOST research context, see the [insula and cardiac-stimulation references](docs/references/insula_cardiac_stimulation.md).
+
 ## Batch review
 
 Use **Bulk review…** beside Render for one-animal preparation, raw SWC caching, four core review figures plus one SWC Brain View screenshot, and receipt-verified resume. The dialog launches the packaged `vispa.review_bulk_prepare` and `vispa.review_bulk_render` modules, which also run with `python -m` from an installed wheel. Start with a dry run and one neuron; see the [batch guide](batch/MODULE.md) for source, output and review controls. Existing `batch.prepare_review_bulk` and `batch.render_review_bulk` imports remain compatibility entry points. The checkout-only `batch.remap_stepwise` bridge supplies ReMAP inputs and saved FNT scores to the same jobs contract. Figure completion and anatomical acceptance have separate review records.

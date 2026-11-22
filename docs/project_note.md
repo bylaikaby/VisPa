@@ -14,6 +14,10 @@ This is the living record for VisPa and its sibling ReMAP package. The [Projecto
 
 The ReMAP sibling package and the cited candidate outputs are recorded from local development.
 
+## Insula study workflow
+
+The [insula and cardiac-stimulation reference note](references/insula_cardiac_stimulation.md) and [BibTeX](references/insula_cardiac_stimulation.bib) collect Chouchou et al. (2019, 2025) and Méndez et al. (2023) as research context for fMOST interpretation in VisPa.
+
 ## Legacy milestones and source records
 
 - **October 2026.** Projectome's VisualToolkit became VisPa. Legacy region analysis and FNT workflows became the basis for ReMAP. See the region code audit, metric terminology, 251637 clustering review and ARM projection clustering review. Some evidence paths in the 251637 review are historical and unavailable.
@@ -21,6 +25,11 @@ The ReMAP sibling package and the cited candidate outputs are recorded from loca
 - **November 17, 2026.** ReMAP entered the VisPa source tree. PC2 verified cohort input coverage and a bounded dry run. Later local runs added native score comparisons, clustering sensitivity checks and a workbook with hash-bound assignment inputs. See the consolidated review for candidate output and limits. The earlier workstation entry is preserved below, including its original next step.
 
 ## Journal
+
+### 2026-11-23 | Agent ChatGPT gpt-6-sol, supervised by GPT-6 Astra Pro | Insula references
+
+- Recorded at 2026-11-23T00:24:27+08:00 (Asia/Shanghai). Added three literature references, a BibTeX export, and links for fMOST research context. Documentation only; no software version change.
+
 
 ### 2026-11-17 | Agent Codex | Consolidated project note
 
